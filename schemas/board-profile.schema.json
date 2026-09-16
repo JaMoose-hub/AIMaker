@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "board-profile.schema.json",
+  "title": "Board Profile",
+  "description": "Per-board pin/capability database. Runtime source of truth: backend/app/profiles/models.py (keep in sync).",
+  "type": "object",
+  "required": ["schema_version", "board", "reference", "headers", "pins"],
+  "additionalProperties": false,
+  "$defs": {
+    "chip": {
+      "type": "object",
+      "required": ["part"],
+      "additionalProperties": false,
+      "properties": {
+        "part": { "type": "string" },
+        "core": { "type": "string" },
+        "max_clock_mhz": { "type": "number" },
+        "os": { "type": "string" },
+        "role_note": { "$ref": "#/$defs/i18nText" }
+      }
+    },
+    "i18nText": {
+      "type": "object",
+      "required": ["zh-TW"],
+      "properties": { "zh-TW": { "type": "string" }, "en": { "type": "string" } },
+      "additionalProperties": { "type": "string" }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["digital_io", "pwm", "adc", "i2c", "spi", "uart", "interrupt", "power", "reset", "aref", "boot", "nc"] },
+        "role": { "type": "string" },
+        "bus": { "type": "string" },
+        "channel": { "type": "string" },
+        "rail": { "type": "string" },
+        "direction": { "type": "string" },
+        "mcu_pin": { "type": "string" },
+        "note": { "$ref": "#/$defs/i18nText" }
+      }
+    },
+    "poseLandmark": {
+      "type": "object",
+      "required": ["id", "role"],
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["pos_mm"], "not": { "required": ["pin_id"] } },
+        { "required": ["pin_id"], "not": { "required": ["pos_mm"] } }
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "enum": ["board_corner", "header"] },
+        "pos_mm": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "pin_id": { "type": "string" }
+      }
+    },
+    "pin": {
+      "type": "object",
+      "required": ["id", "silkscreen", "header", "index", "pos_mm", "capabilities", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "silkscreen": { "type": "string" },
+        "header": { "type": "string" },
+        "index": { "type": "integer", "minimum": 0 },
+        "pos_mm": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "capabilities": { "type": "array", "items": { "$ref": "#/$defs/capability" }, "minItems": 1 },
+        "electrical": {
+          "type": "object",
+          "required": ["voltage"],
+          "additionalProperties": false,
+          "properties": {
+            "voltage": { "type": "number" },
+            "max_current_ma": { "type": "number" },
+            "five_volt_tolerant": { "type": "boolean" }
+          }
+        },
+        "description": { "$ref": "#/$defs/i18nText" },
+        "usage_examples": { "type": "array", "items": { "$ref": "#/$defs/i18nText" } },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["severity", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "severity": { "enum": ["info", "warning", "danger"] },
+              "text": { "$ref": "#/$defs/i18nText" }
+            }
+          }
+        },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "board": {
+      "type": "object",
+      "required": ["id", "name", "vendor", "mcu", "logic_voltage", "five_volt_tolerant", "form_factor", "outline_mm", "header_top_z_mm"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "name": { "$ref": "#/$defs/i18nText" },
+        "vendor": { "type": "string" },
+        "revision": { "type": "string" },
+        "mcu": { "$ref": "#/$defs/chip" },
+        "mpu": { "$ref": "#/$defs/chip" },
+        "logic_voltage": { "type": "number" },
+        "five_volt_tolerant": { "type": "boolean" },
+        "form_factor": { "type": "string" },
+        "outline_mm": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "header_top_z_mm": { "type": "number" },
+        "docs_url": { "type": "string" }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["image", "width_px", "height_px", "mm_to_px"],
+      "additionalProperties": false,
+      "properties": {
+        "image": { "type": "string" },
+        "width_px": { "type": "integer" },
+        "height_px": { "type": "integer" },
+        "mm_to_px": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+        },
+        "feature_mask": { "type": "string" }
+      }
+    },
+    "pose_landmarks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/poseLandmark" }
+    },
+    "headers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "side"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "$ref": "#/$defs/i18nText" },
+          "side": { "enum": ["top", "bottom", "left", "right"] }
+        }
+      }
+    },
+    "buses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "pins"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "enum": ["i2c", "spi", "uart"] },
+          "pins": { "type": "array", "items": { "type": "string" } },
+          "note": { "$ref": "#/$defs/i18nText" }
+        }
+      }
+    },
+    "groups": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "pins": { "type": "array", "items": { "$ref": "#/$defs/pin" }, "minItems": 1 }
+  },
+  "unevaluatedProperties": false
+}

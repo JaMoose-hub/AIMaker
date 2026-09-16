@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0",
+  "board": {
+    "id": "mini-board",
+    "name": { "zh-TW": "迷你測試板", "en": "Mini Test Board" },
+    "vendor": "TestCo",
+    "revision": "r1",
+    "mcu": { "part": "TEST32", "core": "Cortex-M0", "max_clock_mhz": 48.0 },
+    "logic_voltage": 3.3,
+    "five_volt_tolerant": false,
+    "form_factor": "mini",
+    "outline_mm": [40.0, 30.0],
+    "header_top_z_mm": 8.5
+  },
+  "reference": {
+    "image": "reference.png",
+    "width_px": 400,
+    "height_px": 300,
+    "mm_to_px": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 1.0]]
+  },
+  "headers": [
+    { "id": "J1", "name": { "zh-TW": "主排針", "en": "Main header" }, "side": "top" }
+  ],
+  "buses": [
+    {
+      "id": "i2c0",
+      "type": "i2c",
+      "pins": ["A4", "A5"],
+      "note": { "zh-TW": "Qwiic 相容", "en": "Qwiic compatible" }
+    }
+  ],
+  "groups": {
+    "power_rails": ["GND_P1"]
+  },
+  "pins": [
+    {
+      "id": "D3",
+      "silkscreen": "~3",
+      "header": "J1",
+      "index": 0,
+      "pos_mm": [5.0, 2.0, 8.5],
+      "capabilities": [
+        { "type": "digital_io", "mcu_pin": "P03" },
+        { "type": "pwm" },
+        { "type": "interrupt" }
+      ],
+      "electrical": { "voltage": 3.3, "max_current_ma": 8.0, "five_volt_tolerant": false },
+      "description": { "zh-TW": "數位腳位，支援 PWM 與中斷", "en": "Digital pin with PWM and interrupt" },
+      "usage_examples": [{ "zh-TW": "接 LED 呼吸燈", "en": "Drive a fading LED" }],
+      "warnings": [
+        { "severity": "warning", "text": { "zh-TW": "勿接 5V", "en": "Do not connect 5V" } }
+      ],
+      "tags": ["pwm"]
+    },
+    {
+      "id": "A4",
+      "silkscreen": "A4",
+      "header": "J1",
+      "index": 1,
+      "pos_mm": [10.0, 2.0, 8.5],
+      "capabilities": [
+        { "type": "adc", "channel": "A4" },
+        { "type": "i2c", "role": "sda", "bus": "i2c0" }
+      ],
+      "electrical": { "voltage": 3.3 },
+      "description": { "zh-TW": "類比輸入 / I2C SDA", "en": "Analog input / I2C SDA" }
+    },
+    {
+      "id": "A5",
+      "silkscreen": "A5",
+      "header": "J1",
+      "index": 2,
+      "pos_mm": [15.0, 2.0, 8.5],
+      "capabilities": [
+        { "type": "adc", "channel": "A5" },
+        { "type": "i2c", "role": "scl", "bus": "i2c0" }
+      ],
+      "electrical": { "voltage": 3.3 },
+      "description": { "zh-TW": "類比輸入 / I2C SCL", "en": "Analog input / I2C SCL" }
+    },
+    {
+      "id": "GND_P1",
+      "silkscreen": "GND",
+      "header": "J1",
+      "index": 3,
+      "pos_mm": [20.0, 2.0, 8.5],
+      "capabilities": [
+        { "type": "power", "rail": "gnd", "direction": "bidirectional" }
+      ],
+      "description": { "zh-TW": "接地", "en": "Ground" }
+    }
+  ]
+}

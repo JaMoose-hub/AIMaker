@@ -1,0 +1,23 @@
+# HC-SR04 v2 review dataset.
+# Eight reviewed landmarks are retained while preparing the data so the four
+# physical pins can be used to calibrate and verify the final profile.  The
+# production model is derived from these labels as a four-corner Pose model,
+# matching the proven photoresistor pipeline.
+path: ../datasets/hc-sr04-pose-v2
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [8, 3]
+names:
+  0: hc-sr04
+kpt_names:
+  0:
+    - pcb_TL
+    - pcb_TR
+    - pcb_BR
+    - pcb_BL
+    - pin_VCC
+    - pin_TRIG
+    - pin_ECHO
+    - pin_GND

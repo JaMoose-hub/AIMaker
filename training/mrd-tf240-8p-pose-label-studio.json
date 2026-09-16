@@ -1,0 +1,8 @@
+{
+  "data": "C:\\Project\\PnP\\board-vision\\training\\mrd-tf240-8p-corner-pose-v1.yaml",
+  "split": "train",
+  "model": "",
+  "confidence": "0.3",
+  "keypoint_confidence": "0.25",
+  "auto_save": true
+}

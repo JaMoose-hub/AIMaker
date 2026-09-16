@@ -1,0 +1,21 @@
+# HC-SR04 front-side pose dataset.
+# Point identity is defined with the transducers facing the camera and the
+# header pins pointing downward. Do not rename points after rotating an image.
+path: ../datasets/hc-sr04-pose
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [8, 3]
+names:
+  0: hc-sr04
+kpt_names:
+  0:
+    - pcb_TL
+    - pcb_TR
+    - pcb_BR
+    - pcb_BL
+    - pin_VCC
+    - pin_TRIG
+    - pin_ECHO
+    - pin_GND

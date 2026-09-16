@@ -1,0 +1,122 @@
+# Public, credential-free starting configuration.
+# Copy to config.yaml on a NEW checkout; never overwrite your working config.
+# This sample uses a normal webcam and OpenCV CPU inference for portability.
+# For NVIDIA acceleration, install the cuda dependency group and set both
+# yolo_pose.runtime_backend and component_vision.runtime_backend to cuda.
+server:
+  host: 127.0.0.1
+  port: 8100
+
+realtime_tracking: true
+camera:
+  source: device
+  device_index: 0
+  width: 1920
+  height: 1080
+  fps: 30
+  buffer_size: 1
+  capture_backend: opencv
+  capture_api: dshow
+  calibration_path: null
+
+detector: hybrid
+board: raspberry-pi-5
+profile_dir: ../profiles
+frontend_dist: ../frontend/dist
+default_locale: zh-TW
+jpeg_quality: 80
+detection_hz: 30
+opencv_num_threads: 2
+
+wire_trace:
+  enabled: true
+  interval_s: 0.5
+  guidance_interval_s: 0.3
+  colors: [red, yellow, green, brown, blue]
+  min_pin_pitch_px: null
+  min_px_per_mm: null
+  edge_agnostic_enabled: false
+
+yolo_pose:
+  body_fallback_model_path: null
+  pi_reference_recovery_model_path: ../models/board-pose-pi5.onnx
+  model_path: ../models/board-pose-pi5-handheld-v2.onnx
+  board_model_paths:
+    raspberry-pi-5: ../models/board-pose-pi5-handheld-v2.onnx
+  board_8pt_model_paths: {}
+  input_size: 960
+  runtime_backend: opencv
+  cuda_device_id: 0
+  confidence_threshold: 0.45
+  board_confidence_thresholds:
+    raspberry-pi-5: 0.3
+  keypoint_threshold: 0.35
+  nms_iou_threshold: 0.45
+  max_reprojection_error_px: 12.0
+  stability_deadband_px: 2.0
+  deadband_exit_confirm_frames: 2
+  jump_threshold_fraction: 0.025
+  jump_confirm_frames: 2
+  occlusion_hold_frames: 60
+  occlusion_visibility_ratio: 0.8
+  visibility_warmup_frames: 5
+  reacquire_confirm_frames: 4
+  reacquire_min_visible_fraction: 0.45
+  hand_fraction_threshold: 0.08
+
+component_vision:
+  enabled: true
+  # Legacy single-component fallback also points to a bundled model.
+  model_path: ../models/hc-sr04-corner-pose-v3-robust.onnx
+  profile_path: ../profiles/components/hc-sr04/vision_profile.json
+  input_size: 768
+  interval_s: 0.3
+  runtime_backend: opencv
+  cuda_device_id: 0
+  confidence_threshold: 0.35
+  keypoint_threshold: 0.25
+  nms_iou_threshold: 0.45
+  stability_deadband_px: 2.0
+  deadband_exit_confirm_frames: 2
+  jump_threshold_fraction: 0.025
+  jump_confirm_frames: 2
+  occlusion_hold_s: 2.0
+  occlusion_visibility_ratio: 0.8
+  visibility_warmup_frames: 5
+  primary_component_id: mrd-tf240-8p-cs
+  components:
+    - id: hc-sr04
+      model_path: ../models/hc-sr04-corner-pose-v3-robust.onnx
+      profile_path: ../profiles/components/hc-sr04/vision_profile.json
+      input_size: 768
+      confidence_threshold: 0.25
+      keypoint_threshold: 0.2
+      interval_s: 0.3
+      reacquire_min_visible_fraction: 0.25
+    - id: mrd-tf240-8p-cs
+      model_path: ../models/mrd-tf240-8p-cs-pose.onnx
+      profile_path: ../profiles/components/mrd-tf240-8p-cs/vision_profile.json
+      input_size: 1280
+      confidence_threshold: 0.2
+      keypoint_threshold: 0.15
+      interval_s: 0.3
+      reacquire_min_visible_fraction: 0.08
+
+# Optional models/services are deliberately not bundled or enabled.
+component_segmentation:
+  enabled: false
+vlm:
+  enabled: false
+  provider: none
+electrical_verification:
+  enabled: false
+
+# Configure your own Pi. No real host, username or password is published here.
+# Password may instead be supplied via BOARDVISION_PI_DEPLOY__PASSWORD.
+pi_deploy:
+  host: raspberrypi.local
+  port: 22
+  username: pi
+  password: ""
+  remote_dir: /home/pi/BoardVision
+  timeout_s: 10

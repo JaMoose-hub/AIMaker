@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "id": "mrd-tf240-8p-cs",
+  "version": "1.0.0",
+  "name": {
+    "zh-TW": "MRD_TF240_8P_CS 2.4 吋 TFT 螢幕",
+    "en": "MRD_TF240_8P_CS 2.4-inch TFT display"
+  },
+  "pins": [
+    {"id": "GND", "role": "ground", "direction": "power", "required": true, "required_rail": "gnd"},
+    {"id": "VCC", "role": "vcc", "direction": "power", "required": true, "voltage": 3.3, "required_rail": "3v3"},
+    {"id": "SCL", "role": "spi_clock", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["spi"]},
+    {"id": "SDA", "role": "spi_mosi", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["spi"]},
+    {"id": "RES", "role": "reset", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["digital_io"]},
+    {"id": "DC", "role": "data_command", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["digital_io"]},
+    {"id": "CS", "role": "spi_chip_select", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["spi"]},
+    {"id": "BLK", "role": "backlight", "direction": "input", "required": false, "signal_voltage": 3.3, "required_capabilities": ["digital_io"]}
+  ]
+}

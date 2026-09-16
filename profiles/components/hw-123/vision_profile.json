@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "id": "hw-123",
+  "canonical_orientation": "component side up; VCC-to-INT header row pointing down",
+  "corner_order": [
+    "pcb_TL",
+    "pcb_TR",
+    "pcb_BR",
+    "pcb_BL"
+  ],
+  "keypoint_count": 4,
+  "pin_row_orientation": true,
+  "reference_pose": {
+    "image": "reference_header.png",
+    "corners_px": [[154.6, 121.8], [19.6, 118.1], [22.4, 19.9], [157.3, 23.6]],
+    "rectified_size": [320, 240],
+    "provenance": "Real camera crop previously verified by test_hw123_real_header_corrects_cyclic_order_at_every_rotation; VCC is the rightmost pad in the source image."
+  },
+  "pins": [
+    {"id": "VCC", "x_norm": 0.085, "y_norm": 0.912},
+    {"id": "GND", "x_norm": 0.207, "y_norm": 0.912},
+    {"id": "SCL", "x_norm": 0.328, "y_norm": 0.912},
+    {"id": "SDA", "x_norm": 0.449, "y_norm": 0.912},
+    {"id": "XDA", "x_norm": 0.570, "y_norm": 0.912},
+    {"id": "XCL", "x_norm": 0.691, "y_norm": 0.912},
+    {"id": "AD0", "x_norm": 0.812, "y_norm": 0.912},
+    {"id": "INT", "x_norm": 0.933, "y_norm": 0.912}
+  ],
+  "reference_size": [800, 1000],
+  "reference_pins_px": {
+    "VCC": [68, 912],
+    "GND": [166, 912],
+    "SCL": [262, 912],
+    "SDA": [359, 912],
+    "XDA": [456, 912],
+    "XCL": [553, 912],
+    "AD0": [650, 912],
+    "INT": [746, 912]
+  }
+}

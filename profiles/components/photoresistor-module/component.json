@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "id": "photoresistor-module",
+  "version": "1.0.0",
+  "name": {
+    "zh-TW": "光敏電阻模組",
+    "en": "Photoresistor module"
+  },
+  "pins": [
+    {
+      "id": "VCC",
+      "role": "vcc",
+      "direction": "power",
+      "required": true,
+      "voltage": 3.3,
+      "required_rail": "3v3"
+    },
+    {
+      "id": "GND",
+      "role": "ground",
+      "direction": "power",
+      "required": true,
+      "required_rail": "gnd"
+    },
+    {
+      "id": "AO",
+      "role": "analog_output",
+      "direction": "output",
+      "required": true,
+      "signal_voltage": 3.3,
+      "required_capabilities": ["adc"]
+    }
+  ]
+}

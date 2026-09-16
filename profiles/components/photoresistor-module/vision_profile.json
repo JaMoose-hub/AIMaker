@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "id": "photoresistor-module",
+  "created_at": "2026-08-05T02:01:19.928350+00:00",
+  "canonical_orientation": "component side up; four header pins pointing down",
+  "corner_order": [
+    "pcb_TL",
+    "pcb_TR",
+    "pcb_BR",
+    "pcb_BL"
+  ],
+  "pins": [
+    {
+      "id": "VCC",
+      "x_norm": 0.79025888,
+      "y_norm": 0.87680572
+    },
+    {
+      "id": "GND",
+      "x_norm": 0.54941869,
+      "y_norm": 0.87648451
+    },
+    {
+      "id": "AO",
+      "x_norm": 0.14853999,
+      "y_norm": 0.86557716
+    }
+  ],
+  "reference_size": [
+    1280,
+    720
+  ],
+  "reference_corners_px": [
+    [
+      534.0,
+      338.0
+    ],
+    [
+      615.0,
+      336.0
+    ],
+    [
+      611.0,
+      527.0
+    ],
+    [
+      528.0,
+      527.0
+    ]
+  ],
+  "reference_pins_px": {
+    "VCC": [
+      594.0,
+      503.0
+    ],
+    "GND": [
+      574.0,
+      503.0
+    ],
+    "AO": [
+      541.0,
+      501.0
+    ]
+  }
+}

@@ -1,0 +1,2488 @@
+{
+  "schema_version": "1.0",
+  "board": {
+    "id": "raspberry-pi-5",
+    "name": {
+      "zh-TW": "Raspberry Pi 5",
+      "en": "Raspberry Pi 5"
+    },
+    "vendor": "Raspberry Pi",
+    "mcu": {
+      "part": "BCM2712",
+      "core": "4x Arm Cortex-A76",
+      "max_clock_mhz": 2400,
+      "os": "Raspberry Pi OS (Linux)",
+      "role_note": {
+        "zh-TW": "SoC 執行 Linux；40 支 header 腳位由獨立的 RP1 I/O 控制晶片驅動（Pi 5 與 Pi 4 的關鍵架構差異），GPIO 仍由 Linux 直接控制",
+        "en": "The SoC runs Linux; the 40 header pins are driven by a separate RP1 I/O controller (the key architectural change from the Pi 4). GPIO are still controlled directly from Linux"
+      }
+    },
+    "logic_voltage": 3.3,
+    "five_volt_tolerant": false,
+    "form_factor": "raspberry-pi-b-plus",
+    "outline_mm": [
+      85.0,
+      56.0
+    ],
+    "header_top_z_mm": 8.5,
+    "docs_url": "https://www.raspberrypi.com/documentation/computers/raspberry-pi.html"
+  },
+  "reference": {
+    "image": "reference_captured.jpg",
+    "width_px": 1280,
+    "height_px": 720,
+    "mm_to_px": [
+      [
+        4.281984176820758,
+        -0.06180215560218967,
+        467.6387023925781
+      ],
+      [
+        0.06537366031332315,
+        4.048130750339494,
+        376.1624450683594
+      ],
+      [
+        -4.834721112655998e-11,
+        2.99382856855518e-09,
+        1.0
+      ]
+    ]
+  },
+  "pose_landmarks": [
+    { "id": "board_TL", "role": "board_corner", "pos_mm": [0.0, 0.0, 0.0] },
+    { "id": "board_TR", "role": "board_corner", "pos_mm": [85.0, 0.0, 0.0] },
+    { "id": "board_BR", "role": "board_corner", "pos_mm": [85.0, 56.0, 0.0] },
+    { "id": "board_BL", "role": "board_corner", "pos_mm": [0.0, 56.0, 0.0] },
+    { "id": "J8_P1", "role": "header", "pin_id": "3V3_P1" },
+    { "id": "J8_P2", "role": "header", "pin_id": "5V_P2" },
+    { "id": "J8_P40", "role": "header", "pin_id": "GPIO21" },
+    { "id": "J8_P39", "role": "header", "pin_id": "GND_P39" }
+  ],
+  "headers": [
+    {
+      "id": "J8",
+      "name": {
+        "zh-TW": "40-pin GPIO 排針（J8）",
+        "en": "40-pin GPIO header (J8)"
+      },
+      "side": "bottom"
+    }
+  ],
+  "buses": [
+    {
+      "id": "i2c1",
+      "type": "i2c",
+      "pins": [
+        "GPIO2",
+        "GPIO3"
+      ],
+      "note": {
+        "zh-TW": "預設 I2C 匯流排，板上已有上拉電阻；須先在 raspi-config 啟用 I2C。Pi 5 另有更多 I2C 匯流排可用 overlay 開啟",
+        "en": "The default I2C bus with on-board pull-ups; enable I2C in raspi-config first. The Pi 5 exposes additional I2C buses via overlays"
+      }
+    },
+    {
+      "id": "i2c0",
+      "type": "i2c",
+      "pins": [
+        "GPIO0",
+        "GPIO1"
+      ],
+      "note": {
+        "zh-TW": "保留給 HAT 辨識 EEPROM，請勿佔用",
+        "en": "Reserved for the HAT ID EEPROM - do not use"
+      }
+    },
+    {
+      "id": "spi0",
+      "type": "spi",
+      "pins": [
+        "GPIO10",
+        "GPIO9",
+        "GPIO11",
+        "GPIO8",
+        "GPIO7"
+      ],
+      "note": {
+        "zh-TW": "主要 SPI 匯流排，兩個晶片選擇（CE0/CE1）；須先啟用 SPI",
+        "en": "The primary SPI bus with two chip selects (CE0/CE1); enable SPI first"
+      }
+    },
+    {
+      "id": "spi1",
+      "type": "spi",
+      "pins": [
+        "GPIO20",
+        "GPIO19",
+        "GPIO21",
+        "GPIO16"
+      ],
+      "note": {
+        "zh-TW": "第二組 SPI，需以 device tree overlay 啟用",
+        "en": "A second SPI bus; needs a device-tree overlay to enable"
+      }
+    },
+    {
+      "id": "uart0",
+      "type": "uart",
+      "pins": [
+        "GPIO14",
+        "GPIO15"
+      ],
+      "note": {
+        "zh-TW": "預設為序列埠主控台；當一般序列埠使用前須先關閉主控台。Pi 5 另有更多 UART 可用 overlay 開啟",
+        "en": "Serial console by default; disable the console before using it as a general serial port. The Pi 5 exposes additional UARTs via overlays"
+      }
+    }
+  ],
+  "groups": {
+    "power_rails": [
+      "3V3_P1",
+      "5V_P2",
+      "5V_P4",
+      "GND_P6",
+      "GND_P9",
+      "GND_P14",
+      "3V3_P17",
+      "GND_P20",
+      "GND_P25",
+      "GND_P30",
+      "GND_P34",
+      "GND_P39"
+    ],
+    "pwm_all": [
+      "GPIO18",
+      "GPIO12",
+      "GPIO13",
+      "GPIO19"
+    ]
+  },
+  "pins": [
+    {
+      "id": "3V3_P1",
+      "silkscreen": "1",
+      "header": "J8",
+      "index": 1,
+      "pos_mm": [
+        76.218,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "3v3",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "3.3V 電源輸出。與 GPIO 同一個邏輯電壓，可直接供電給 3.3V 感測器。此電源軌由板上穩壓器提供，可用電流有限（不適合驅動較耗電的模組）。",
+        "en": "3.3V power output - the same logic voltage as the GPIO, so it can supply 3.3V sensors directly. It comes from the on-board regulator and its available current is limited (not for power-hungry modules)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "供電給感測器模組的 VCC",
+          "en": "Power a sensor module's VCC"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 電源軌可用電流有限，較耗電的模組請改用 5V 或外部電源",
+            "en": "The 3.3V rail has limited available current - power hungry modules should use 5V or an external supply"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "電源腳位，切勿接到任何 GPIO 訊號腳，否則會損壞板子",
+            "en": "Power pin - never wire it to a GPIO signal pin or the board will be damaged"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "3v3"
+      ],
+      "electrical": {
+        "voltage": 3.3
+      }
+    },
+    {
+      "id": "5V_P2",
+      "silkscreen": "2",
+      "header": "J8",
+      "index": 2,
+      "pos_mm": [
+        76.218,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "5v",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "5V 電源輸出，來自板子的輸入電源（USB-C PD）。這是「電源軌」而不是訊號腳位。可為 5V 週邊供電，但注意其訊號腳位仍必須是 3.3V 相容。",
+        "en": "5V power output from the board's input supply (USB-C PD). This is a power rail, not a signal pin. It can feed 5V peripherals, but their signal lines must still be 3.3V compatible."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "供電給感測器模組的 VCC",
+          "en": "Power a sensor module's VCC"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "5V 直接來自輸入電源且未經保險絲 — 短路可能損壞 Pi 或電源；且 5V 訊號絕不可回接 GPIO",
+            "en": "5V is unfused and comes straight from the input supply - a short can damage the Pi or the supply, and a 5V signal must never be fed back into a GPIO"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "電源腳位，切勿接到任何 GPIO 訊號腳，否則會損壞板子",
+            "en": "Power pin - never wire it to a GPIO signal pin or the board will be damaged"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "5v"
+      ],
+      "electrical": {
+        "voltage": 5.0
+      }
+    },
+    {
+      "id": "GPIO2",
+      "silkscreen": "3",
+      "header": "J8",
+      "index": 3,
+      "pos_mm": [
+        73.842,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO2"
+        },
+        {
+          "type": "i2c",
+          "bus": "i2c1",
+          "role": "SDA"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "I2C1 資料線（SDA）。Pi 的預設 I2C 匯流排，板上已有上拉電阻到 3.3V。也可當一般 GPIO。",
+        "en": "I2C1 data (SDA). The Pi's default I2C bus, with pull-ups to 3.3V on board. Also usable as plain GPIO."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 I2C 溫濕度感測器或 OLED 顯示器",
+          "en": "Connect an I2C temperature/humidity sensor or OLED display"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "i2c"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "5V_P4",
+      "silkscreen": "4",
+      "header": "J8",
+      "index": 4,
+      "pos_mm": [
+        73.842,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "5v",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "5V 電源輸出，來自板子的輸入電源（USB-C PD）。這是「電源軌」而不是訊號腳位。可為 5V 週邊供電，但注意其訊號腳位仍必須是 3.3V 相容。",
+        "en": "5V power output from the board's input supply (USB-C PD). This is a power rail, not a signal pin. It can feed 5V peripherals, but their signal lines must still be 3.3V compatible."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "供電給感測器模組的 VCC",
+          "en": "Power a sensor module's VCC"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "5V 直接來自輸入電源且未經保險絲 — 短路可能損壞 Pi 或電源；且 5V 訊號絕不可回接 GPIO",
+            "en": "5V is unfused and comes straight from the input supply - a short can damage the Pi or the supply, and a 5V signal must never be fed back into a GPIO"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "電源腳位，切勿接到任何 GPIO 訊號腳，否則會損壞板子",
+            "en": "Power pin - never wire it to a GPIO signal pin or the board will be damaged"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "5v"
+      ],
+      "electrical": {
+        "voltage": 5.0
+      }
+    },
+    {
+      "id": "GPIO3",
+      "silkscreen": "5",
+      "header": "J8",
+      "index": 5,
+      "pos_mm": [
+        71.466,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO3"
+        },
+        {
+          "type": "i2c",
+          "bus": "i2c1",
+          "role": "SCL"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "I2C1 時脈線（SCL），板上已有上拉電阻。也可當一般 GPIO。",
+        "en": "I2C1 clock (SCL), with on-board pull-ups. Also usable as plain GPIO."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 I2C 溫濕度感測器或 OLED 顯示器",
+          "en": "Connect an I2C temperature/humidity sensor or OLED display"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "i2c"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P6",
+      "silkscreen": "6",
+      "header": "J8",
+      "index": 6,
+      "pos_mm": [
+        71.466,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO4",
+      "silkscreen": "7",
+      "header": "J8",
+      "index": 7,
+      "pos_mm": [
+        69.091,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO4"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，另可輸出 GPCLK0 通用時脈訊號。常被 1-Wire（DS18B20 溫度感測器）的 overlay 預設佔用。",
+        "en": "Plain GPIO; can also output the GPCLK0 general-purpose clock. Commonly claimed by the 1-Wire overlay (DS18B20 sensors)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "gpclk"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO14",
+      "silkscreen": "8",
+      "header": "J8",
+      "index": 8,
+      "pos_mm": [
+        69.091,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO14"
+        },
+        {
+          "type": "uart",
+          "bus": "uart0",
+          "role": "TXD"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "UART0 傳送腳（TXD）。預設為序列埠主控台輸出；要當一般 GPIO 需先在 raspi-config 關閉主控台。",
+        "en": "UART0 transmit (TXD). Serial console by default - disable the console in raspi-config before using it as plain GPIO."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "與 GPS 模組或另一塊開發板做序列通訊",
+          "en": "Serial link to a GPS module or another board"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "uart"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P9",
+      "silkscreen": "9",
+      "header": "J8",
+      "index": 9,
+      "pos_mm": [
+        66.715,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO15",
+      "silkscreen": "10",
+      "header": "J8",
+      "index": 10,
+      "pos_mm": [
+        66.715,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO15"
+        },
+        {
+          "type": "uart",
+          "bus": "uart0",
+          "role": "RXD"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "UART0 接收腳（RXD）。預設為序列埠主控台輸入，同樣須先關閉主控台。",
+        "en": "UART0 receive (RXD). Serial console by default - disable the console first."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "與 GPS 模組或另一塊開發板做序列通訊",
+          "en": "Serial link to a GPS module or another board"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "uart"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO17",
+      "silkscreen": "11",
+      "header": "J8",
+      "index": 11,
+      "pos_mm": [
+        64.339,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO17"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能，適合當數位輸入或輸出。",
+        "en": "Plain GPIO with no default alternate function - a good general-purpose input or output."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO18",
+      "silkscreen": "12",
+      "header": "J8",
+      "index": 12,
+      "pos_mm": [
+        64.339,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO18"
+        },
+        {
+          "type": "pwm",
+          "channel": "PWM2"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，支援硬體 PWM（RP1 的第 3 個獨立通道），也是 PCM/I2S 的位元時脈（PCM_CLK）。驅動伺服馬達最常用的腳位。",
+        "en": "Plain GPIO with hardware PWM (RP1's third independent channel); also the PCM/I2S bit clock (PCM_CLK). The most commonly used pin for driving a servo."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "驅動伺服馬達的訊號線",
+          "en": "Drive a servo signal line"
+        },
+        {
+          "zh-TW": "LED 呼吸燈（漸亮漸暗）",
+          "en": "LED breathing/fade effect"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "pwm",
+        "pcm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO27",
+      "silkscreen": "13",
+      "header": "J8",
+      "index": 13,
+      "pos_mm": [
+        61.964,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO27"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P14",
+      "silkscreen": "14",
+      "header": "J8",
+      "index": 14,
+      "pos_mm": [
+        61.964,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO22",
+      "silkscreen": "15",
+      "header": "J8",
+      "index": 15,
+      "pos_mm": [
+        59.588,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO22"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO23",
+      "silkscreen": "16",
+      "header": "J8",
+      "index": 16,
+      "pos_mm": [
+        59.588,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO23"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "3V3_P17",
+      "silkscreen": "17",
+      "header": "J8",
+      "index": 17,
+      "pos_mm": [
+        57.212,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "3v3",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "3.3V 電源輸出。與 GPIO 同一個邏輯電壓，可直接供電給 3.3V 感測器。此電源軌由板上穩壓器提供，可用電流有限（不適合驅動較耗電的模組）。",
+        "en": "3.3V power output - the same logic voltage as the GPIO, so it can supply 3.3V sensors directly. It comes from the on-board regulator and its available current is limited (not for power-hungry modules)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "供電給感測器模組的 VCC",
+          "en": "Power a sensor module's VCC"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 電源軌可用電流有限，較耗電的模組請改用 5V 或外部電源",
+            "en": "The 3.3V rail has limited available current - power hungry modules should use 5V or an external supply"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "電源腳位，切勿接到任何 GPIO 訊號腳，否則會損壞板子",
+            "en": "Power pin - never wire it to a GPIO signal pin or the board will be damaged"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "3v3"
+      ],
+      "electrical": {
+        "voltage": 3.3
+      }
+    },
+    {
+      "id": "GPIO24",
+      "silkscreen": "18",
+      "header": "J8",
+      "index": 18,
+      "pos_mm": [
+        57.212,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO24"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO10",
+      "silkscreen": "19",
+      "header": "J8",
+      "index": 19,
+      "pos_mm": [
+        54.837,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO10"
+        },
+        {
+          "type": "spi",
+          "bus": "spi0",
+          "role": "MOSI"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "SPI0 主控輸出（MOSI）。也可當一般 GPIO（需先停用 SPI 介面）。",
+        "en": "SPI0 master out (MOSI). Usable as plain GPIO if the SPI interface is disabled."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P20",
+      "silkscreen": "20",
+      "header": "J8",
+      "index": 20,
+      "pos_mm": [
+        54.837,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO9",
+      "silkscreen": "21",
+      "header": "J8",
+      "index": 21,
+      "pos_mm": [
+        52.461,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO9"
+        },
+        {
+          "type": "spi",
+          "bus": "spi0",
+          "role": "MISO"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "SPI0 主控輸入（MISO）。",
+        "en": "SPI0 master in (MISO)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO25",
+      "silkscreen": "22",
+      "header": "J8",
+      "index": 22,
+      "pos_mm": [
+        52.461,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO25"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO11",
+      "silkscreen": "23",
+      "header": "J8",
+      "index": 23,
+      "pos_mm": [
+        50.085,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO11"
+        },
+        {
+          "type": "spi",
+          "bus": "spi0",
+          "role": "SCLK"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "SPI0 時脈（SCLK）。",
+        "en": "SPI0 clock (SCLK)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO8",
+      "silkscreen": "24",
+      "header": "J8",
+      "index": 24,
+      "pos_mm": [
+        50.085,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO8"
+        },
+        {
+          "type": "spi",
+          "bus": "spi0",
+          "role": "CE0"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "SPI0 晶片選擇 0（CE0）。",
+        "en": "SPI0 chip enable 0 (CE0)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P25",
+      "silkscreen": "25",
+      "header": "J8",
+      "index": 25,
+      "pos_mm": [
+        47.71,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO7",
+      "silkscreen": "26",
+      "header": "J8",
+      "index": 26,
+      "pos_mm": [
+        47.71,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO7"
+        },
+        {
+          "type": "spi",
+          "bus": "spi0",
+          "role": "CE1"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "SPI0 晶片選擇 1（CE1）。",
+        "en": "SPI0 chip enable 1 (CE1)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO0",
+      "silkscreen": "27",
+      "header": "J8",
+      "index": 27,
+      "pos_mm": [
+        45.334,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO0"
+        },
+        {
+          "type": "i2c",
+          "bus": "i2c0",
+          "role": "ID_SD"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "HAT 辨識用 EEPROM 的 I2C 資料線（ID_SD）。開機時系統用它讀取 HAT 資訊，保留腳位，請勿當一般 GPIO 使用。",
+        "en": "HAT ID EEPROM I2C data (ID_SD). The system reads HAT information through it at boot - reserved, do not use as plain GPIO."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "保留給 HAT 辨識 EEPROM（ID_SD/ID_SC），佔用會影響 HAT 偵測",
+            "en": "Reserved for the HAT ID EEPROM (ID_SD/ID_SC); using it breaks HAT detection"
+          }
+        },
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "reserved"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO1",
+      "silkscreen": "28",
+      "header": "J8",
+      "index": 28,
+      "pos_mm": [
+        45.334,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO1"
+        },
+        {
+          "type": "i2c",
+          "bus": "i2c0",
+          "role": "ID_SC"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "HAT 辨識用 EEPROM 的 I2C 時脈線（ID_SC），保留腳位，請勿當一般 GPIO 使用。",
+        "en": "HAT ID EEPROM I2C clock (ID_SC) - reserved, do not use as plain GPIO."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "保留給 HAT 辨識 EEPROM（ID_SD/ID_SC），佔用會影響 HAT 偵測",
+            "en": "Reserved for the HAT ID EEPROM (ID_SD/ID_SC); using it breaks HAT detection"
+          }
+        },
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "reserved"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO5",
+      "silkscreen": "29",
+      "header": "J8",
+      "index": 29,
+      "pos_mm": [
+        42.959,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO5"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P30",
+      "silkscreen": "30",
+      "header": "J8",
+      "index": 30,
+      "pos_mm": [
+        42.959,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO6",
+      "silkscreen": "31",
+      "header": "J8",
+      "index": 31,
+      "pos_mm": [
+        40.583,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO6"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO12",
+      "silkscreen": "32",
+      "header": "J8",
+      "index": 32,
+      "pos_mm": [
+        40.583,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO12"
+        },
+        {
+          "type": "pwm",
+          "channel": "PWM0"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，支援硬體 PWM（RP1 的第 1 個獨立通道）。Pi 5 的四個 PWM 通道彼此獨立，可同時使用。",
+        "en": "Plain GPIO with hardware PWM (RP1's first independent channel). The Pi 5's four PWM channels are independent and can all be used at once."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "驅動伺服馬達的訊號線",
+          "en": "Drive a servo signal line"
+        },
+        {
+          "zh-TW": "LED 呼吸燈（漸亮漸暗）",
+          "en": "LED breathing/fade effect"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "pwm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO13",
+      "silkscreen": "33",
+      "header": "J8",
+      "index": 33,
+      "pos_mm": [
+        38.207,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO13"
+        },
+        {
+          "type": "pwm",
+          "channel": "PWM1"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，支援硬體 PWM（RP1 的第 2 個獨立通道）。",
+        "en": "Plain GPIO with hardware PWM (RP1's second independent channel)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "驅動伺服馬達的訊號線",
+          "en": "Drive a servo signal line"
+        },
+        {
+          "zh-TW": "LED 呼吸燈（漸亮漸暗）",
+          "en": "LED breathing/fade effect"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "pwm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P34",
+      "silkscreen": "34",
+      "header": "J8",
+      "index": 34,
+      "pos_mm": [
+        38.207,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO19",
+      "silkscreen": "35",
+      "header": "J8",
+      "index": 35,
+      "pos_mm": [
+        35.832,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO19"
+        },
+        {
+          "type": "pwm",
+          "channel": "PWM3"
+        },
+        {
+          "type": "spi",
+          "bus": "spi1",
+          "role": "MISO"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，支援硬體 PWM（RP1 的第 4 個獨立通道），亦為 SPI1 的 MISO 與 PCM/I2S 的框同步（PCM_FS）。",
+        "en": "Plain GPIO with hardware PWM (RP1's fourth independent channel); also SPI1 MISO and the PCM/I2S frame sync (PCM_FS)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "驅動伺服馬達的訊號線",
+          "en": "Drive a servo signal line"
+        },
+        {
+          "zh-TW": "LED 呼吸燈（漸亮漸暗）",
+          "en": "LED breathing/fade effect"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "pwm",
+        "spi",
+        "pcm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO16",
+      "silkscreen": "36",
+      "header": "J8",
+      "index": 36,
+      "pos_mm": [
+        35.832,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO16"
+        },
+        {
+          "type": "spi",
+          "bus": "spi1",
+          "role": "CE0"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，亦為 SPI1 的晶片選擇 0。",
+        "en": "Plain GPIO; also SPI1 chip enable 0."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO26",
+      "silkscreen": "37",
+      "header": "J8",
+      "index": 37,
+      "pos_mm": [
+        33.456,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO26"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，無預設特殊功能。",
+        "en": "Plain GPIO with no default alternate function."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取按鈕狀態（配合上拉/下拉電阻）",
+          "en": "Read a push-button state (with a pull-up or pull-down)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GPIO20",
+      "silkscreen": "38",
+      "header": "J8",
+      "index": 38,
+      "pos_mm": [
+        33.456,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO20"
+        },
+        {
+          "type": "spi",
+          "bus": "spi1",
+          "role": "MOSI"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，亦為 SPI1 的 MOSI 與 PCM/I2S 資料輸入（PCM_DIN）。",
+        "en": "Plain GPIO; also SPI1 MOSI and PCM/I2S data in (PCM_DIN)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi",
+        "pcm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_P39",
+      "silkscreen": "39",
+      "header": "J8",
+      "index": 39,
+      "pos_mm": [
+        31.08,
+        51.61,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地腳位。Pi 上有 8 個 GND（實體腳 6/9/14/20/25/30/34/39），電氣上全部相通，接任何一個都可以 — 選離你的訊號線最近的那個，接線最整齊。",
+        "en": "Ground. The Pi has 8 GND pins (physical 6/9/14/20/25/30/34/39), all electrically common, so any of them works - pick the one nearest your signal wire for the tidiest wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器模組的 GND 共地",
+          "en": "Common ground for a sensor module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "所有 GND 電氣相通；與外部電路務必共地，否則訊號會不穩定",
+            "en": "All GND pins are common; always share a ground with external circuitry or signals will be unreliable"
+          }
+        }
+      ],
+      "tags": [
+        "power",
+        "gnd"
+      ],
+      "electrical": {
+        "voltage": 0.0
+      }
+    },
+    {
+      "id": "GPIO21",
+      "silkscreen": "40",
+      "header": "J8",
+      "index": 40,
+      "pos_mm": [
+        31.08,
+        54.15,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "GPIO21"
+        },
+        {
+          "type": "spi",
+          "bus": "spi1",
+          "role": "SCLK"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "支援邊緣觸發中斷（任一 GPIO 皆可）",
+            "en": "Supports edge-detection interrupts (available on any GPIO)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "一般 GPIO，亦為 SPI1 時脈與 PCM/I2S 資料輸出（PCM_DOUT）。",
+        "en": "Plain GPIO; also SPI1 clock and PCM/I2S data out (PCM_DOUT)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SPI 顯示模組或 ADC 晶片",
+          "en": "Connect an SPI display module or ADC chip"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯，不耐 5V — 接上 5V 訊號會損壞 RP1 I/O 控制晶片（沒有輸入保護，且 RP1 無法更換）",
+            "en": "3.3V logic, NOT 5V tolerant - a 5V signal will damage the RP1 I/O controller (no input protection, and RP1 is not replaceable)"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "單腳建議上限 16mA、所有 GPIO 合計約 50mA（沿用 Pi 系列慣用值；Raspberry Pi 未公布 RP1 專屬數字）— 驅動 LED 需串電阻，馬達/繼電器需外部驅動電路",
+            "en": "Keep to roughly 16 mA per pin and ~50 mA across all GPIO (the conventional Pi figure; Raspberry Pi does not publish an RP1-specific number) - use a series resistor for LEDs and an external driver for motors or relays"
+          }
+        }
+      ],
+      "tags": [
+        "gpio",
+        "spi",
+        "pcm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 16,
+        "five_volt_tolerant": false
+      }
+    }
+  ]
+}

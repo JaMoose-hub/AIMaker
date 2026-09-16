@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "kind": "boardvision-wiring-guide",
+  "id": "my-pi5-photoresistor-guide",
+  "board_id": "raspberry-pi-5",
+  "name": {
+    "zh-TW": "我的 Pi 5 光敏電阻引導",
+    "en": "My Pi 5 photoresistor guide"
+  },
+  "controller_label": {
+    "zh-TW": "PI 5",
+    "en": "PI 5"
+  },
+  "component_id": "photoresistor-module",
+  "component_label": {
+    "zh-TW": "Sensor",
+    "en": "Sensor"
+  },
+  "intro": {
+    "zh-TW": "自訂 Pi 5 與光敏模組接線。",
+    "en": "Custom Pi 5 to photoresistor wiring."
+  },
+  "safety": {
+    "zh-TW": "Pi 5 GPIO 僅支援 3.3V，不能輸入 5V。",
+    "en": "Pi 5 GPIO is 3.3V only and must not receive 5V."
+  },
+  "complete_hint": {
+    "zh-TW": "自訂接線引導完成。",
+    "en": "Custom wiring guide complete."
+  },
+  "steps": [
+    {
+      "id": "custom-vcc",
+      "board_pin_id": "3V3_P1",
+      "board_label": "3.3V · Pin 1",
+      "component_pin_id": "VCC",
+      "wire_class": "power",
+      "instruction": {
+        "zh-TW": "將 Pin 1 接到 Sensor VCC",
+        "en": "Connect Pin 1 to Sensor VCC"
+      },
+      "hint": {
+        "zh-TW": "請勿誤接 Pin 2 的 5V。",
+        "en": "Do not use the 5V rail on Pin 2."
+      }
+    },
+    {
+      "id": "custom-gnd",
+      "board_pin_id": "GND_P6",
+      "board_label": "GND · Pin 6",
+      "component_pin_id": "GND",
+      "wire_class": "ground",
+      "instruction": {
+        "zh-TW": "將 Pin 6 接到 Sensor GND",
+        "en": "Connect Pin 6 to Sensor GND"
+      },
+      "hint": {
+        "zh-TW": "使用實體 Pin 6。",
+        "en": "Use physical Pin 6."
+      }
+    },
+    {
+      "id": "custom-signal",
+      "board_pin_id": "GPIO17",
+      "board_label": "GPIO17 · Pin 11",
+      "component_pin_id": "AO",
+      "wire_class": "signal",
+      "instruction": {
+        "zh-TW": "將 Pin 11 接到 Sensor AO",
+        "en": "Connect Pin 11 to Sensor AO"
+      },
+      "hint": {
+        "zh-TW": "此接法僅能將 AO 當 HIGH／LOW 數位門檻。",
+        "en": "This can only treat AO as a HIGH/LOW digital threshold."
+      },
+      "electrical_verification": "none"
+    }
+  ]
+}

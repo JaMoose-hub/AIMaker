@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "id": "led",
+  "version": "1.0.0",
+  "name": {"zh-TW": "LED（含限流電阻）", "en": "LED with current-limiting resistor"},
+  "pins": [
+    {"id": "A", "role": "led_anode", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["pwm"]},
+    {"id": "K", "role": "ground", "direction": "power", "required": true, "required_rail": "gnd"}
+  ]
+}

@@ -1,0 +1,17 @@
+# MRD_TF240_8P_CS four-landmark YOLO Pose dataset.
+# Canonical orientation: display upright, 8-pin header at the top,
+# GND on the left and BLK on the right. Landmarks are mounting-hole centres.
+path: ../datasets/mrd-tf240-8p-corner-pose-v1
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [4, 3]
+names:
+  0: mrd-tf240-8p-cs
+kpt_names:
+  0:
+    - mount_TL
+    - mount_TR
+    - mount_BR
+    - mount_BL

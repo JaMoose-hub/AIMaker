@@ -1,0 +1,8 @@
+{
+  "data": "C:\\Project\\PnP\\board-vision\\training\\board-pose-pi5.yaml",
+  "split": "train",
+  "model": "C:\\Project\\PnP\\board-vision\\runs\\pose\\runs\\board-pose\\pi5-handheld-v2\\weights\\best.pt",
+  "confidence": "0.3",
+  "keypoint_confidence": "0.25",
+  "auto_save": true
+}

@@ -1,0 +1,36 @@
+[project]
+name = "board-vision-backend"
+version = "0.1.0"
+description = "AI Maker Runtime - Visual Board Understanding backend (Arduino UNO Q)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "opencv-contrib-python>=4.10",
+    "numpy>=1.26",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyserial>=3.5",
+    "paramiko>=3.5,<5",
+    "pyyaml>=6.0",
+    "jsonschema>=4.22",
+    "hidapi>=0.15; sys_platform == 'win32'",
+    "cv2-enumerate-cameras>=1.3; sys_platform == 'win32'",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+cuda = ["onnxruntime-gpu[cuda,cudnn]==1.24.4", "cupy-cuda12x==14.2.0"]
+directml = ["onnxruntime-directml==1.24.4; sys_platform == 'win32'"]
+
+[tool.uv]
+default-groups = ["dev", "cuda"]
+# These distributions share the onnxruntime Python package and must not
+# overwrite one another in a single environment.
+conflicts = [[{ group = "cuda" }, { group = "directml" }]]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

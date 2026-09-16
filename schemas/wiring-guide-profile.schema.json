@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wiring-guide-profile.schema.json",
+  "title": "Board Vision Wiring Guide Profile",
+  "description": "A lesson-only Pin mapping for the currently active board detector Profile.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "id",
+    "board_id",
+    "name",
+    "controller_label",
+    "component_id",
+    "component_label",
+    "intro",
+    "safety",
+    "complete_hint",
+    "steps"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "i18nText": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "id",
+        "board_pin_id",
+        "board_label",
+        "component_pin_id",
+        "wire_class",
+        "instruction",
+        "hint"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 80 },
+        "board_pin_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "board_label": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "component_pin_id": { "enum": ["VCC", "GND", "AO"] },
+        "wire_class": { "enum": ["power", "ground", "signal"] },
+        "instruction": { "$ref": "#/$defs/i18nText" },
+        "hint": { "$ref": "#/$defs/i18nText" },
+        "electrical_verification": { "enum": ["none", "serial-a0"] }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "kind": { "const": "boardvision-wiring-guide" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "board_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "name": { "$ref": "#/$defs/i18nText" },
+    "controller_label": { "$ref": "#/$defs/i18nText" },
+    "component_id": { "const": "photoresistor-module" },
+    "component_label": { "$ref": "#/$defs/i18nText" },
+    "intro": { "$ref": "#/$defs/i18nText" },
+    "safety": { "$ref": "#/$defs/i18nText" },
+    "complete_hint": { "$ref": "#/$defs/i18nText" },
+    "steps": { "type": "array", "minItems": 1, "maxItems": 12, "items": { "$ref": "#/$defs/step" } }
+  }
+}

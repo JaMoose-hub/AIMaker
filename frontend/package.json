@@ -1,0 +1,26 @@
+{
+  "name": "board-vision-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "check:i18n": "node tools/check_i18n.mjs",
+    "test:guides": "node --test tools/component_guides.test.mjs tools/pi_header_guide.test.mjs tools/pi_example.test.mjs tools/maker.test.mjs tools/maker_migration.test.mjs tools/circuit_layout.test.mjs tools/circuit_zoom.test.mjs tools/realtime_frame.test.mjs tools/studio_split.test.mjs tools/cloud_wiring.test.mjs tools/project_guide.test.mjs tools/glasses.test.mjs tools/display_mode.test.mjs",
+    "test:headers": "node --test tools/component_header.test.mjs",
+    "test": "npm run check:i18n && npm run test:guides && npm run test:headers && npm run build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.7"
+  }
+}

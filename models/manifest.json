@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "components": [
+    "raspberry-pi-5",
+    "hc-sr04",
+    "mrd-tf240-8p-cs"
+  ],
+  "models": [
+    {
+      "file": "board-pose-pi5-handheld-v2.onnx",
+      "size_bytes": 11341083,
+      "sha256": "0781e6e835150d6528d30f9e1c5dffe109434cc4b48682b0dd0732f1938bf929"
+    },
+    {
+      "file": "board-pose-pi5.onnx",
+      "size_bytes": 11341083,
+      "sha256": "9759753eb91b3ff8b194e4f044244900451bfc70b09ec811c3c3ff29fe0cd279"
+    },
+    {
+      "file": "hc-sr04-corner-pose-v3-robust.onnx",
+      "size_bytes": 11123269,
+      "sha256": "740081ec41f74c57f657be328219a31fd01951b528ac33dce9ebee55857f7c75"
+    },
+    {
+      "file": "mrd-tf240-8p-cs-pose.onnx",
+      "size_bytes": 11811740,
+      "sha256": "e196a72d02dbf6452f8f6869af974e61b73746a754536a14e598dda9392dff99"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+# One photoresistor module, four semantic PCB corners.
+# Relative path is resolved against this YAML by the training script.
+path: ../datasets/photoresistor-pose
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [4, 3]
+names:
+  0: photoresistor-module
+kpt_names:
+  0:
+    - sensor_TL
+    - sensor_TR
+    - sensor_BR
+    - sensor_BL

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://board-vision.local/schemas/scene-understanding.schema.json",
+  "title": "Board Vision advisory scene understanding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "authority", "board", "modules", "connections", "issues", "uncertain_items", "overall_confidence"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "authority": { "const": "advisory_only" },
+    "board": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "confidence"],
+      "properties": {
+        "type": { "type": ["string", "null"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "confidence", "bbox_norm"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "minLength": 1 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "bbox_norm": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y", "w", "h"],
+            "properties": {
+              "x": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y": { "type": "number", "minimum": 0, "maximum": 1 },
+              "w": { "type": "number", "minimum": 0, "maximum": 1 },
+              "h": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          },
+          "pins": { "type": "array", "items": { "type": "string" } }
+          }
+      }
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from_device", "from_pin", "to_device", "to_pin", "status", "confidence"],
+        "properties": {
+          "from_device": { "type": ["string", "null"] },
+          "from_pin": { "type": ["string", "null"] },
+          "to_device": { "type": ["string", "null"] },
+          "to_pin": { "type": ["string", "null"] },
+          "status": { "enum": ["connected", "candidate", "uncertain", "unknown"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "type", "message"],
+        "properties": {
+          "severity": { "enum": ["info", "warning", "danger"] },
+          "type": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "minLength": 1 },
+          "related_connection": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      }
+    },
+    "uncertain_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "message", "confidence"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "minLength": 1 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "overall_confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

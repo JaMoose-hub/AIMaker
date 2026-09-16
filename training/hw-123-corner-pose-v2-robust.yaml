@@ -1,0 +1,16 @@
+# HW-123 robust four-corner Pose dataset.
+# Validation stays camera-original; test contains deterministic synthetic stress.
+path: ../datasets/hw-123-corner-pose-v2-robust
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [4, 3]
+names:
+  0: hw-123
+kpt_names:
+  0:
+    - pcb_TL
+    - pcb_TR
+    - pcb_BR
+    - pcb_BL

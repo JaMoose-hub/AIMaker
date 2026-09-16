@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "id": "hw-123",
+  "version": "1.0.0",
+  "name": {"zh-TW": "HW-123 六軸陀螺儀／加速度計", "en": "HW-123 6-axis gyroscope/accelerometer"},
+  "pins": [
+    {"id": "VCC", "role": "vcc", "direction": "power", "required": true, "voltage": 3.3, "required_rail": "3v3"},
+    {"id": "GND", "role": "ground", "direction": "power", "required": true, "required_rail": "gnd"},
+    {"id": "SCL", "role": "i2c_scl", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["i2c"]},
+    {"id": "SDA", "role": "i2c_sda", "direction": "bidirectional", "required": true, "signal_voltage": 3.3, "required_capabilities": ["i2c"]},
+    {"id": "XDA", "role": "aux_i2c_data", "direction": "bidirectional", "required": false, "signal_voltage": 3.3},
+    {"id": "XCL", "role": "aux_i2c_clock", "direction": "output", "required": false, "signal_voltage": 3.3},
+    {"id": "AD0", "role": "address_select", "direction": "input", "required": false, "signal_voltage": 3.3, "required_capabilities": ["digital_io"]},
+    {"id": "INT", "role": "interrupt", "direction": "output", "required": false, "signal_voltage": 3.3, "required_capabilities": ["digital_io"]}
+  ]
+}

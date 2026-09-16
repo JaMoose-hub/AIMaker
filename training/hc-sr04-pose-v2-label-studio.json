@@ -1,0 +1,8 @@
+{
+  "data": "C:\\Project\\PnP\\board-vision\\training\\hc-sr04-pose-v2.yaml",
+  "split": "train",
+  "model": "models\\hc-sr04-pose-pilot.pt",
+  "confidence": "0.3",
+  "keypoint_confidence": "0.25",
+  "auto_save": true
+}

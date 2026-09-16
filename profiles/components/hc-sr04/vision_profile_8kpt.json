@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "id": "hc-sr04",
+  "canonical_orientation": "transducers facing camera; four header pins pointing down",
+  "corner_order": [
+    "pcb_TL",
+    "pcb_TR",
+    "pcb_BR",
+    "pcb_BL"
+  ],
+  "keypoint_count": 8,
+  "pins": [
+    {
+      "id": "VCC",
+      "x_norm": 0.41799,
+      "y_norm": 1.00079,
+      "keypoint_index": 4
+    },
+    {
+      "id": "TRIG",
+      "x_norm": 0.47185,
+      "y_norm": 0.99524,
+      "keypoint_index": 5
+    },
+    {
+      "id": "ECHO",
+      "x_norm": 0.52859,
+      "y_norm": 0.99075,
+      "keypoint_index": 6
+    },
+    {
+      "id": "GND",
+      "x_norm": 0.58831,
+      "y_norm": 1.00026,
+      "keypoint_index": 7
+    }
+  ]
+}

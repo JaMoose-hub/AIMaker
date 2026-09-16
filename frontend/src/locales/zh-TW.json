@@ -1,0 +1,649 @@
+{
+  "pi.title": "Pi 部署",
+  "pi.kicker": "PYTHON · 遠端執行",
+  "pi.connected": "已連線",
+  "pi.disconnected": "未連線",
+  "pi.connect": "連線 Pi",
+  "pi.connecting": "連線中…",
+  "pi.intro": "光敏範例 · 編輯程式後部署，在下方查看 GPIO 的 HIGH／LOW。",
+  "pi.editor": "Python 程式碼",
+  "pi.example": "載入光敏範例",
+  "pi.saved": "草稿已自動保存",
+  "pi.saveFailed": "本次編輯尚未存入瀏覽器",
+  "pi.indent": "Tab 縮排 · Shift+Tab 離開",
+  "pi.deploy": "部署並執行",
+  "pi.deploying": "處理中…",
+  "pi.deploymentLabel": "部署",
+  "pi.programLabel": "程式",
+  "pi.deployment.idle": "尚未部署",
+  "pi.deployment.preparing": "準備環境",
+  "pi.deployment.uploading": "上傳程式",
+  "pi.deployment.checking": "檢查語法與環境",
+  "pi.deployment.starting": "啟動程式",
+  "pi.deployment.succeeded": "上傳與啟動完成",
+  "pi.deployment.failed": "部署失敗",
+  "pi.program.unknown": "尚未確認",
+  "pi.program.not_deployed": "尚未安裝",
+  "pi.program.starting": "啟動中",
+  "pi.program.running": "執行中",
+  "pi.program.stopping": "停止中",
+  "pi.program.stopped": "已停止",
+  "pi.program.exited": "已結束",
+  "pi.program.failed": "執行失敗",
+  "pi.output": "程式輸出",
+  "pi.outputLimit": "每秒更新 · 最近 1,000 行",
+  "pi.noOutput": "部署後，程式輸出會出現在這裡。",
+  "pi.networkError": "無法連到 BoardVision 後端，恢復連線後會自動更新狀態。",
+  "pi.actionFailed": "操作失敗，請重新連線後再試。",
+  "pi.rebootHint": "關閉筆電後仍會執行；Pi 重開機後需再次部署。HIGH／LOW 並非光照強度。",
+  "runtime.toolbarLabel": "執行環境工具列",
+  "runtime.controllerLabel": "控制器",
+  "componentVision.poseInvalid": "{component} · 偵測 {confidence}% · 8 點幾何未通過",
+  "runtime.controllerAria": "選擇目前控制器",
+  "runtime.languageLabel": "語言",
+  "runtime.languageAria": "選擇介面語言",
+  "runtime.switching": "切換中…",
+  "runtime.switchConfirm": "目前接線引導尚未結束。切換控制器會清除目前步驟、分數與高亮，確定要繼續嗎？",
+  "runtime.model8pt": "8 點 3D",
+  "runtime.model4pt": "4 點 Pose",
+  "runtime.model4ptFallback": "4 點回退",
+  "runtime.modelReadyTooltip": "目前板卡的定位模型已載入",
+  "runtime.modelFallbackTooltip": "8 點模型尚未產生，目前安全使用舊四點模型",
+  "runtime.error.controller_not_found": "找不到控制器：{board_id}",
+  "runtime.error.controller_model_load_failed": "{board_id} 的定位模型載入失敗，已保留原控制器",
+  "runtime.error.controller_switch_commit_failed": "切換失敗，已回復原控制器",
+  "runtime.error.controller_id_required": "請選擇控制器",
+  "runtime.error.network": "無法切換控制器，請檢查後端連線",
+  "status.resolutionTooltip": "相機實際送達的來源畫面解析度",
+  "status.geometryTooltip": "來源畫面幾何比例；實體取景目標為 8–10 px/mm",
+  "photoGuide.kicker": "接線引導",
+  "photoGuide.title": "光敏電阻模組",
+  "photoGuide.panelLabel": "光敏電阻接線引導面板",
+  "photoGuide.show": "顯示接線引導",
+  "photoGuide.hide": "隱藏接線引導",
+  "photoGuide.profileLabel": "接線 Profile",
+  "photoGuide.profileBuiltin": "內建 · {name}",
+  "photoGuide.profileNoBuiltin": "沒有內建 Profile",
+  "photoGuide.profileImported": "匯入 · {name}",
+  "photoGuide.profileImport": "匯入 Profile",
+  "photoGuide.profileExample": "下載範例",
+  "photoGuide.profileDelete": "刪除匯入",
+  "photoGuide.profileTooLarge": "Profile 檔案不可超過 256 KB",
+  "photoGuide.profileInvalid": "接線 Profile 無效",
+  "photoGuide.profileError.field_object": "{field} 必須是物件",
+  "photoGuide.profileError.field_string": "{field} 必須是 1–{max} 字元的文字",
+  "photoGuide.profileError.i18n_missing": "{field} 至少需要 zh-TW 或 en",
+  "photoGuide.profileError.schema_unsupported": "只支援 boardvision-wiring-guide schema_version 1.0",
+  "photoGuide.profileError.board_mismatch": "此 Profile 屬於 {board_id}，目前控制器是 {active_board_id}",
+  "photoGuide.profileError.component_unsupported": "目前只支援 photoresistor-module 元件 Profile",
+  "photoGuide.profileError.steps_range": "steps 必須包含 1–12 個步驟",
+  "photoGuide.profileError.step_id_invalid": "steps[{index}].id 必須是唯一的小寫英數代碼",
+  "photoGuide.profileError.pin_not_found": "{board_id} Profile 找不到 Pin：{pin_id}",
+  "photoGuide.profileError.component_pin_unsupported": "steps[{index}] 的元件 Pin 只支援 VCC、GND、AO",
+  "photoGuide.profileError.wire_class_unsupported": "steps[{index}] 的線材類型無效",
+  "photoGuide.profileError.electrical_unsupported": "steps[{index}] 不支援電氣驗證 {value}",
+  "photoGuide.profileError.serial_target_invalid": "serial-a0 只能用於 A0 → AO 步驟",
+  "photoGuide.profileMissing": "目前控制器沒有可用的接線 Profile，請匯入符合目前板卡 Pin ID 的 JSON。",
+  "photoGuide.piDigitalOnly": "Pi 5 的 GPIO17 只能判斷 HIGH／LOW，不會執行 UNO Q 的 Serial A0 驗證；要讀光照數值需外接 ADC。",
+  "photoGuide.intro": "逐步完成 UNO Q 與光敏模組的三條接線；每一步只高亮目前要接的腳位。",
+  "photoGuide.routeLabel": "光敏電阻接線順序",
+  "photoGuide.safety": "請使用 3.3V，不要將 5V 或 5.5V 接到 A0。",
+  "photoGuide.start": "開始接線引導",
+  "photoGuide.loading": "切換中…",
+  "photoGuide.progress": "{current} / {total}",
+  "photoGuide.step.vcc": "將 UNO Q 3.3V 接到 Sensor VCC",
+  "photoGuide.step.vccHint": "畫面只會高亮 UNO Q 的 3V3 腳位；Sensor 端請插入 VCC。",
+  "photoGuide.step.gnd": "將 UNO Q GND 接到 Sensor GND",
+  "photoGuide.step.gndHint": "使用電源排上、緊鄰 5V 的第一個 GND 腳位。",
+  "photoGuide.colorEquivalentGround": "UNO 端偵測到相鄰的 {pin}；兩個 GND 腳位電氣上等效。",
+  "photoGuide.connectorCheck": "② VLM 檢查接頭插入",
+  "photoGuide.connectorChecking": "② VLM 正在檢查接頭…",
+  "photoGuide.connectorQueued": "已擷取目前畫面，等待 VLM 檢查接頭。",
+  "photoGuide.connectorHint": "排線交疊時請用此檢查黑色接頭是否插入目標腳位；不依賴線色。",
+  "photoGuide.connectorPass": "VLM 已確認兩端接頭插入目標位置。",
+  "photoGuide.connectorAdjacent": "VLM 看見接頭，但可能在相鄰腳位；請查看影像確認。",
+  "photoGuide.connectorUncertain": "VLM 無法看清其中一端接頭；請調整鏡頭或移開遮擋後重試。",
+  "photoGuide.connectorPreview": "查看 VLM 實際影像",
+  "photoGuide.connectorPreviewHide": "收起 VLM 實際影像",
+  "photoGuide.connectorPreviewAlt": "送給 VLM 的完整相機與接頭放大影像",
+  "photoGuide.connectorPreviewHint": "左起依序為完整畫面、連線範圍、UNO 端目標、Sensor 端目標；不包含 UI。",
+  "photoGuide.connectorError.vlm_busy": "VLM 正在檢查此步驟，請稍候。",
+  "photoGuide.connectorError.vlm_unavailable": "VLM 目前無法使用，請稍後重試。",
+  "photoGuide.connectorError.vlm_retry_later": "VLM 尚未準備好，請稍後重試。",
+  "photoGuide.connectorError.board_not_ready": "UNO Q 尚未鎖定，請讓板子完整入鏡。",
+  "photoGuide.connectorError.component_not_ready": "Sensor 尚未鎖定，請讓 Sensor 完整入鏡。",
+  "photoGuide.connectorError.target_not_visible": "目標腳位暫時不可見，請調整鏡頭。",
+  "photoGuide.connectorError.unknown": "VLM 接頭檢查失敗，請重試。",
+  "photoGuide.step.ao": "將 UNO Q A0 接到 Sensor AO",
+  "photoGuide.step.aoHint": "AO 是類比訊號；A0 不可輸入高於 3.3V 的電壓。",
+  "photoGuide.verdict.pending": "接好並移開手後，按下①檢查接線位置",
+  "photoGuide.verdict.correct": "UNO Q 與 Sensor 兩端線頭皆靠近各自目標腳位",
+  "photoGuide.verdict.wrong_pin": "線頭目前靠近其他腳位",
+  "photoGuide.verdict.uncertain": "位置尚不確定，請調整線頭或相機角度",
+  "photoGuide.verdict.visual_candidate": "影像已看到接線變化，請按 AI 檢查接頭",
+  "photoGuide.actualPin": "目前偵測到 {pin}",
+  "photoGuide.previous": "上一步",
+  "photoGuide.next": "下一步",
+  "photoGuide.cancel": "取消",
+  "photoGuide.finish": "完成接線",
+  "photoGuide.complete": "三條接線引導完成",
+  "photoGuide.completeTitle": "接線引導完成",
+  "photoGuide.completeHint": "三條接線引導已結束。功能是否正確請以 AO 步驟的 A0 光照響應電氣驗證為準。",
+  "photoGuide.restart": "重新引導",
+  "photoGuide.error": "無法啟動接線引導，請確認後端連線",
+  "photoGuide.startError.unknown_pin": "目前控制器找不到腳位 {pin_id}",
+  "photoGuide.startError.physical_gate_unready": "目前影像尚未達到自動引導的實體精度門檻",
+  "photoGuide.startError.unknown": "無法啟動這個接線步驟",
+  "photoGuide.videoTarget": "接線目標：{pin}",
+  "componentGuide.pinOrdinal": "第 {number} 支 · {pin}",
+  "componentGuide.countFromAo": "由 AO 側開始數",
+  "boardGuide.pinOrdinal": "{header}第 {number} 支 · {pin}",
+  "boardGuide.header.analog": "下排",
+  "boardGuide.header.digital": "上排",
+  "boardGuide.countFromBoot": "由 BOOT 側開始數",
+  "boardGuide.countFromScl": "由 SCL 側開始數",
+  "boardGuide.countFromFirst": "由排針第 1 支開始數",
+  "boardGuide.pi.inner": "內排（靠板中央）",
+  "boardGuide.pi.outer": "外排（靠板邊緣）",
+  "boardGuide.pi.ordinal": "第 {number} 支",
+  "boardGuide.pi.target": "{row} · 第 {number} 支",
+  "boardGuide.pi.countFrom": "從遠離 USB-A／網路孔的一端數",
+  "boardGuide.pi.instruction": "從遠離 USB-A／網路孔的一端開始，沿同一排數到第 {number} 支。",
+  "boardGuide.pi.reference": "{signal} · 實體 Pin {physical}",
+  "boardGuide.pi.diagram": "單排示意：從 1 開始 → 每排 20 支",
+  "verification.overall": "整體信心度",
+  "verification.scoreCap": "目前驗證層級最高 {cap} 分",
+  "verification.layer.geometry": "雙端幾何定位",
+  "verification.layer.visual": "接頭插入判斷",
+  "verification.layer.electrical": "電氣驗證",
+  "verification.verdict.unverified": "等待驗證證據",
+  "verification.verdict.position_matched": "UNO Q 與 Sensor 兩端位置符合目標",
+  "verification.verdict.visual_verified": "視覺驗證通過",
+  "verification.verdict.verified": "接線與電氣驗證通過",
+  "verification.verdict.wrong_pin": "疑似插到錯誤腳位",
+  "verification.verdict.not_inserted": "接頭看起來尚未插入",
+  "verification.verdict.electrical_mismatch": "電氣訊號不符合",
+  "verification.verdict.evidence_conflict": "影像與電氣證據衝突",
+  "verification.verdict.evidence_incomplete": "部分驗證通過，等待其他證據",
+  "verification.verdict.uncertain": "目前證據不足",
+  "verification.reason.awaiting_geometry": "等待看到線頭",
+  "verification.reason.awaiting_visual_insertion": "請按 AI 檢查接頭取得一次 VLM 判斷",
+  "verification.reason.awaiting_electrical_test": "等待功能測試",
+  "verification.reason.electrical_not_configured": "尚未啟用 Serial",
+  "verification.reason.electrical_not_applicable": "此步驟不做電氣驗證；只在最後 A0 接 AO 時手動啟動",
+  "verification.reason.target_endpoint_near_pin": "線頭靠近目標腳位",
+  "verification.reason.both_endpoints_look_inserted": "兩端外觀皆有插入變化",
+  "verification.reason.electrical_not_available": "尚未啟用電氣驗證",
+  "verification.reason.electrical_not_confirmed": "尚未完成電氣驗證",
+  "verification.reason.all_layers_passed": "三層證據皆通過",
+  "verification.reason.wrong_pin": "偵測到其他腳位",
+  "verification.reason.hand_occlusion": "手遮住目標，暫停判斷",
+  "verification.reason.scene_moving": "畫面仍在移動",
+  "verification.reason.board_not_tracked": "尚未鎖定 UNO Q",
+  "verification.reason.component_not_tracked": "尚未鎖定 Sensor",
+  "verification.reason.scale_unready": "影像低於最低辨識尺度，請將板子靠近鏡頭",
+  "verification.scaleDetails": "目前 {pitch}px／最低 {minPitch}px",
+  "verification.reason.baseline_captured": "已記錄接線前畫面",
+  "verification.reason.baseline_rebased": "位置改變，重新記錄基準",
+  "verification.reason.awaiting_stability": "等待畫面穩定",
+  "verification.reason.waiting_for_both_endpoints": "等待兩端接頭",
+  "verification.reason.board_endpoint_only": "只看到 UNO Q 端變化",
+  "verification.reason.component_endpoint_only": "只看到 Sensor 端變化",
+  "verification.reason.visual_check_unavailable": "影像判斷尚未就緒",
+  "verification.reason.waiting_for_target_endpoint": "等待線頭靠近目標",
+  "verification.reason.attachment_unverified": "尚無法確認接頭插入",
+  "verification.reason.endpoint_ambiguous": "線頭位於相鄰腳位之間",
+  "verification.reason.endpoint_near_other_pin": "線頭目前較靠近 {pin}",
+  "verification.reason.visual_pass_geometry_incomplete": "AI 外觀已通過，等待腳位幾何確認",
+  "verification.reason.electrical_pass_visual_incomplete": "電氣已通過，等待相機證據",
+  "verification.reason.stale_evidence": "證據已過期，正在重新確認",
+  "verification.reason.awaiting_evidence": "等待新的驗證結果",
+  "app.title": "Board Vision",
+  "app.subtitle": "AI Maker Runtime · 即時板卡視覺辨識",
+
+  "backend.down": "後端未連線",
+  "backend.retrying": "自動重試中…",
+  "hint.placeBoard": "請將 {board} 放入畫面中",
+  "hint.placeBoardGeneric": "請將板子放入畫面中",
+
+  "status.searching": "搜尋板卡中",
+  "status.locked": "已鎖定",
+  "status.stale": "訊號凍結",
+  "status.confidence": "信心度",
+  "status.connected": "已連線",
+  "status.disconnected": "連線中斷",
+  "status.rate": "偵測速率",
+  "status.resolution": "實際解析度",
+  "status.wires": "偵測到 {count} 條線",
+  "status.pitch": "腳距",
+  "status.poseQuality": "姿態證據",
+  "status.poseQualityTooltip": "特徵內點數 / 平均重投影誤差；不等同於整體信心度",
+  "status.wireUncertain": "{count} 條線待確認",
+  "status.wireScalePaused": "接線判定暫停：影像尺度不足",
+  "status.guidance": "導引 {pin}: {status}",
+  "status.accuracyWarning": "尚未達實體驗證門檻",
+
+  "filter.all": "全部",
+  "filter.pwm": "PWM",
+  "filter.i2c": "I2C",
+  "filter.spi": "SPI",
+  "filter.uart": "UART",
+  "filter.adc": "類比 ADC",
+  "filter.power": "電源",
+  "filter.interrupt": "中斷",
+  "legend.count": "{count} 支腳位",
+
+  "query.placeholder": "詢問腳位功能，例如：哪支腳可以接 servo？",
+  "query.send": "送出",
+  "query.busy": "查詢中…",
+  "query.clear": "清除",
+  "query.failed": "查詢失敗，請確認後端連線",
+
+  "card.title": "板卡資訊",
+  "card.loading": "載入板卡資料中…",
+  "card.hint": "點選畫面中的腳位標記，查看詳細規格",
+  "card.pins": "腳位數",
+  "card.formFactor": "尺寸規格",
+  "card.logic": "邏輯電壓",
+  "card.mcu": "MCU",
+  "card.mpu": "MPU",
+  "card.capabilities": "功能",
+  "card.electrical": "電氣特性",
+  "card.voltage": "電壓",
+  "card.maxCurrent": "最大電流",
+  "card.fiveVoltTolerant": "5V 容忍",
+  "card.fiveVoltTolerantTrue": "5V 容忍（僅數位輸入）",
+  "card.yes": "是",
+  "card.no": "否",
+  "card.usage": "常見用途",
+  "card.not5vTolerant": "全板腳位非 5V 容忍，請勿輸入 5V 訊號",
+
+  "cap.digital_io": "GPIO",
+  "cap.pwm": "PWM",
+  "cap.adc": "ADC",
+  "cap.i2c": "I2C",
+  "cap.spi": "SPI",
+  "cap.uart": "UART",
+  "cap.interrupt": "中斷",
+  "cap.power": "電源",
+  "cap.boot": "啟動",
+  "cap.reset": "重置",
+  "cap.aref": "AREF",
+  "cap.nc": "未連接",
+
+  "calibrate.triggerLabel": "新增/校正板型",
+  "calibrate.triggerTooltip": "登錄或更新此型號的辨識基準（一次性，非日常操作）",
+  "calibrate.title": "校正板型",
+  "calibrate.instruction": "請將板子邊緣對齊虛線框：USB-C 朝左、正面朝鏡頭",
+  "calibrate.instructionTracked": "已自動追蹤到板子位置與角度，請保持板子穩定後拍攝",
+  "calibrate.hint": "拍攝前請確保光線充足、畫面清晰",
+  "calibrate.scaleEstimate": "預估腳位間距 {pitch}px（{pxPerMm} px/mm）",
+  "calibrate.scaleTooSmall": "目前尺度不足：腳位間距約 {pitch}px（{pxPerMm} px/mm），請讓板子更靠近鏡頭。",
+  "calibrate.scaleDiagnostics": "目前腳位間距 {pitch}px（{pxPerMm} px/mm），請讓板子更靠近鏡頭或縮小視角。",
+  "calibrate.capture": "拍攝並登錄",
+  "calibrate.capturing": "處理中…",
+  "calibrate.cancel": "取消",
+  "calibrate.retry": "重新拍攝",
+  "calibrate.networkError": "網路連線失敗，請確認後端連線後重試",
+  "calibrate.successFallback": "校正完成",
+  "calibrate.errorFallback": "校正失敗，請重新對齊後再試一次",
+  "calibrate.error.corners_invalid": "校正框角點不正確，請重新對齊板子邊緣",
+  "calibrate.error.no_frame": "目前沒有可用的攝影機畫面",
+  "calibrate.error.board_not_found": "找不到目前的板型設定",
+  "calibrate.error.insufficient_scale": "板子在畫面中太小，請讓板子靠近鏡頭",
+  "calibrate.error.insufficient_features": "特徵點不足，請改善光線、對焦並讓板子完整入鏡",
+  "calibrate.error.unknown": "校正失敗，請重新對齊後再試一次",
+
+  "camera.triggerLabel": "切換鏡頭",
+  "camera.triggerTooltip": "選擇要使用的攝影機來源",
+  "camera.title": "選擇攝影機",
+  "camera.close": "關閉",
+  "camera.loading": "掃描攝影機中…",
+  "camera.empty": "找不到可用的攝影機",
+  "camera.current": "目前使用",
+  "camera.unavailable": "無法讀取畫面",
+  "camera.useThis": "使用這顆",
+  "camera.switching": "切換中…",
+  "camera.retry": "重試",
+  "camera.networkError": "網路連線失敗，請確認後端連線後重試",
+  "camera.selectSuccessFallback": "已切換攝影機",
+  "camera.selectErrorFallback": "切換攝影機失敗，請重試",
+  "camera.selectError.invalid_index": "攝影機編號超出可用範圍",
+  "camera.selectError.open_failed": "無法開啟攝影機；請確認裝置已連接且未被其他程式占用",
+  "camera.selectError.same_as_current": "這已經是目前使用中的攝影機",
+  "camera.selectError.not_applicable": "目前啟動模式沒有可切換的實體攝影機",
+  "camera.selectError.unknown": "切換攝影機失敗，請重試",
+  "camera.thumbnailAlt": "攝影機 {index} 縮圖",
+  "camera.mirrorLabel": "鏡像",
+  "camera.realtime": "即時追蹤（試用）",
+  "camera.realtimeWaiting": "等待畫面",
+  "camera.trackingPartial": "局部追蹤，僅顯示有影像支持的 Pin",
+  "camera.trackingConfirming": "確認定位中，Pin 暫停",
+  "camera.trackingObstructed": "遮擋／定位不足",
+  "camera.trackingOrientationPending": "已找到零件，腳位方向待確認",
+  "camera.bodyFound": "已辨識",
+  "camera.bodySearching": "搜尋中",
+  "camera.bodyPinsPending": "本體已辨識 · 腳位待定位",
+  "camera.realtimeTooltip": "Pi 5＋HC-SR04＋TFT 同步追蹤，顯示原藍色板框與 GPIO／Pin。定位依據不足時隱藏腳位，不代表接線已正確。此處為畫面 fps，下方為腳位模型偵測速率。再次點擊可切回原模式。",
+  "camera.mirrorTooltip": "切換攝影機鏡像顯示；腳位與線路會同步翻轉",
+  "camera.mirrorControlsLabel": "影像鏡像方向",
+  "camera.mirrorHorizontalLabel": "左右鏡像",
+  "camera.mirrorHorizontalTooltip": "切換左右鏡像；腳位與線路會同步翻轉",
+  "camera.mirrorVerticalLabel": "上下鏡像",
+  "camera.mirrorVerticalTooltip": "切換上下鏡像；腳位與線路會同步翻轉",
+  "camera.pinCalibrationLabel": "校正方向",
+  "camera.pinCalibrationTooltip": "微調 Arduino GPIO 圓點，使其對準實際孔位中心",
+  "camera.pinCalibrationControlsLabel": "板卡 Pin 位置校正",
+  "camera.pinCalibrationHint": "每次移動 1px",
+  "camera.pinCalibrationUp": "向上移動",
+  "camera.pinCalibrationDown": "向下移動",
+  "camera.pinCalibrationLeft": "向左移動",
+  "camera.pinCalibrationRight": "向右移動",
+  "camera.pinCalibrationReset": "重設校正"
+  ,"wiring.title": "接線候選"
+  ,"wiring.geometricOnly": "僅幾何證據"
+  ,"wiring.guidance": "導引"
+  ,"wiring.reason.board_not_tracked": "尚未鎖定板子位置"
+  ,"wiring.reason.attachment_unverified": "無法確認是否真正插入"
+  ,"wiring.reason.endpoint_ambiguous": "線頭落在兩支腳之間"
+  ,"wiring.reason.multiple_new_endpoints": "同一影格出現多個新線頭"
+  ,"wiring.reason.wire_path_ambiguous": "線材路徑有交叉，無法確認連接"
+  ,"wiring.reason.physical_gate_unready": "尚未通過實體精度門檻，無法自動判定"
+  ,"wiring.reason.scale_unready": "目前影像解析度不足，暫停接線判定"
+  ,"wiring.scalePaused": "影像尺度不足，接線判定暫停"
+  ,"wiring.empty": "等待相機看到新的接線候選"
+  ,"wiring.reason.awaiting_confirmation": "正在等待連續影格確認"
+  ,"wiring.attachment.inserted": "已插入"
+  ,"wiring.attachment.resting": "停在線孔上方"
+  ,"wiring.attachment.unknown": "無法確認是否插入"
+  ,"photoGuide.a0Challenge": "先按下方按鈕開始最終電氣驗證，再遮住、移開光敏電阻，讓 A0 電位明顯改變。"
+  ,"photoGuide.geometryCheck": "① 檢查接線位置"
+  ,"photoGuide.geometryRecheck": "① 重新檢查接線位置"
+  ,"photoGuide.geometryRunning": "① 幾何檢查中…"
+  ,"photoGuide.geometryHint": "按下後收集 5 幀；UNO Q 與 Sensor 兩端可由不同線段判定"
+  ,"photoGuide.geometryCollecting": "正在收集 {current}/{total} 幀；請移開手並保持板子不動"
+  ,"photoGuide.geometryComplete": "雙端位置至少 3/5 幀一致，結果已固定"
+  ,"photoGuide.geometryReview": "幾何檢查已固定但未通過；請依下方原因調整後重新檢查"
+  ,"photoGuide.geometryNotReady": "等待目前步驟的驗證狀態"
+  ,"photoGuide.geometryError.no_active_step": "接線引導尚未啟動"
+  ,"photoGuide.geometryError.geometry_unavailable": "線頭幾何辨識尚未啟用"
+  ,"photoGuide.geometryError.geometry_busy": "正在收集這一步的幾何樣本"
+  ,"photoGuide.geometryError.board_not_ready": "尚未穩定鎖定 UNO Q"
+  ,"photoGuide.geometryError.component_not_ready": "尚未穩定鎖定 Sensor"
+  ,"photoGuide.geometryError.target_not_visible": "目前看不到 Sensor 的目標腳位"
+  ,"photoGuide.geometryError.geometry_not_started": "無法啟動幾何檢查"
+  ,"photoGuide.geometryError.unknown": "幾何檢查失敗，請再試一次"
+  ,"photoGuide.details": "詳細分數"
+  ,"photoGuide.aiCheck": "② AI 檢查接頭（擷取目前畫面一次）"
+  ,"photoGuide.aiRecheck": "② 重新用 AI 檢查接頭"
+  ,"photoGuide.aiQueued": "已擷取這一幀，等待 VLM 開始"
+  ,"photoGuide.aiChecking": "VLM 正在判斷兩端接頭…"
+  ,"photoGuide.aiComplete": "本次 VLM 判斷完成；腳位名稱仍由雙端幾何定位負責"
+  ,"photoGuide.aiHint": "接好並移開手後按一次；只有按鈕會送出 VLM 請求"
+  ,"photoGuide.aiError.no_active_step": "接線引導尚未啟動"
+  ,"photoGuide.aiError.vlm_unavailable": "VLM 尚未啟用或模型服務未就緒"
+  ,"photoGuide.aiError.vlm_busy": "這一步的 VLM 正在執行"
+  ,"photoGuide.aiError.no_frame": "相機畫面尚未就緒"
+  ,"photoGuide.aiError.board_not_ready": "尚未穩定鎖定 UNO Q"
+  ,"photoGuide.aiError.component_not_ready": "尚未穩定鎖定 Sensor"
+  ,"photoGuide.aiError.component_pin_missing": "這一步沒有 Sensor 目標腳位"
+  ,"photoGuide.aiError.target_not_visible": "UNO Q 或 Sensor 的目標腳位目前不在畫面內"
+  ,"photoGuide.aiError.vlm_retry_later": "VLM 暫時忙碌，請稍後再按一次"
+  ,"photoGuide.aiError.unknown": "VLM 檢查失敗，請再試一次"
+  ,"photoGuide.finalStart": "② 完成接線後總驗證"
+  ,"photoGuide.finalRecheck": "② 重新執行總驗證"
+  ,"photoGuide.finalQueued": "已擷取完整畫面，等待 VLM"
+  ,"photoGuide.finalChecking": "總 VLM 正在檢查三條接線…"
+  ,"photoGuide.finalComplete": "視覺總驗證完成，正在進行 Serial"
+  ,"photoGuide.finalHint": "完成三個引導步驟、移開手後執行一次總驗證"
+  ,"photoGuide.finalAfterGuide": "完成三個引導步驟後，最後只執行一次總驗證"
+  ,"photoGuide.finalNotReady": "請先完成總 VLM 判讀；Serial 結果會另外顯示"
+  ,"photoGuide.finalState.correct": "正確"
+  ,"photoGuide.finalState.adjacent": "疑似相鄰腳位"
+  ,"photoGuide.finalState.empty": "未看到接頭"
+  ,"photoGuide.finalState.uncertain": "無法確認"
+  ,"photoGuide.finalError.no_active_step": "接線引導尚未啟動"
+  ,"photoGuide.finalError.final_check_not_ready": "請先完成三個接線引導步驟"
+  ,"photoGuide.finalError.final_check_busy": "總驗證正在執行"
+  ,"photoGuide.finalError.board_not_ready": "尚未穩定鎖定 UNO Q"
+  ,"photoGuide.finalError.component_not_ready": "尚未穩定鎖定 Sensor"
+  ,"photoGuide.finalError.no_frame": "目前沒有可用相機畫面"
+  ,"photoGuide.finalError.final_check_retry_later": "總 VLM 暫時忙碌，請稍後再試"
+  ,"photoGuide.finalError.vlm_unavailable": "VLM 尚未啟用或模型服務未就緒"
+  ,"photoGuide.finalError.unknown": "總驗證失敗，請再試一次"
+  ,"photoGuide.finalPreview": "查看 VLM 實際影像"
+  ,"photoGuide.finalPreviewHide": "隱藏 VLM 實際影像"
+  ,"photoGuide.finalPreviewAlt": "送給 VLM 的四格影像"
+  ,"photoGuide.finalPreviewHint": "這就是 VLM 實際收到的影像：完整畫面、接線區域、Arduino 放大圖、Sensor 放大圖；不包含前端 UI。"
+  ,"photoGuide.electricalStart": "開始 A0 電氣驗證"
+  ,"photoGuide.electricalRestart": "重新執行 A0 電氣驗證"
+  ,"photoGuide.electricalRunning": "A0 電氣驗證進行中…"
+  ,"photoGuide.electricalHint": "只在最後 A0 → AO 步驟執行；按下後才會讀取 Serial"
+  ,"photoGuide.electricalRunningHint": "正在讀取 A0；請遮住再移開光敏電阻"
+  ,"photoGuide.electricalComplete": "A0 光照響應已通過，可重新測試"
+  ,"photoGuide.electricalStatusLoading": "正在同步 Serial 電氣驗證狀態…"
+  ,"photoGuide.electricalUnavailable": "此啟動模式未提供 Serial 電氣驗證"
+  ,"photoGuide.electricalError.no_active_step": "接線引導尚未啟動"
+  ,"photoGuide.electricalError.electrical_not_applicable": "只有最後 A0 → AO 步驟可執行電氣驗證"
+  ,"photoGuide.electricalError.electrical_unavailable": "Serial 或驗證韌體尚未就緒"
+  ,"photoGuide.electricalError.electrical_not_started": "無法啟動電氣驗證"
+  ,"photoGuide.electricalError.unknown": "電氣驗證啟動失敗"
+  ,"verification.reason.collecting_a0_baseline": "正在讀取 A0 基準值"
+  ,"verification.reason.awaiting_light_change": "請遮住再移開光敏電阻"
+  ,"verification.reason.a0_response_confirmed": "A0 已偵測到光照響應"
+  ,"verification.reason.serial_unavailable": "UNO Q Serial 或驗證韌體尚未就緒"
+  ,"verification.reason.vlm_adjacent_pin": "VLM 判斷接頭偏向相鄰腳位"
+  ,"verification.reason.vlm_connector_missing": "VLM 未看到完整插入的接頭"
+  ,"verification.reason.vlm_both_endpoints_inserted": "VLM 判斷兩端接頭皆已插入"
+  ,"verification.reason.vlm_connectors_seated_pin_uncertain": "AI 看見兩端接頭已插入；腳位位置仍交由幾何確認"
+  ,"verification.reason.vlm_occluded": "接頭被遮住，VLM 暫停判斷"
+  ,"verification.reason.vlm_uncertain": "VLM 無法確認接頭插入狀態"
+  ,"verification.reason.awaiting_manual_vlm": "位置已可檢查；請按 AI 檢查接頭"
+  ,"verification.reason.vlm_checking": "VLM 正在檢查目前這一幀"
+  ,"verification.reason.vlm_unavailable": "VLM 本次檢查失敗，可按按鈕重試"
+  ,"verification.reason.awaiting_electrical_start": "尚未按下最終電氣驗證"
+  ,"verification.reason.awaiting_manual_geometry": "請按①檢查接線位置"
+  ,"verification.reason.collecting_geometry_samples": "正在收集 5 幀雙端位置證據"
+  ,"verification.reason.geometry_no_consensus": "5 幀結果未達 3 幀一致，請保持畫面穩定後重試"
+  ,"verification.reason.both_endpoints_near_targets": "UNO Q 與 Sensor 兩端線頭都靠近各自目標"
+  ,"verification.reason.waiting_for_board_endpoint": "Sensor 端已命中；等待 UNO Q 端線頭靠近目標"
+  ,"verification.reason.waiting_for_component_endpoint": "UNO Q 端已命中；等待 Sensor 端線頭靠近目標"
+  ,"verification.reason.component_endpoint_not_visible": "Sensor 目標腳位目前不在畫面內"
+  ,"verification.reason.component_endpoint_ambiguous": "Sensor 線頭位於相鄰腳位之間"
+  ,"verification.reason.component_endpoint_near_other_pin": "Sensor 線頭目前較靠近 {pin}"
+  ,"wiring.vlmSerial": "VLM + Serial"
+  ,"photoGuide.vlmVerdictPending": "\u63a5\u597d\u5169\u7aef\u4e26\u79fb\u958b\u624b\u5f8c\uff0c\u6309 VLM \u78ba\u8a8d\u63a5\u982d"
+  ,"photoGuide.vlmVerdictCorrect": "VLM \u5224\u65b7 UNO Q \u8207 Sensor \u5169\u7aef\u63a5\u982d\u5df2\u63d2\u5165\u76ee\u6a19\u4f4d\u7f6e"
+  ,"photoGuide.vlmVerdictWrong": "VLM \u5224\u65b7\u63a5\u982d\u53ef\u80fd\u9760\u8fd1\u932f\u8aa4\u8173\u4f4d\uff0c\u8acb\u91cd\u65b0\u62cd\u651d"
+  ,"photoGuide.vlmCompleteHint": "\u4e09\u689d\u63a5\u7dda\u5f15\u5c0e\u5df2\u7d50\u675f\uff1b\u6700\u5f8c AO \u6b65\u9a5f\u53ef\u4ee5\u7528 Serial \u78ba\u8a8d A0 \u6709\u5149\u7167\u8a0a\u865f\u8b8a\u5316"
+  ,"photoGuide.vlmAiComplete": "\u672c\u6b21 VLM \u63a5\u982d\u5224\u65b7\u5df2\u5b8c\u6210"
+  ,"verification.reason.geometry_skipped_for_vlm": "\u6b64\u5c0e\u5f15\u6a21\u5f0f\u7565\u904e\u5e7e\u4f55\u9a57\u8b49\uff0c\u6539\u7531 VLM \u5224\u65b7\u63a5\u982d"
+  ,"verification.reason.visual_focus_lost": "畫面失去板子或 Sensor 焦點，等待重新鎖定"
+  ,"verification.reason.visual_check_incomplete": "尚未重新完成 VLM 接頭檢查，分數維持 0"
+  ,"verification.reason.final_wiring_adjacent_pin": "部分接線已確認；仍有接頭疑似相鄰腳位"
+  ,"verification.reason.visual_partial_adjacent_pin": "疑似相鄰腳位，已給部分分數但尚未通過"
+  ,"verification.reason.electrical_pass_visual_partial": "電氣驗證通過；視覺接線部分確認，尚未通過"
+  ,"verification.trackingHold": "追蹤暫停，保留上次分數"
+  ,"photoGuide.colorCheck": "分端檢查線色／Pin 接近度"
+  ,"photoGuide.colorChecking": "線色檢查中…"
+  ,"photoGuide.colorSampleUno": "① 擷取 UNO Q 端"
+  ,"photoGuide.colorSampleController": "① 擷取 {controller} 端"
+  ,"photoGuide.colorSampleSensor": "② 擷取 Sensor 端"
+  ,"photoGuide.colorCheckingUno": "正在擷取 UNO Q 端…"
+  ,"photoGuide.colorCheckingController": "正在擷取 {controller} 端…"
+  ,"photoGuide.colorCheckingSensor": "正在擷取 Sensor 端…"
+  ,"photoGuide.colorHint": "兩端可分開取樣與保存；每次只需要鎖定當前的一端，第二端完成後會自動比對。"
+  ,"photoGuide.colorAwaitingOther": "已保存一端，請擷取另一端"
+  ,"photoGuide.colorNotSampled": "尚未擷取"
+  ,"photoGuide.colorMatch": "兩端線色一致，作為輔助證據"
+  ,"photoGuide.colorMismatch": "兩端線色不同，請確認是否為同一條線"
+  ,"photoGuide.colorPartial": "只辨識到一端線色；請移開手或讓線身露出"
+  ,"photoGuide.colorAmbiguous": "目標 Pin 附近有交錯或多條候選線，請移開其他線後再檢查"
+  ,"photoGuide.colorUnknown": "尚未辨識到足夠的彩色線身"
+  ,"photoGuide.colorUno": "UNO Q 端：{color}"
+  ,"photoGuide.colorController": "{controller} 端：{color}"
+  ,"photoGuide.colorSensor": "Sensor 端：{color}"
+  ,"photoGuide.colorProximityUno": "UNO Q Pin 接近"
+  ,"photoGuide.colorProximityController": "{controller} Pin 接近"
+  ,"photoGuide.colorProximitySensor": "Sensor Pin 接近"
+  ,"photoGuide.colorProximityConnection": "兩端較低值"
+  ,"photoGuide.colorLabDelta": "Lab 色差 ΔEab：{{value}}（越低越一致）"
+  ,"photoGuide.colorStatus.match": "線色一致"
+  ,"photoGuide.colorStatus.mismatch": "線色不同"
+  ,"photoGuide.colorStatus.partial": "單端可見"
+  ,"photoGuide.colorStatus.ambiguous": "交錯／多候選"
+  ,"photoGuide.colorStatus.unknown": "證據不足"
+  ,"photoGuide.colorName.red": "紅色"
+  ,"photoGuide.colorName.orange": "橘色"
+  ,"photoGuide.colorName.brown": "棕色"
+  ,"photoGuide.colorName.yellow": "黃色"
+  ,"photoGuide.colorName.green": "綠色"
+  ,"photoGuide.colorName.blue": "藍色"
+  ,"photoGuide.colorName.purple": "紫色"
+  ,"photoGuide.colorName.black": "黑色"
+  ,"photoGuide.colorName.white": "白色"
+  ,"photoGuide.colorName.unknown": "未辨識"
+  ,"photoGuide.colorError.no_active_step": "接線引導尚未啟動"
+  ,"photoGuide.colorError.component_pin_missing": "這一步沒有 Sensor 目標腳位"
+  ,"photoGuide.colorError.no_frame": "目前沒有可用相機畫面"
+  ,"photoGuide.colorError.board_not_ready": "尚未穩定鎖定 UNO Q"
+  ,"photoGuide.colorError.component_not_ready": "尚未穩定鎖定 Sensor"
+  ,"photoGuide.colorError.target_not_visible": "目前這一端的目標腳位不在畫面內"
+  ,"photoGuide.colorError.unknown": "線色檢查失敗，請再試一次"
+  ,"photoGuide.colorVlmCheck": "② 用 AI 確認線色"
+  ,"photoGuide.colorVlmQueued": "已擷取目前畫面，等待 AI 讀取線色"
+  ,"photoGuide.colorVlmChecking": "AI 正在比較兩端線色…"
+  ,"photoGuide.colorVlmHint": "按下後才會送出目前相機畫面給本機 VLM；約需數秒。"
+  ,"photoGuide.colorVlmMatch": "AI 判斷兩端可見線色一致，作為輔助證據"
+  ,"photoGuide.colorVlmMismatch": "AI 判斷兩端可見線色不同，請確認同一條線"
+  ,"photoGuide.colorVlmUnknown": "AI 無法從目前畫面確認兩端線色"
+  ,"photoGuide.colorVlmUno": "AI：UNO Q 端 {color}"
+  ,"photoGuide.colorVlmSensor": "Sensor 端 {color}"
+  ,"photoGuide.colorVlmStatus.match": "AI 線色一致"
+  ,"photoGuide.colorVlmStatus.mismatch": "AI 線色不同"
+  ,"photoGuide.colorVlmStatus.unknown": "AI 無法確認"
+  ,"photoGuide.colorVlmPreview": "查看 AI 實際影像"
+  ,"photoGuide.colorVlmPreviewHide": "隱藏 AI 實際影像"
+  ,"photoGuide.colorVlmPreviewAlt": "送給 AI 的線色比對影像"
+  ,"photoGuide.colorVlmPreviewHint": "AI 實際收到的是原始相機影像：完整畫面、接線區域、UNO Q 端與 Sensor 端放大圖；不包含前端 UI。"
+  ,"photoGuide.colorVlmError.no_active_step": "接線引導尚未啟動"
+  ,"photoGuide.colorVlmError.component_pin_missing": "這一步沒有 Sensor 目標腳位"
+  ,"photoGuide.colorVlmError.no_frame": "目前沒有可用相機畫面"
+  ,"photoGuide.colorVlmError.board_not_ready": "尚未穩定鎖定 UNO Q"
+  ,"photoGuide.colorVlmError.component_not_ready": "尚未穩定鎖定 Sensor"
+  ,"photoGuide.colorVlmError.target_not_visible": "UNO Q 或 Sensor 的目標腳位目前不在畫面內"
+  ,"photoGuide.colorVlmError.vlm_unavailable": "本機 VLM 尚未啟動或模型服務未就緒"
+  ,"photoGuide.colorVlmError.vlm_busy": "AI 正在處理另一個線色檢查，請稍後再試"
+  ,"photoGuide.colorVlmError.vlm_retry_later": "AI 暫時未接受這次檢查，請再按一次"
+  ,"photoGuide.colorVlmError.unknown": "AI 線色檢查失敗，請再試一次"
+  ,"photoGuide.colorPreview": "查看本機取樣影像"
+  ,"photoGuide.colorPreviewUno": "查看 UNO Q 取樣圖"
+  ,"photoGuide.colorPreviewController": "查看 {controller} 取樣圖"
+  ,"photoGuide.colorPreviewSensor": "查看 Sensor 取樣圖"
+  ,"photoGuide.colorPreviewHide": "隱藏本機取樣影像"
+  ,"photoGuide.colorPreviewAlt": "本機線色取樣影像"
+  ,"photoGuide.colorPreviewUnoAlt": "UNO Q 端本機線色取樣影像"
+  ,"photoGuide.colorPreviewControllerAlt": "{controller} 端本機線色取樣影像"
+  ,"photoGuide.colorPreviewSensorAlt": "Sensor 端本機線色取樣影像"
+  ,"photoGuide.colorPreviewHint": "每張圖只對應當下保存的一端。左側是原始相機畫面；右側琥珀色是本機取樣扇形，青色則是通過至少一個線色規則的像素。"
+  ,"smartGlasses.enter": "智慧眼鏡"
+  ,"smartGlasses.enterTooltip": "使用 R1 + Eye 彩色串流與零件辨識"
+  ,"smartGlasses.exit": "退出 Demo"
+  ,"smartGlasses.exitTooltip": "退出智慧眼鏡並恢復原鏡頭（Esc）"
+  ,"smartGlasses.fullscreenFallback": "瀏覽器拒絕全螢幕，已改用視窗填滿模式"
+  ,"opticalHud.enter": "透明 HUD"
+  ,"opticalHud.enterTooltip": "進入黑底光學 HUD，並先進行四點透視校正"
+  ,"opticalHud.exit": "退出 HUD"
+  ,"opticalHud.exitTooltip": "退出透明 HUD（Esc）"
+  ,"opticalHud.recalibrate": "重新校正"
+  ,"opticalHud.recalibrateTooltip": "保持全螢幕並重新執行四點校正"
+  ,"opticalHud.calibrationKicker": "R1 光學模式"
+  ,"opticalHud.calibrationTitle": "四點透視校正"
+  ,"opticalHud.calibrationInstruction": "固定眼鏡與頭位，依序點選你透過眼鏡看到的板子四個角。"
+  ,"opticalHud.boardLocked": "板卡已鎖定；請保持板子、相機與頭部不動"
+  ,"opticalHud.waitingForBoard": "等待板卡鎖定；請先讓整塊板子進入 webcam 畫面"
+  ,"opticalHud.calibrationStep": "{step}/4 · 點選{corner}"
+  ,"opticalHud.corner.topLeft": "左上角"
+  ,"opticalHud.corner.topRight": "右上角"
+  ,"opticalHud.corner.bottomRight": "右下角"
+  ,"opticalHud.corner.bottomLeft": "左下角"
+  ,"opticalHud.calibrationCanvasLabel": "透明 HUD 四點校正畫布"
+  ,"opticalHud.calibrationKeyboardHint": "滑鼠點選；方向鍵微調，Enter 確認，Backspace 上一步，R 重設"
+  ,"opticalHud.calibrationInvalid": "四點無法形成有效範圍；請返回上一步或重設後再試。"
+  ,"opticalHud.undo": "上一步"
+  ,"opticalHud.reset": "重設"
+  ,"opticalHud.fixedHead": "固定頭位模式 · 頭部、眼鏡、板子或相機移動後請重新校正"
+  ,"wiring.title": "零件接線引導"
+  ,"wiring.kicker": "PI 5 · 人工確認模式"
+  ,"wiring.selectComponent": "引導零件"
+  ,"wiring.detected": "已辨識"
+  ,"wiring.notDetected": "等待穩定辨識"
+  ,"wiring.prepare": "開始前確認"
+  ,"wiring.start": "開始逐線引導"
+  ,"wiring.startSignals": "開始訊號線引導（勿上電）"
+  ,"wiring.legacy": "原有光敏電阻引導"
+  ,"wiring.backToComponents": "返回零件選擇（先結束原引導）"
+  ,"wiring.waiting": "等待 Pi 與選定零件穩定鎖定，請讓目標腳位清楚入鏡。"
+  ,"wiring.paused": "目標定位暫停：請移開遮擋並保持板子與零件清楚可見。離線時無法確認下一步。"
+  ,"wiring.manualUnlocated": "Pin 定位暫停；仍可手動接線或使用 AI 全景檢查。"
+  ,"wiring.trackingHold": "辨識暫時不穩，接線標記已固定在最後可信位置；重新穩定鎖定後才能繼續。"
+  ,"wiring.manualNotice": "目標已定位；請自行核對接線。按下一步只記錄人工確認，不代表導通或電氣驗證。"
+  ,"wiring.confirmNext": "我已接好／下一步"
+  ,"wiring.end": "結束並查看總覽"
+  ,"wiring.summary": "接線總覽"
+  ,"wiring.componentPin": "零件腳位"
+  ,"wiring.piTarget": "Pi 5 目標／限制"
+  ,"wiring.status": "確認狀態"
+  ,"wiring.manuallyRecorded": "人工已確認"
+  ,"wiring.unconfirmed": "尚未確認"
+  ,"wiring.pending": "待規格確認"
+  ,"wiring.reviewRecorded": "逐線人工確認已記錄"
+  ,"wiring.reviewPartial": "引導已結束，仍有未確認接線"
+  ,"wiring.reviewPending": "訊號線紀錄 · 供電／背光仍待確認，禁止上電"
+  ,"wiring.reviewStep": "返回接線步驟"
+  ,"wiring.notVerified": "這是人工接線紀錄，不是視覺、導通或功能測試通過的證明。"
+  ,"wiring.viaDivider": "經分壓電路"
+  ,"wiring.dividerTitle": "ECHO 必要分壓保護"
+  ,"wiring.dividerNote": "● 是同一個接點；470Ω 的另一端接共地 GND。圖示不是相機對電阻值的驗證。"
+  ,"wiring.dividerHud": "ECHO → 330Ω → 節點 → GPIO18；節點 → 470Ω → GND。禁止直連。"
+  ,"wiring.profileMismatch": "目前控制板缺少此教學所需腳位，無法開始。"
+  ,"wiring.networkError": "無法同步後端引導狀態，請恢復連線後再試。"
+  ,"glasses.controls": "Eye 串流設定"
+  ,"glasses.resolution": "解析度"
+  ,"glasses.denoise": "降噪"
+  ,"glasses.denoise.original": "關閉"
+  ,"glasses.denoise.clean": "標準"
+  ,"glasses.denoise.strong": "強"
+  ,"glasses.apply": "套用"
+  ,"glasses.actual": "實際"
+  ,"glasses.capture": "接收"
+  ,"glasses.processing": "降噪處理"
+  ,"glasses.display": "顯示"
+  ,"glasses.state.starting": "啟動 Eye…"
+  ,"glasses.state.switching": "套用設定…"
+  ,"glasses.state.restoring": "恢復原鏡頭…"
+  ,"glasses.state.running": "串流中"
+  ,"glasses.state.error": "無法取得串流"
+  ,"glasses.state.idle": "已停止"
+  ,"glasses.state.stopped": "已停止"
+  ,"glasses.noCamera": "尚未取得 Eye 影像；接好 USB-C 後按「套用」重試。"
+  ,"glasses.waiting": "等待 Eye 即時影像…"
+  ,"glasses.restoreFailed": "原鏡頭恢復失敗："
+  ,"glasses.retryRestore": "重試恢復鏡頭"
+  ,"glasses.state.stopping": "恢復原鏡頭…"
+  ,"camera.bodyPinsLocating": "腳位定位中"
+  ,"camera.bodyClipped": "請完整入鏡"
+  ,"glasses.inference.cuda": "CUDA"
+  ,"glasses.inference.cpu": "CPU"
+  ,"glasses.inference.mixed": "混合"
+  ,"glasses.inference.notReady": "未就緒"
+  ,"glasses.inference.other": "其他後端"
+  ,"glasses.inferenceRate": "推論"
+  ,"glasses.preprocessing": "前處理"
+  ,"glasses.denoise.pending": "初始化中"
+  ,"componentGuide.ultrasonic": "HC-SR04"
+  ,"componentGuide.screen": "MRD-TF240"
+  ,"componentGuide.compactTarget": "{name} · 第 {number} 支 · {pin}"
+  ,"componentGuide.ordinal": "第 {number} 支"
+  ,"componentGuide.countFromPin": "從 {pin} 端開始數"
+}

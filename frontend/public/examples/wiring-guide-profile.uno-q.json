@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "kind": "boardvision-wiring-guide",
+  "id": "photoresistor-uno-q-analog",
+  "board_id": "arduino-uno-q",
+  "name": {
+    "zh-TW": "UNO Q 類比光敏電阻",
+    "en": "UNO Q analog photoresistor"
+  },
+  "controller_label": {
+    "zh-TW": "UNO Q",
+    "en": "UNO Q"
+  },
+  "component_id": "photoresistor-module",
+  "component_label": {
+    "zh-TW": "Sensor",
+    "en": "Sensor"
+  },
+  "intro": {
+    "zh-TW": "逐步完成 UNO Q 與光敏模組的三條接線。",
+    "en": "Connect the UNO Q to the light sensor in three steps."
+  },
+  "safety": {
+    "zh-TW": "請使用 3.3V，不要將 5V 接到 A0。",
+    "en": "Use 3.3V. Never feed 5V into A0."
+  },
+  "complete_hint": {
+    "zh-TW": "完成後可執行 Serial A0 光照響應驗證。",
+    "en": "Run the Serial A0 light-response check when complete."
+  },
+  "steps": [
+    {
+      "id": "photoresistor-vcc",
+      "board_pin_id": "3V3",
+      "board_label": "3.3V",
+      "component_pin_id": "VCC",
+      "wire_class": "power",
+      "instruction": { "zh-TW": "將 UNO Q 3.3V 接到 Sensor VCC", "en": "Connect UNO Q 3.3V to Sensor VCC" },
+      "hint": { "zh-TW": "只高亮目前的 3V3 與 VCC。", "en": "Only the current 3V3 and VCC targets are highlighted." },
+      "electrical_verification": "none"
+    },
+    {
+      "id": "photoresistor-gnd",
+      "board_pin_id": "GND_P1",
+      "board_label": "GND",
+      "component_pin_id": "GND",
+      "wire_class": "ground",
+      "instruction": { "zh-TW": "將 UNO Q GND 接到 Sensor GND", "en": "Connect UNO Q GND to Sensor GND" },
+      "hint": { "zh-TW": "使用電源排的第一個 GND。", "en": "Use the first GND on the power header." },
+      "electrical_verification": "none"
+    },
+    {
+      "id": "photoresistor-ao",
+      "board_pin_id": "A0",
+      "board_label": "A0",
+      "component_pin_id": "AO",
+      "wire_class": "signal",
+      "instruction": { "zh-TW": "將 UNO Q A0 接到 Sensor AO", "en": "Connect UNO Q A0 to Sensor AO" },
+      "hint": { "zh-TW": "A0 不可輸入高於 3.3V。", "en": "Never apply more than 3.3V to A0." },
+      "electrical_verification": "serial-a0"
+    }
+  ]
+}

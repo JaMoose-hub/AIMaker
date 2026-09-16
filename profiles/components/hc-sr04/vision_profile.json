@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "id": "hc-sr04",
+  "canonical_orientation": "transducers facing camera; four header pins pointing down",
+  "corner_order": [
+    "pcb_TL",
+    "pcb_TR",
+    "pcb_BR",
+    "pcb_BL"
+  ],
+  "keypoint_count": 4,
+  "reference_pose": {
+    "image": "webcam-pcb-reference.jpg",
+    "corners_px": [[1285,635],[858,606],[868,420],[1297,446]],
+    "rectified_size": [480,210],
+    "feature_region": "blue_pcb",
+    "descriptor_space": "native",
+    "note": "Visually selected PCB corners from a separate capture; display geometry reference, not electrical verification."
+  },
+  "pins": [
+    {
+      "id": "VCC",
+      "x_norm": 0.41799,
+      "y_norm": 1.00079
+    },
+    {
+      "id": "TRIG",
+      "x_norm": 0.47185,
+      "y_norm": 0.99524
+    },
+    {
+      "id": "ECHO",
+      "x_norm": 0.52859,
+      "y_norm": 0.99075
+    },
+    {
+      "id": "GND",
+      "x_norm": 0.58831,
+      "y_norm": 1.00026
+    }
+  ]
+}

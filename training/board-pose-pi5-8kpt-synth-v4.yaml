@@ -1,0 +1,20 @@
+# Train-only synthetic expansion of the reviewed Pi 5 8-keypoint dataset.
+# Validation and test splits are copied unchanged from board-pose-pi5-8kpt.
+path: ../datasets/board-pose-pi5-8kpt-synth-v4
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [8, 3]
+names:
+  0: raspberry-pi-5
+kpt_names:
+  0:
+    - board_TL
+    - board_TR
+    - board_BR
+    - board_BL
+    - J8_P1
+    - J8_P2
+    - J8_P40
+    - J8_P39

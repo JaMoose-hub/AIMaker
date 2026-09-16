@@ -1,0 +1,17 @@
+# HC-SR04 production pose dataset derived from reviewed 8-point labels.
+# YOLO learns only the four semantic PCB corners. VCC/TRIG/ECHO/GND are
+# projected from profiles/components/hc-sr04/vision_profile.json.
+path: ../datasets/hc-sr04-corner-pose
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [4, 3]
+names:
+  0: hc-sr04
+kpt_names:
+  0:
+    - pcb_TL
+    - pcb_TR
+    - pcb_BR
+    - pcb_BL

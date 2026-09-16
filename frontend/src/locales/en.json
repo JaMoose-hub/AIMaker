@@ -1,0 +1,649 @@
+{
+  "pi.title": "Pi deployment",
+  "pi.kicker": "PYTHON · REMOTE RUN",
+  "pi.connected": "Connected",
+  "pi.disconnected": "Disconnected",
+  "pi.connect": "Connect Pi",
+  "pi.connecting": "Connecting…",
+  "pi.intro": "Light sensor example · Edit, deploy, and read GPIO HIGH/LOW below.",
+  "pi.editor": "Python code",
+  "pi.example": "Load light sensor example",
+  "pi.saved": "Draft saved automatically",
+  "pi.saveFailed": "Draft could not be saved in this browser",
+  "pi.indent": "Tab indent · Shift+Tab exit",
+  "pi.deploy": "Deploy & run",
+  "pi.deploying": "Working…",
+  "pi.deploymentLabel": "Deployment",
+  "pi.programLabel": "Program",
+  "pi.deployment.idle": "Not deployed",
+  "pi.deployment.preparing": "Preparing",
+  "pi.deployment.uploading": "Uploading",
+  "pi.deployment.checking": "Checking code & environment",
+  "pi.deployment.starting": "Starting",
+  "pi.deployment.succeeded": "Uploaded and started",
+  "pi.deployment.failed": "Deployment failed",
+  "pi.program.unknown": "Unknown",
+  "pi.program.not_deployed": "Not installed",
+  "pi.program.starting": "Starting",
+  "pi.program.running": "Running",
+  "pi.program.stopping": "Stopping",
+  "pi.program.stopped": "Stopped",
+  "pi.program.exited": "Exited",
+  "pi.program.failed": "Runtime error",
+  "pi.output": "Program output",
+  "pi.outputLimit": "Updates every second · Last 1,000 lines",
+  "pi.noOutput": "Program output will appear here after deployment.",
+  "pi.networkError": "BoardVision backend is unreachable. Status resumes when it returns.",
+  "pi.actionFailed": "Operation failed. Reconnect and try again.",
+  "pi.rebootHint": "Runs after the laptop disconnects. Deploy again after a Pi reboot. HIGH/LOW is not light intensity.",
+  "runtime.toolbarLabel": "Runtime toolbar",
+  "runtime.controllerLabel": "Controller",
+  "componentVision.poseInvalid": "{component} · detected {confidence}% · 8-point geometry rejected",
+  "runtime.controllerAria": "Select active controller",
+  "runtime.languageLabel": "Language",
+  "runtime.languageAria": "Select interface language",
+  "runtime.switching": "Switching…",
+  "runtime.switchConfirm": "The wiring guide is still active. Switching controllers clears the current step, score, and highlights. Continue?",
+  "runtime.model8pt": "8-point 3D",
+  "runtime.model4pt": "4-point Pose",
+  "runtime.model4ptFallback": "4-point fallback",
+  "runtime.modelReadyTooltip": "The active board pose model is loaded",
+  "runtime.modelFallbackTooltip": "The 8-point model is not available yet; the validated four-point model is active",
+  "runtime.error.controller_not_found": "Controller not found: {board_id}",
+  "runtime.error.controller_model_load_failed": "The pose model for {board_id} failed to load; the previous controller is still active",
+  "runtime.error.controller_switch_commit_failed": "The switch failed and the previous controller was restored",
+  "runtime.error.controller_id_required": "Select a controller",
+  "runtime.error.network": "Unable to switch controllers; check the backend connection",
+  "status.resolutionTooltip": "Actual source-frame resolution delivered by the camera",
+  "status.geometryTooltip": "Source-frame geometry; target physical framing is 8–10 px/mm",
+  "photoGuide.kicker": "Wiring guide",
+  "photoGuide.title": "Photoresistor module",
+  "photoGuide.panelLabel": "Photoresistor wiring guide panel",
+  "photoGuide.show": "Show wiring guide",
+  "photoGuide.hide": "Hide wiring guide",
+  "photoGuide.profileLabel": "Wiring Profile",
+  "photoGuide.profileBuiltin": "Built-in · {name}",
+  "photoGuide.profileNoBuiltin": "No built-in Profile",
+  "photoGuide.profileImported": "Imported · {name}",
+  "photoGuide.profileImport": "Import Profile",
+  "photoGuide.profileExample": "Download example",
+  "photoGuide.profileDelete": "Delete import",
+  "photoGuide.profileTooLarge": "The Profile file must be 256 KB or smaller",
+  "photoGuide.profileInvalid": "Invalid wiring Profile",
+  "photoGuide.profileError.field_object": "{field} must be an object",
+  "photoGuide.profileError.field_string": "{field} must contain 1–{max} characters",
+  "photoGuide.profileError.i18n_missing": "{field} must provide zh-TW or en",
+  "photoGuide.profileError.schema_unsupported": "Only boardvision-wiring-guide schema_version 1.0 is supported",
+  "photoGuide.profileError.board_mismatch": "This Profile belongs to {board_id}; the active controller is {active_board_id}",
+  "photoGuide.profileError.component_unsupported": "Only photoresistor-module component Profiles are currently supported",
+  "photoGuide.profileError.steps_range": "steps must contain 1–12 entries",
+  "photoGuide.profileError.step_id_invalid": "steps[{index}].id must be a unique lowercase identifier",
+  "photoGuide.profileError.pin_not_found": "Pin {pin_id} does not exist in the {board_id} Profile",
+  "photoGuide.profileError.component_pin_unsupported": "The component Pin in steps[{index}] must be VCC, GND, or AO",
+  "photoGuide.profileError.wire_class_unsupported": "The wire class in steps[{index}] is unsupported",
+  "photoGuide.profileError.electrical_unsupported": "steps[{index}] does not support electrical verification {value}",
+  "photoGuide.profileError.serial_target_invalid": "serial-a0 is valid only for an A0 → AO step",
+  "photoGuide.profileMissing": "No wiring Profile is available for this controller. Import JSON that uses Pin IDs from the active board Profile.",
+  "photoGuide.piDigitalOnly": "GPIO17 on Pi 5 can only read HIGH/LOW. The UNO Q Serial A0 check is not run; add an external ADC to read light intensity.",
+  "photoGuide.intro": "Connect the UNO Q to the light sensor in three steps. Only the current target pin stays highlighted.",
+  "photoGuide.routeLabel": "Photoresistor wiring order",
+  "photoGuide.safety": "Use 3.3V. Never feed 5V or 5.5V into A0.",
+  "photoGuide.start": "Start wiring guide",
+  "photoGuide.loading": "Switching…",
+  "photoGuide.progress": "{current} / {total}",
+  "photoGuide.step.vcc": "Connect UNO Q 3.3V to Sensor VCC",
+  "photoGuide.step.vccHint": "Only the UNO Q 3V3 pin is highlighted; connect the sensor end to VCC.",
+  "photoGuide.step.gnd": "Connect UNO Q GND to Sensor GND",
+  "photoGuide.step.gndHint": "Use the first power-header GND pin next to 5V.",
+  "photoGuide.colorEquivalentGround": "UNO endpoint uses adjacent {pin}; both GND pins are electrically equivalent.",
+  "photoGuide.connectorCheck": "② Check connector with VLM",
+  "photoGuide.connectorChecking": "② VLM is checking connectors…",
+  "photoGuide.connectorQueued": "Current image captured; waiting for the VLM connector check.",
+  "photoGuide.connectorHint": "For overlapping ribbon wires, check whether black connectors are seated on the target pins; it does not rely on wire colour.",
+  "photoGuide.connectorPass": "VLM confirms both connectors appear seated on their target positions.",
+  "photoGuide.connectorAdjacent": "VLM sees connectors, but one may be on an adjacent pin; inspect the image.",
+  "photoGuide.connectorUncertain": "VLM could not clearly see one connector; adjust the camera or remove occlusion and retry.",
+  "photoGuide.connectorPreview": "View VLM input image",
+  "photoGuide.connectorPreviewHide": "Hide VLM input image",
+  "photoGuide.connectorPreviewAlt": "Full camera and enlarged connector views sent to the VLM",
+  "photoGuide.connectorPreviewHint": "Left to right: full view, connection context, UNO target, Sensor target. No UI is included.",
+  "photoGuide.connectorError.vlm_busy": "VLM is already checking this step; please wait.",
+  "photoGuide.connectorError.vlm_unavailable": "VLM is currently unavailable; retry shortly.",
+  "photoGuide.connectorError.vlm_retry_later": "VLM is not ready yet; retry shortly.",
+  "photoGuide.connectorError.board_not_ready": "UNO Q is not locked; keep the full board in view.",
+  "photoGuide.connectorError.component_not_ready": "Sensor is not locked; keep the full Sensor in view.",
+  "photoGuide.connectorError.target_not_visible": "The target pin is not visible; adjust the camera.",
+  "photoGuide.connectorError.unknown": "VLM connector check failed; retry it.",
+  "photoGuide.step.ao": "Connect UNO Q A0 to Sensor AO",
+  "photoGuide.step.aoHint": "AO is analog. Never apply more than 3.3V to A0.",
+  "photoGuide.verdict.pending": "Connect the wire, move your hand away, then press ① Check wiring position",
+  "photoGuide.verdict.correct": "The UNO Q and Sensor endpoints are each near their target pins",
+  "photoGuide.verdict.wrong_pin": "The wire endpoint is currently near another pin",
+  "photoGuide.verdict.uncertain": "Position is uncertain; adjust the wire or camera angle",
+  "photoGuide.verdict.visual_candidate": "A wiring change is visible; press AI connector check",
+  "photoGuide.actualPin": "Currently detected: {pin}",
+  "photoGuide.previous": "Previous",
+  "photoGuide.next": "Next",
+  "photoGuide.cancel": "Cancel",
+  "photoGuide.finish": "Finish wiring",
+  "photoGuide.complete": "Three-step wiring guide complete",
+  "photoGuide.completeTitle": "Wiring guide complete",
+  "photoGuide.completeHint": "The three wiring steps are complete. Use the A0 light-response electrical check in the AO step as the functional proof.",
+  "photoGuide.restart": "Start again",
+  "photoGuide.error": "Unable to start the guide; check the backend connection",
+  "photoGuide.startError.unknown_pin": "Pin {pin_id} is not available on the active controller",
+  "photoGuide.startError.physical_gate_unready": "The image has not reached the physical accuracy gate required for automatic guidance",
+  "photoGuide.startError.unknown": "Unable to start this wiring step",
+  "photoGuide.videoTarget": "Wiring target: {pin}",
+  "componentGuide.pinOrdinal": "Pin {number} · {pin}",
+  "componentGuide.countFromAo": "Count from the AO side",
+  "boardGuide.pinOrdinal": "{header} pin {number} · {pin}",
+  "boardGuide.header.analog": "Bottom row",
+  "boardGuide.header.digital": "Top row",
+  "boardGuide.countFromBoot": "Count from the BOOT end",
+  "boardGuide.countFromScl": "Count from the SCL end",
+  "boardGuide.countFromFirst": "Count from pin 1 of this header",
+  "boardGuide.pi.inner": "Inner row (board centre)",
+  "boardGuide.pi.outer": "Outer row (board edge)",
+  "boardGuide.pi.ordinal": "Position {number}",
+  "boardGuide.pi.target": "{row} · Position {number}",
+  "boardGuide.pi.countFrom": "Count from the end away from USB-A / Ethernet",
+  "boardGuide.pi.instruction": "Start at the end away from USB-A / Ethernet. Count along this one row to position {number}.",
+  "boardGuide.pi.reference": "{signal} · Physical Pin {physical}",
+  "boardGuide.pi.diagram": "Single row: start at 1 → 20 pins per row",
+  "verification.overall": "Overall confidence",
+  "verification.scoreCap": "Current verification level is capped at {cap}",
+  "verification.layer.geometry": "Dual-end geometry",
+  "verification.layer.visual": "Insertion appearance",
+  "verification.layer.electrical": "Electrical",
+  "verification.verdict.unverified": "Waiting for evidence",
+  "verification.verdict.position_matched": "The UNO Q and Sensor endpoint positions match",
+  "verification.verdict.visual_verified": "Visual verification passed",
+  "verification.verdict.verified": "Visual and electrical checks passed",
+  "verification.verdict.wrong_pin": "Likely connected to the wrong pin",
+  "verification.verdict.not_inserted": "Connector does not look inserted",
+  "verification.verdict.electrical_mismatch": "Electrical response does not match",
+  "verification.verdict.evidence_conflict": "Visual and electrical evidence conflict",
+  "verification.verdict.evidence_incomplete": "Partial verification passed; awaiting more evidence",
+  "verification.verdict.uncertain": "Evidence is currently insufficient",
+  "verification.reason.awaiting_geometry": "Waiting to see the wire endpoint",
+  "verification.reason.awaiting_visual_insertion": "Press AI connector check for one VLM decision",
+  "verification.reason.awaiting_electrical_test": "Waiting for a functional test",
+  "verification.reason.electrical_not_configured": "Serial is not enabled",
+  "verification.reason.electrical_not_applicable": "No electrical check on this step; start it manually on the final A0 to AO step",
+  "verification.reason.target_endpoint_near_pin": "Endpoint is near the target pin",
+  "verification.reason.both_endpoints_look_inserted": "Both endpoints changed after insertion",
+  "verification.reason.electrical_not_available": "Electrical verification is not enabled",
+  "verification.reason.electrical_not_confirmed": "Electrical verification is not complete",
+  "verification.reason.all_layers_passed": "All three evidence layers passed",
+  "verification.reason.wrong_pin": "Another pin was detected",
+  "verification.reason.hand_occlusion": "Hand occlusion; verification paused",
+  "verification.reason.scene_moving": "The scene is still moving",
+  "verification.reason.board_not_tracked": "UNO Q is not locked",
+  "verification.reason.component_not_tracked": "Sensor is not locked",
+  "verification.reason.scale_unready": "Below the minimum recognition scale; move the board closer",
+  "verification.scaleDetails": "current {pitch}px / minimum {minPitch}px",
+  "verification.reason.baseline_captured": "Pre-connection baseline captured",
+  "verification.reason.baseline_rebased": "Position changed; baseline recaptured",
+  "verification.reason.awaiting_stability": "Waiting for a stable image",
+  "verification.reason.waiting_for_both_endpoints": "Waiting for both connectors",
+  "verification.reason.board_endpoint_only": "Only the UNO Q endpoint changed",
+  "verification.reason.component_endpoint_only": "Only the Sensor endpoint changed",
+  "verification.reason.visual_check_unavailable": "Visual check is not ready",
+  "verification.reason.waiting_for_target_endpoint": "Waiting for endpoint near target",
+  "verification.reason.attachment_unverified": "Insertion is not yet confirmed",
+  "verification.reason.endpoint_ambiguous": "Endpoint is between adjacent pins",
+  "verification.reason.endpoint_near_other_pin": "Endpoint currently appears closer to {pin}",
+  "verification.reason.visual_pass_geometry_incomplete": "AI appearance check passed; waiting for pin geometry",
+  "verification.reason.electrical_pass_visual_incomplete": "Electrical check passed; waiting for camera evidence",
+  "verification.reason.stale_evidence": "Evidence expired; checking again",
+  "verification.reason.awaiting_evidence": "Waiting for new verification evidence",
+  "app.title": "Board Vision",
+  "app.subtitle": "AI Maker Runtime · Live Board Vision",
+
+  "backend.down": "Backend offline",
+  "backend.retrying": "retrying automatically…",
+  "hint.placeBoard": "Place the {board} in view",
+  "hint.placeBoardGeneric": "Place the board in view",
+
+  "status.searching": "SEARCHING",
+  "status.locked": "LOCKED",
+  "status.stale": "STALE",
+  "status.confidence": "Confidence",
+  "status.connected": "Connected",
+  "status.disconnected": "Disconnected",
+  "status.rate": "Detections",
+  "status.resolution": "Resolution",
+  "status.wires": "{count} wires detected",
+  "status.pitch": "Pitch",
+  "status.poseQuality": "Pose evidence",
+  "status.poseQualityTooltip": "Feature inliers / mean reprojection error; separate from aggregate confidence",
+  "status.wireUncertain": "{count} wires uncertain",
+  "status.wireScalePaused": "Wiring paused: image scale is too low",
+  "status.guidance": "Guide {pin}: {status}",
+  "status.accuracyWarning": "Physical gate not ready",
+
+  "filter.all": "All",
+  "filter.pwm": "PWM",
+  "filter.i2c": "I2C",
+  "filter.spi": "SPI",
+  "filter.uart": "UART",
+  "filter.adc": "Analog ADC",
+  "filter.power": "Power",
+  "filter.interrupt": "Interrupt",
+  "legend.count": "{count} pins",
+
+  "query.placeholder": "Ask about pins, e.g. \"Which pin can drive a servo?\"",
+  "query.send": "Send",
+  "query.busy": "Asking…",
+  "query.clear": "Clear",
+  "query.failed": "Query failed — check the backend connection",
+
+  "card.title": "Board Info",
+  "card.loading": "Loading board profile…",
+  "card.hint": "Click a pin marker on the video to inspect it",
+  "card.pins": "Pin count",
+  "card.formFactor": "Form factor",
+  "card.logic": "Logic voltage",
+  "card.mcu": "MCU",
+  "card.mpu": "MPU",
+  "card.capabilities": "Capabilities",
+  "card.electrical": "Electrical",
+  "card.voltage": "Voltage",
+  "card.maxCurrent": "Max current",
+  "card.fiveVoltTolerant": "5V tolerant",
+  "card.fiveVoltTolerantTrue": "5V tolerant (digital input only)",
+  "card.yes": "Yes",
+  "card.no": "No",
+  "card.usage": "Common uses",
+  "card.not5vTolerant": "Pins are not 5V tolerant — do not feed 5V signals",
+
+  "cap.digital_io": "GPIO",
+  "cap.pwm": "PWM",
+  "cap.adc": "ADC",
+  "cap.i2c": "I2C",
+  "cap.spi": "SPI",
+  "cap.uart": "UART",
+  "cap.interrupt": "Interrupt",
+  "cap.power": "Power",
+  "cap.boot": "Boot",
+  "cap.reset": "Reset",
+  "cap.aref": "AREF",
+  "cap.nc": "NC",
+
+  "calibrate.triggerLabel": "Add/Calibrate board type",
+  "calibrate.triggerTooltip": "Register or update this model's recognition reference (one-time, not a routine action)",
+  "calibrate.title": "Calibrate board type",
+  "calibrate.instruction": "Align the board's edge to the dashed guide: USB-C on the left, component side facing the camera",
+  "calibrate.instructionTracked": "Board position and angle detected automatically — hold it steady, then capture",
+  "calibrate.hint": "Make sure lighting is even and the image is in focus before capturing",
+  "calibrate.scaleEstimate": "Estimated pin pitch: {pitch}px ({pxPerMm} px/mm)",
+  "calibrate.scaleTooSmall": "Scale is too small: pin pitch is about {pitch}px ({pxPerMm} px/mm). Move the board closer.",
+  "calibrate.scaleDiagnostics": "Current pin pitch is {pitch}px ({pxPerMm} px/mm); move closer or use a narrower field of view.",
+  "calibrate.capture": "Capture & register",
+  "calibrate.capturing": "Processing…",
+  "calibrate.cancel": "Cancel",
+  "calibrate.retry": "Retake",
+  "calibrate.networkError": "Network request failed — check the backend connection and try again",
+  "calibrate.successFallback": "Calibration complete",
+  "calibrate.errorFallback": "Calibration failed — realign the board and try again",
+  "calibrate.error.corners_invalid": "The calibration corners are invalid; realign the board edges",
+  "calibrate.error.no_frame": "No camera frame is available",
+  "calibrate.error.board_not_found": "The active board profile was not found",
+  "calibrate.error.insufficient_scale": "The board is too small in the image; move it closer to the camera",
+  "calibrate.error.insufficient_features": "Too few features were found; improve lighting and focus and keep the full board visible",
+  "calibrate.error.unknown": "Calibration failed — realign the board and try again",
+
+  "camera.triggerLabel": "Switch camera",
+  "camera.triggerTooltip": "Choose which camera feed to use",
+  "camera.title": "Select camera",
+  "camera.close": "Close",
+  "camera.loading": "Scanning cameras…",
+  "camera.empty": "No cameras found",
+  "camera.current": "Current",
+  "camera.unavailable": "Unable to read frame",
+  "camera.useThis": "Use this",
+  "camera.switching": "Switching…",
+  "camera.retry": "Retry",
+  "camera.networkError": "Network request failed — check the backend connection and try again",
+  "camera.selectSuccessFallback": "Camera switched",
+  "camera.selectErrorFallback": "Failed to switch camera — please try again",
+  "camera.selectError.invalid_index": "The camera index is outside the available range",
+  "camera.selectError.open_failed": "The camera could not be opened; check that it is connected and not in use by another app",
+  "camera.selectError.same_as_current": "This camera is already active",
+  "camera.selectError.not_applicable": "This launch mode has no physical camera to switch",
+  "camera.selectError.unknown": "Failed to switch camera — please try again",
+  "camera.thumbnailAlt": "Camera {index} thumbnail",
+  "camera.mirrorLabel": "Mirror",
+  "camera.realtime": "Live tracking (trial)",
+  "camera.realtimeWaiting": "Waiting for frame",
+  "camera.trackingPartial": "Partial tracking; only image-supported pins shown",
+  "camera.trackingConfirming": "Confirming pose; pins paused",
+  "camera.trackingObstructed": "Obstructed / insufficient features",
+  "camera.trackingOrientationPending": "Component found; pin direction unconfirmed",
+  "camera.bodyFound": "Recognized",
+  "camera.bodySearching": "Searching",
+  "camera.bodyPinsPending": "Body recognized · pins pending",
+  "camera.realtimeTooltip": "Pi 5 + HC-SR04 + TFT synchronized tracking with the original blue outlines and GPIO/pin markers. Insufficient pose evidence hides pins; the overlay does not verify wiring. This FPS counts displayed frames; the bottom bar shows pin-model rate. Click again for the original mode.",
+  "camera.mirrorTooltip": "Toggle mirrored camera view; pins and wires flip with it",
+  "camera.mirrorControlsLabel": "Image mirror direction",
+  "camera.mirrorHorizontalLabel": "Left/right",
+  "camera.mirrorHorizontalTooltip": "Toggle left/right mirror; pins and wires flip with it",
+  "camera.mirrorVerticalLabel": "Up/down",
+  "camera.mirrorVerticalTooltip": "Toggle up/down mirror; pins and wires flip with it",
+  "camera.pinCalibrationLabel": "Calibrate direction",
+  "camera.pinCalibrationTooltip": "Nudge Arduino GPIO dots onto the physical hole centers",
+  "camera.pinCalibrationControlsLabel": "Board pin position calibration",
+  "camera.pinCalibrationHint": "Moves 1px per click",
+  "camera.pinCalibrationUp": "Move up",
+  "camera.pinCalibrationDown": "Move down",
+  "camera.pinCalibrationLeft": "Move left",
+  "camera.pinCalibrationRight": "Move right",
+  "camera.pinCalibrationReset": "Reset calibration"
+  ,"wiring.title": "Wiring candidates"
+  ,"wiring.geometricOnly": "Geometry only"
+  ,"wiring.guidance": "Guide"
+  ,"wiring.reason.board_not_tracked": "Board pose is not locked"
+  ,"wiring.reason.attachment_unverified": "Insertion cannot be confirmed"
+  ,"wiring.reason.endpoint_ambiguous": "Endpoint is between pins"
+  ,"wiring.reason.multiple_new_endpoints": "Multiple new endpoints appeared"
+  ,"wiring.reason.wire_path_ambiguous": "Wire path has a junction; connection is uncertain"
+  ,"wiring.reason.physical_gate_unready": "Physical accuracy gate is not ready for automatic verdicts"
+  ,"wiring.reason.scale_unready": "Live image scale is too low; wiring verdicts are paused"
+  ,"wiring.scalePaused": "Image scale is too low; wiring verdicts are paused"
+  ,"wiring.empty": "Waiting for the camera to see a wiring candidate"
+  ,"wiring.reason.awaiting_confirmation": "Waiting for consecutive-frame confirmation"
+  ,"wiring.attachment.inserted": "Inserted"
+  ,"wiring.attachment.resting": "Resting over pin"
+  ,"wiring.attachment.unknown": "Insertion unknown"
+  ,"photoGuide.a0Challenge": "Start the final electrical check below, then cover and uncover the photoresistor so A0 changes clearly."
+  ,"photoGuide.geometryCheck": "① Check wiring position"
+  ,"photoGuide.geometryRecheck": "① Check wiring position again"
+  ,"photoGuide.geometryRunning": "① Geometry check running…"
+  ,"photoGuide.geometryHint": "Collects 5 frames; the UNO Q and Sensor ends may come from separate wire fragments"
+  ,"photoGuide.geometryCollecting": "Collecting frame {current}/{total}; move your hand away and keep both boards still"
+  ,"photoGuide.geometryComplete": "At least 3/5 endpoint samples agree; the result is frozen"
+  ,"photoGuide.geometryReview": "The geometry result is frozen but did not pass; adjust the wiring and check again"
+  ,"photoGuide.geometryNotReady": "Waiting for the current step verification state"
+  ,"photoGuide.geometryError.no_active_step": "The wiring guide is not active"
+  ,"photoGuide.geometryError.geometry_unavailable": "Wire endpoint geometry is not enabled"
+  ,"photoGuide.geometryError.geometry_busy": "Geometry samples are already being collected"
+  ,"photoGuide.geometryError.board_not_ready": "UNO Q is not stably locked"
+  ,"photoGuide.geometryError.component_not_ready": "Sensor is not stably locked"
+  ,"photoGuide.geometryError.target_not_visible": "The Sensor target pin is not visible"
+  ,"photoGuide.geometryError.geometry_not_started": "Could not start the geometry check"
+  ,"photoGuide.geometryError.unknown": "The geometry check failed; try again"
+  ,"photoGuide.details": "Details"
+  ,"photoGuide.aiCheck": "② AI connector check (capture once)"
+  ,"photoGuide.aiRecheck": "② Run AI connector check again"
+  ,"photoGuide.aiQueued": "This frame was captured and is waiting for the VLM"
+  ,"photoGuide.aiChecking": "VLM is checking both connectors…"
+  ,"photoGuide.aiComplete": "This VLM check is complete; dual-end geometry still owns pin identity"
+  ,"photoGuide.aiHint": "Connect the wire, move your hand away, then press once; only this button calls the VLM"
+  ,"photoGuide.aiError.no_active_step": "The wiring guide is not active"
+  ,"photoGuide.aiError.vlm_unavailable": "The VLM or model service is not available"
+  ,"photoGuide.aiError.vlm_busy": "A VLM check is already running for this step"
+  ,"photoGuide.aiError.no_frame": "The camera frame is not ready"
+  ,"photoGuide.aiError.board_not_ready": "UNO Q is not stably locked"
+  ,"photoGuide.aiError.component_not_ready": "Sensor is not stably locked"
+  ,"photoGuide.aiError.component_pin_missing": "This step has no Sensor target pin"
+  ,"photoGuide.aiError.target_not_visible": "The UNO Q or Sensor target is outside the frame"
+  ,"photoGuide.aiError.vlm_retry_later": "The VLM is temporarily busy; press again shortly"
+  ,"photoGuide.aiError.unknown": "The VLM check failed; try again"
+  ,"photoGuide.finalStart": "② Run final wiring verification"
+  ,"photoGuide.finalRecheck": "② Run final verification again"
+  ,"photoGuide.finalQueued": "The complete frame was captured; waiting for VLM"
+  ,"photoGuide.finalChecking": "Final VLM is checking all three wires…"
+  ,"photoGuide.finalComplete": "Visual final check complete; starting Serial"
+  ,"photoGuide.finalHint": "Finish all three steps, move your hand away, then run one final check"
+  ,"photoGuide.finalAfterGuide": "Finish the three guide steps; run one final verification at the end"
+  ,"photoGuide.finalNotReady": "Complete the final VLM reading first; Serial is shown separately"
+  ,"photoGuide.finalState.correct": "Correct"
+  ,"photoGuide.finalState.adjacent": "Possibly adjacent pin"
+  ,"photoGuide.finalState.empty": "Connector not visible"
+  ,"photoGuide.finalState.uncertain": "Uncertain"
+  ,"photoGuide.finalError.no_active_step": "The wiring guide is not active"
+  ,"photoGuide.finalError.final_check_not_ready": "Complete the three wiring guide steps first"
+  ,"photoGuide.finalError.final_check_busy": "The final check is already running"
+  ,"photoGuide.finalError.board_not_ready": "UNO Q is not stably locked"
+  ,"photoGuide.finalError.component_not_ready": "Sensor is not stably locked"
+  ,"photoGuide.finalError.no_frame": "No camera frame is available"
+  ,"photoGuide.finalError.final_check_retry_later": "The final VLM is busy; try again shortly"
+  ,"photoGuide.finalError.vlm_unavailable": "The VLM or model service is not available"
+  ,"photoGuide.finalError.unknown": "Final verification failed; try again"
+  ,"photoGuide.finalPreview": "View actual VLM image"
+  ,"photoGuide.finalPreviewHide": "Hide actual VLM image"
+  ,"photoGuide.finalPreviewAlt": "Four-panel image sent to the VLM"
+  ,"photoGuide.finalPreviewHint": "This is the exact image sent to the VLM: full view, connection context, enlarged Arduino, and enlarged Sensor; frontend UI is not included."
+  ,"photoGuide.electricalStart": "Start A0 electrical check"
+  ,"photoGuide.electricalRestart": "Run A0 electrical check again"
+  ,"photoGuide.electricalRunning": "A0 electrical check running…"
+  ,"photoGuide.electricalHint": "Available only on final A0 → AO; Serial starts only after this button"
+  ,"photoGuide.electricalRunningHint": "Reading A0; cover and uncover the photoresistor"
+  ,"photoGuide.electricalComplete": "A0 light response passed; you can run it again"
+  ,"photoGuide.electricalStatusLoading": "Synchronizing Serial electrical verification status…"
+  ,"photoGuide.electricalUnavailable": "Serial electrical verification is unavailable in this launch mode"
+  ,"photoGuide.electricalError.no_active_step": "The wiring guide is not active"
+  ,"photoGuide.electricalError.electrical_not_applicable": "Electrical verification is only available on final A0 → AO"
+  ,"photoGuide.electricalError.electrical_unavailable": "Serial or the verification firmware is not ready"
+  ,"photoGuide.electricalError.electrical_not_started": "Could not start electrical verification"
+  ,"photoGuide.electricalError.unknown": "Electrical verification failed to start"
+  ,"verification.reason.collecting_a0_baseline": "Reading the A0 baseline"
+  ,"verification.reason.awaiting_light_change": "Cover, then uncover the photoresistor"
+  ,"verification.reason.a0_response_confirmed": "A0 light response detected"
+  ,"verification.reason.serial_unavailable": "UNO Q Serial or verification firmware is not ready"
+  ,"verification.reason.vlm_adjacent_pin": "VLM sees the connector on an adjacent pin"
+  ,"verification.reason.vlm_connector_missing": "VLM cannot see a fully inserted connector"
+  ,"verification.reason.vlm_both_endpoints_inserted": "VLM sees both connectors inserted"
+  ,"verification.reason.vlm_connectors_seated_pin_uncertain": "AI sees both connectors seated; pin identity still needs geometry"
+  ,"verification.reason.vlm_occluded": "Connector is occluded; VLM check paused"
+  ,"verification.reason.vlm_uncertain": "VLM cannot confirm insertion"
+  ,"verification.reason.awaiting_manual_vlm": "The view is ready; press AI connector check"
+  ,"verification.reason.vlm_checking": "VLM is checking this captured frame"
+  ,"verification.reason.vlm_unavailable": "This VLM check failed; press the button to retry"
+  ,"verification.reason.awaiting_electrical_start": "The final electrical check has not been started"
+  ,"verification.reason.awaiting_manual_geometry": "Press ① Check wiring position"
+  ,"verification.reason.collecting_geometry_samples": "Collecting five frames of dual-end geometry evidence"
+  ,"verification.reason.geometry_no_consensus": "Fewer than 3/5 frames agree; keep the view stable and try again"
+  ,"verification.reason.both_endpoints_near_targets": "The UNO Q and Sensor endpoints are each near their targets"
+  ,"verification.reason.waiting_for_board_endpoint": "Sensor end matched; waiting for the UNO Q endpoint near its target"
+  ,"verification.reason.waiting_for_component_endpoint": "UNO Q end matched; waiting for the Sensor endpoint near its target"
+  ,"verification.reason.component_endpoint_not_visible": "The Sensor target pin is outside the frame"
+  ,"verification.reason.component_endpoint_ambiguous": "The Sensor endpoint is between adjacent pins"
+  ,"verification.reason.component_endpoint_near_other_pin": "The Sensor endpoint is currently closer to {pin}"
+  ,"wiring.vlmSerial": "VLM + Serial"
+  ,"photoGuide.vlmVerdictPending": "Connect both ends, move your hand away, then press VLM connector check"
+  ,"photoGuide.vlmVerdictCorrect": "VLM judged both UNO Q and Sensor connectors seated at the target"
+  ,"photoGuide.vlmVerdictWrong": "VLM judged a connector may be beside the target pin; retake the check"
+  ,"photoGuide.vlmCompleteHint": "The three wiring steps are complete. The final AO step can use Serial to confirm that A0 responds to light."
+  ,"photoGuide.vlmAiComplete": "This VLM connector check is complete"
+  ,"verification.reason.geometry_skipped_for_vlm": "Geometry verification is skipped in this guided mode; VLM judges connector insertion"
+  ,"verification.reason.visual_focus_lost": "Board or Sensor focus was lost; waiting to relock"
+  ,"verification.reason.visual_check_incomplete": "The VLM connector check is not complete again; score remains zero"
+  ,"verification.reason.final_wiring_adjacent_pin": "Some wiring is confirmed; one connector still appears adjacent"
+  ,"verification.reason.visual_partial_adjacent_pin": "Possible adjacent pin; partial credit awarded but not passed"
+  ,"verification.reason.electrical_pass_visual_partial": "Electrical check passed; visual wiring is partial and not complete"
+  ,"verification.trackingHold": "Tracking paused; previous score retained"
+  ,"photoGuide.colorCheck": "Check endpoint colour / Pin proximity"
+  ,"photoGuide.colorChecking": "Checking wire colour…"
+  ,"photoGuide.colorSampleUno": "① Capture UNO Q end"
+  ,"photoGuide.colorSampleController": "① Capture {controller} end"
+  ,"photoGuide.colorSampleSensor": "② Capture Sensor end"
+  ,"photoGuide.colorCheckingUno": "Capturing UNO Q end…"
+  ,"photoGuide.colorCheckingController": "Capturing {controller} end…"
+  ,"photoGuide.colorCheckingSensor": "Capturing Sensor end…"
+  ,"photoGuide.colorHint": "Capture and save each end separately. Each capture only needs its current object locked; comparison runs after both are saved."
+  ,"photoGuide.colorAwaitingOther": "One end is saved; capture the other end"
+  ,"photoGuide.colorNotSampled": "not captured"
+  ,"photoGuide.colorMatch": "Endpoint colours match; this is supporting evidence"
+  ,"photoGuide.colorMismatch": "Endpoint colours differ; confirm that this is the same wire"
+  ,"photoGuide.colorPartial": "Only one endpoint colour is visible; move your hand or expose more insulation"
+  ,"photoGuide.colorAmbiguous": "Crossing or multiple wire candidates near the target Pin; move other wires and check again"
+  ,"photoGuide.colorUnknown": "Not enough coloured insulation is visible"
+  ,"photoGuide.colorUno": "UNO Q end: {color}"
+  ,"photoGuide.colorController": "{controller} end: {color}"
+  ,"photoGuide.colorSensor": "Sensor end: {color}"
+  ,"photoGuide.colorProximityUno": "UNO Q Pin proximity"
+  ,"photoGuide.colorProximityController": "{controller} Pin proximity"
+  ,"photoGuide.colorProximitySensor": "Sensor Pin proximity"
+  ,"photoGuide.colorProximityConnection": "Lower endpoint"
+  ,"photoGuide.colorLabDelta": "Lab chroma ΔEab: {{value}} (lower is closer)"
+  ,"photoGuide.colorStatus.match": "Colours match"
+  ,"photoGuide.colorStatus.mismatch": "Colours differ"
+  ,"photoGuide.colorStatus.partial": "One end visible"
+  ,"photoGuide.colorStatus.ambiguous": "Crossing / multiple candidates"
+  ,"photoGuide.colorStatus.unknown": "Insufficient evidence"
+  ,"photoGuide.colorName.red": "red"
+  ,"photoGuide.colorName.orange": "orange"
+  ,"photoGuide.colorName.brown": "brown"
+  ,"photoGuide.colorName.yellow": "yellow"
+  ,"photoGuide.colorName.green": "green"
+  ,"photoGuide.colorName.blue": "blue"
+  ,"photoGuide.colorName.purple": "purple"
+  ,"photoGuide.colorName.black": "black"
+  ,"photoGuide.colorName.white": "white"
+  ,"photoGuide.colorName.unknown": "not recognised"
+  ,"photoGuide.colorError.no_active_step": "The wiring guide is not active"
+  ,"photoGuide.colorError.component_pin_missing": "This step has no Sensor target pin"
+  ,"photoGuide.colorError.no_frame": "No camera frame is available"
+  ,"photoGuide.colorError.board_not_ready": "UNO Q is not stably locked"
+  ,"photoGuide.colorError.component_not_ready": "Sensor is not stably locked"
+  ,"photoGuide.colorError.target_not_visible": "This endpoint's target Pin is outside the frame"
+  ,"photoGuide.colorError.unknown": "Wire-colour check failed; try again"
+  ,"photoGuide.colorVlmCheck": "② Ask AI to compare colours"
+  ,"photoGuide.colorVlmQueued": "The current camera view was captured; waiting for AI"
+  ,"photoGuide.colorVlmChecking": "AI is comparing the endpoint colours…"
+  ,"photoGuide.colorVlmHint": "Press to send the current camera view to the local VLM; this takes several seconds."
+  ,"photoGuide.colorVlmMatch": "AI sees matching endpoint colours; this is supporting evidence"
+  ,"photoGuide.colorVlmMismatch": "AI sees different endpoint colours; confirm this is the same wire"
+  ,"photoGuide.colorVlmUnknown": "AI cannot confirm the endpoint colours from this view"
+  ,"photoGuide.colorVlmUno": "AI: UNO Q end {color}"
+  ,"photoGuide.colorVlmSensor": "Sensor end {color}"
+  ,"photoGuide.colorVlmStatus.match": "AI colours match"
+  ,"photoGuide.colorVlmStatus.mismatch": "AI colours differ"
+  ,"photoGuide.colorVlmStatus.unknown": "AI cannot confirm"
+  ,"photoGuide.colorVlmPreview": "View actual AI image"
+  ,"photoGuide.colorVlmPreviewHide": "Hide actual AI image"
+  ,"photoGuide.colorVlmPreviewAlt": "Wire-colour comparison image sent to AI"
+  ,"photoGuide.colorVlmPreviewHint": "This is the raw camera image received by AI: full view, connection context, enlarged UNO Q end, and enlarged Sensor end. It contains no frontend UI."
+  ,"photoGuide.colorVlmError.no_active_step": "The wiring guide is not active"
+  ,"photoGuide.colorVlmError.component_pin_missing": "This step has no Sensor target pin"
+  ,"photoGuide.colorVlmError.no_frame": "No camera frame is available"
+  ,"photoGuide.colorVlmError.board_not_ready": "UNO Q is not stably locked"
+  ,"photoGuide.colorVlmError.component_not_ready": "Sensor is not stably locked"
+  ,"photoGuide.colorVlmError.target_not_visible": "The UNO Q or Sensor target is outside the frame"
+  ,"photoGuide.colorVlmError.vlm_unavailable": "The local VLM is not running or ready"
+  ,"photoGuide.colorVlmError.vlm_busy": "AI is processing another colour check; try shortly"
+  ,"photoGuide.colorVlmError.vlm_retry_later": "AI did not accept this check; press again"
+  ,"photoGuide.colorVlmError.unknown": "AI wire-colour check failed; try again"
+  ,"photoGuide.colorPreview": "View local sampling image"
+  ,"photoGuide.colorPreviewUno": "View UNO Q sample"
+  ,"photoGuide.colorPreviewController": "View {controller} sample"
+  ,"photoGuide.colorPreviewSensor": "View Sensor sample"
+  ,"photoGuide.colorPreviewHide": "Hide local sampling image"
+  ,"photoGuide.colorPreviewAlt": "Local wire-colour sampling image"
+  ,"photoGuide.colorPreviewUnoAlt": "UNO Q local wire-colour sampling image"
+  ,"photoGuide.colorPreviewControllerAlt": "{controller} local wire-colour sampling image"
+  ,"photoGuide.colorPreviewSensorAlt": "Sensor local wire-colour sampling image"
+  ,"photoGuide.colorPreviewHint": "Each image belongs only to its saved endpoint. The left panel is the raw camera frame; amber is the local sampling sector and cyan pixels pass at least one local colour rule."
+  ,"smartGlasses.enter": "Smart glasses"
+  ,"smartGlasses.enterTooltip": "Use R1 + Eye RGB video and component recognition"
+  ,"smartGlasses.exit": "Exit Demo"
+  ,"smartGlasses.exitTooltip": "Exit smart glasses and restore the previous camera (Esc)"
+  ,"smartGlasses.fullscreenFallback": "Full screen was blocked; the demo now fills this window"
+  ,"opticalHud.enter": "Optical HUD"
+  ,"opticalHud.enterTooltip": "Enter the black optical HUD and run four-point perspective calibration"
+  ,"opticalHud.exit": "Exit HUD"
+  ,"opticalHud.exitTooltip": "Exit the optical HUD (Esc)"
+  ,"opticalHud.recalibrate": "Recalibrate"
+  ,"opticalHud.recalibrateTooltip": "Stay full screen and repeat the four-point calibration"
+  ,"opticalHud.calibrationKicker": "R1 optical mode"
+  ,"opticalHud.calibrationTitle": "Four-point perspective calibration"
+  ,"opticalHud.calibrationInstruction": "Keep the glasses and your head fixed, then select the four board corners you see through the lenses."
+  ,"opticalHud.boardLocked": "Board locked; keep the board, camera, and your head still"
+  ,"opticalHud.waitingForBoard": "Waiting for board lock; place the whole board in the webcam view"
+  ,"opticalHud.calibrationStep": "{step}/4 · Select the {corner}"
+  ,"opticalHud.corner.topLeft": "top-left corner"
+  ,"opticalHud.corner.topRight": "top-right corner"
+  ,"opticalHud.corner.bottomRight": "bottom-right corner"
+  ,"opticalHud.corner.bottomLeft": "bottom-left corner"
+  ,"opticalHud.calibrationCanvasLabel": "Optical HUD four-point calibration canvas"
+  ,"opticalHud.calibrationKeyboardHint": "Click to select; arrows adjust, Enter confirms, Backspace goes back, R resets"
+  ,"opticalHud.calibrationInvalid": "The four points do not form a valid area. Go back or reset and try again."
+  ,"opticalHud.undo": "Undo"
+  ,"opticalHud.reset": "Reset"
+  ,"opticalHud.fixedHead": "Fixed-head mode · Recalibrate after moving your head, glasses, board, or camera"
+  ,"wiring.title": "Component wiring guide"
+  ,"wiring.kicker": "PI 5 · MANUAL CONFIRMATION"
+  ,"wiring.selectComponent": "Component to guide"
+  ,"wiring.detected": "Detected"
+  ,"wiring.notDetected": "Waiting for stable detection"
+  ,"wiring.prepare": "Before you start"
+  ,"wiring.start": "Start step-by-step guide"
+  ,"wiring.startSignals": "Start signal wiring (keep power off)"
+  ,"wiring.legacy": "Original photoresistor guide"
+  ,"wiring.backToComponents": "Back to components (end the current guide first)"
+  ,"wiring.waiting": "Waiting for stable Pi and selected-component poses. Keep the target pins clearly visible."
+  ,"wiring.paused": "Target positioning paused: remove obstructions and keep the board and component visible. Confirmation is disabled offline."
+  ,"wiring.manualUnlocated": "Pin tracking paused; manual steps and AI overview checks remain available."
+  ,"wiring.trackingHold": "Detection is temporarily unstable. Wiring markers are frozen at the last trusted pose until a stable lock returns."
+  ,"wiring.manualNotice": "Targets located. Check the wiring yourself. Next records your confirmation, not continuity or electrical verification."
+  ,"wiring.confirmNext": "I have connected it / Next"
+  ,"wiring.end": "End and review wiring"
+  ,"wiring.summary": "Wiring summary"
+  ,"wiring.componentPin": "Component pin"
+  ,"wiring.piTarget": "Pi 5 target / restriction"
+  ,"wiring.status": "Confirmation"
+  ,"wiring.manuallyRecorded": "Manually confirmed"
+  ,"wiring.unconfirmed": "Not confirmed"
+  ,"wiring.pending": "Specification pending"
+  ,"wiring.reviewRecorded": "Manual wiring confirmations recorded"
+  ,"wiring.reviewPartial": "Guide ended with unconfirmed connections"
+  ,"wiring.reviewPending": "Signal wiring record · Supply/backlight pending; do not power on"
+  ,"wiring.reviewStep": "Return to wiring steps"
+  ,"wiring.notVerified": "This is a manual wiring record, not proof of visual, continuity or functional verification."
+  ,"wiring.viaDivider": "Through divider"
+  ,"wiring.dividerTitle": "Required ECHO voltage divider"
+  ,"wiring.dividerNote": "Both dots represent the same junction; the 470Ω resistor ends at common GND. This diagram does not verify resistor values by camera."
+  ,"wiring.dividerHud": "ECHO → 330Ω → junction → GPIO18; junction → 470Ω → GND. Never connect directly."
+  ,"wiring.profileMismatch": "This controller is missing pins required by the lesson. Cannot start."
+  ,"wiring.networkError": "Could not synchronize backend guidance. Restore the connection and retry."
+  ,"glasses.controls": "Eye stream settings"
+  ,"glasses.resolution": "Resolution"
+  ,"glasses.denoise": "Denoise"
+  ,"glasses.denoise.original": "Off"
+  ,"glasses.denoise.clean": "Standard"
+  ,"glasses.denoise.strong": "Strong"
+  ,"glasses.apply": "Apply"
+  ,"glasses.actual": "Actual"
+  ,"glasses.capture": "Capture"
+  ,"glasses.processing": "Denoise"
+  ,"glasses.display": "Display"
+  ,"glasses.state.starting": "Starting Eye…"
+  ,"glasses.state.switching": "Applying settings…"
+  ,"glasses.state.restoring": "Restoring camera…"
+  ,"glasses.state.running": "Live"
+  ,"glasses.state.error": "Stream unavailable"
+  ,"glasses.state.idle": "Stopped"
+  ,"glasses.state.stopped": "Stopped"
+  ,"glasses.noCamera": "No Eye video yet. Connect USB-C and press Apply to retry."
+  ,"glasses.waiting": "Waiting for live Eye video…"
+  ,"glasses.restoreFailed": "Could not restore previous camera:"
+  ,"glasses.retryRestore": "Retry camera restore"
+  ,"glasses.state.stopping": "Restoring camera…"
+  ,"camera.bodyPinsLocating": "Locating pins"
+  ,"camera.bodyClipped": "Keep the whole object in view"
+  ,"glasses.inference.cuda": "CUDA"
+  ,"glasses.inference.cpu": "CPU"
+  ,"glasses.inference.mixed": "Mixed"
+  ,"glasses.inference.notReady": "Not ready"
+  ,"glasses.inference.other": "Other backend"
+  ,"glasses.inferenceRate": "Inference"
+  ,"glasses.preprocessing": "Preprocessing"
+  ,"glasses.denoise.pending": "Initializing"
+  ,"componentGuide.ultrasonic": "HC-SR04"
+  ,"componentGuide.screen": "MRD-TF240"
+  ,"componentGuide.compactTarget": "{name} · Pin {number} · {pin}"
+  ,"componentGuide.ordinal": "Pin {number}"
+  ,"componentGuide.countFromPin": "Count from the {pin} end"
+}

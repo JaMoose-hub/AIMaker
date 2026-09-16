@@ -1,0 +1,19 @@
+# Arduino UNO Q only. Raspberry Pi 5 has its own separate dataset/model at
+# datasets/board-pose-pi5 + training/board-pose-pi5.yaml - kept apart on
+# purpose, do not merge the two image sets back together.
+# Relative path is resolved against this YAML by tools/train_yolo_board_pose.py.
+path: ../datasets/board-pose
+train: images/train
+val: images/val
+test: images/test
+
+kpt_shape: [4, 3]
+names:
+  0: arduino-uno-q
+kpt_names:
+  0:
+    - profile_TL
+    - profile_TR
+    - profile_BR
+    - profile_BL
+

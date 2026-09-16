@@ -1,0 +1,75 @@
+# Local credentials and machine-specific settings (use the committed example).
+/backend/config.yaml
+.env
+.env.*
+!.env.example
+.codex/
+.ssh/
+auth.json
+credentials.json
+credentials.yaml
+tokens.json
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+
+# Dependencies, caches, build products, and local tooling.
+.venv*/
+venv/
+node_modules/
+dist/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+*.egg-info/
+coverage/
+.coverage*
+htmlcov/
+.arduino-user/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.local
+*.db
+*.sqlite*
+
+# Private captures, AI requests/results, datasets, generated training runs.
+runs/
+datasets/
+calibration/
+/current_*
+/.tmp-*
+/*.jpg
+/*.jpeg
+/*.png
+/*.mp4
+/*.avi
+/*.webm
+
+# Backups and checkpoints are local only.
+*.bak*
+*.backup*
+backups/
+backup_*/
+*.pt
+*.pth
+*.ckpt
+*.engine
+*.onnx
+
+# Allow only the current Pi 5, HC-SR04 and MRD-TF240 runtime exports.
+# Pi uses both its handheld detector and reference-recovery detector.
+/models/*
+!/models/README.md
+!/models/manifest.json
+!/models/board-pose-pi5-handheld-v2.onnx
+!/models/board-pose-pi5.onnx
+!/models/hc-sr04-corner-pose-v3-robust.onnx
+!/models/mrd-tf240-8p-cs-pose.onnx

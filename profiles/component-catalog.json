@@ -1,0 +1,262 @@
+{
+  "version": "1",
+  "modules": [
+    {
+      "id": "hc-sr04",
+      "boardId": "raspberry-pi-5",
+      "name": {
+        "zh-TW": "HC-SR04 超音波感測器",
+        "en": "HC-SR04 ultrasonic sensor"
+      },
+      "safety": {
+        "zh-TW": "ECHO 是 5V 訊號，禁止直接接 Pi GPIO。分壓電路不是單顆串聯電阻。",
+        "en": "ECHO is a 5V signal: never connect it directly to Pi GPIO. A divider is not a single series resistor."
+      },
+      "prerequisites": [
+        {
+          "id": "power-off",
+          "text": {
+            "zh-TW": "我已關閉 Pi 與模組的所有電源；接線過程保持斷電。",
+            "en": "I have disconnected all Pi and module power and will keep it off while wiring."
+          }
+        },
+        {
+          "id": "divider-ready",
+          "text": {
+            "zh-TW": "我已按圖準備 330Ω／470Ω 分壓電路並確認共地；這是人工確認，不是系統量測。",
+            "en": "I have prepared the shown 330Ω/470Ω divider and common ground. This is my confirmation, not a system measurement."
+          }
+        }
+      ],
+      "steps": [
+        {
+          "id": "gnd",
+          "componentPin": "GND",
+          "boardPin": "GND_P6",
+          "boardLabel": "Pin 6 · GND",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 GND 接到 Pi 5 Pin 6 · GND",
+            "en": "Connect GND to Pi 5 Pin 6 · GND"
+          },
+          "hint": {
+            "zh-TW": "感測器與分壓電路必須共地。",
+            "en": "The sensor and divider must share ground."
+          }
+        },
+        {
+          "id": "trig",
+          "componentPin": "TRIG",
+          "boardPin": "GPIO17",
+          "boardLabel": "Pin 11 · GPIO17",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 TRIG 接到 Pi 5 Pin 11 · GPIO17",
+            "en": "Connect TRIG to Pi 5 Pin 11 · GPIO17"
+          },
+          "hint": {
+            "zh-TW": "TRIG 接收 Pi 的觸發訊號；不是 ECHO。",
+            "en": "TRIG receives the Pi trigger signal; do not confuse it with ECHO."
+          }
+        },
+        {
+          "id": "echo",
+          "componentPin": "ECHO",
+          "boardPin": "GPIO18",
+          "boardLabel": "Pin 12 · GPIO18",
+          "connectionKind": "divider",
+          "instruction": {
+            "zh-TW": "ECHO 經分壓電路接到 Pin 12 · GPIO18",
+            "en": "Connect ECHO through the divider to Pin 12 · GPIO18"
+          },
+          "hint": {
+            "zh-TW": "GPIO18 只接兩顆電阻的交會節點。畫面不畫 ECHO 到 GPIO 的直連線。",
+            "en": "Connect GPIO18 only to the resistor junction. No direct ECHO-to-GPIO line is drawn."
+          }
+        },
+        {
+          "id": "vcc",
+          "componentPin": "VCC",
+          "boardPin": "5V_P2",
+          "boardLabel": "Pin 2 · 5V",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 VCC 接到 Pi 5 Pin 2 · 5V",
+            "en": "Connect VCC to Pi 5 Pin 2 · 5V"
+          },
+          "hint": {
+            "zh-TW": "最後接 VCC，仍保持斷電；再次確認 ECHO 有分壓保護。",
+            "en": "Connect VCC last with power still off; recheck ECHO protection."
+          }
+        }
+      ],
+      "unresolved": [],
+      "functionalTest": {
+        "zh-TW": "尚未整合功能測試。人工檢查後上電，再以 Pi 端程式確認距離會隨物體遠近改變。",
+        "en": "Functional testing is not integrated. After manual inspection, power on and use a Pi-side program to check that distance follows object movement."
+      },
+      "price": 65,
+      "runtime": {
+        "supported": true,
+        "imports": [
+          "gpiozero",
+          "lgpio"
+        ],
+        "devices": [],
+        "reason": ""
+      }
+    },
+    {
+      "id": "mrd-tf240-8p-cs",
+      "boardId": "raspberry-pi-5",
+      "name": {
+        "zh-TW": "MRD-TF240 TFT 螢幕",
+        "en": "MRD-TF240 TFT display"
+      },
+      "safety": {
+        "zh-TW": "僅引導已定義的訊號線。供電、BLK 背光與驅動晶片尚未核實，禁止上電；SCL／SDA 在這塊板上是 SPI。",
+        "en": "Signal wiring only. Supply, BLK backlight and driver IC are unverified: do not power on. SCL/SDA on this module mean SPI."
+      },
+      "prerequisites": [
+        {
+          "id": "power-off",
+          "text": {
+            "zh-TW": "我已關閉 Pi 與模組的所有電源；接線過程保持斷電。",
+            "en": "I have disconnected all Pi and module power and will keep it off while wiring."
+          }
+        },
+        {
+          "id": "display-pending",
+          "text": {
+            "zh-TW": "我了解本次只有訊號線引導；VCC／BLK 保持未接，取得此模組規格前不上電。",
+            "en": "I understand this is signal-only guidance. Leave VCC/BLK disconnected and do not power on until this module's specifications are confirmed."
+          }
+        }
+      ],
+      "steps": [
+        {
+          "id": "gnd",
+          "componentPin": "GND",
+          "boardPin": "GND_P20",
+          "boardLabel": "Pin 20 · GND",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 GND 接到 Pi 5 Pin 20 · GND",
+            "en": "Connect GND to Pi 5 Pin 20 · GND"
+          },
+          "hint": {
+            "zh-TW": "先接共地，保持所有電源關閉。",
+            "en": "Connect common ground first with all power off."
+          }
+        },
+        {
+          "id": "scl",
+          "componentPin": "SCL",
+          "boardPin": "GPIO11",
+          "boardLabel": "Pin 23 · GPIO11 / SCLK",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 SCL 接到 Pi 5 Pin 23 · GPIO11 / SCLK",
+            "en": "Connect SCL to Pi 5 Pin 23 · GPIO11 / SCLK"
+          },
+          "hint": {
+            "zh-TW": "此處 SCL 是 SPI 時鐘，不是 I²C Pin 5。",
+            "en": "Here SCL is SPI clock, not I²C Pin 5."
+          }
+        },
+        {
+          "id": "sda",
+          "componentPin": "SDA",
+          "boardPin": "GPIO10",
+          "boardLabel": "Pin 19 · GPIO10 / MOSI",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 SDA 接到 Pi 5 Pin 19 · GPIO10 / MOSI",
+            "en": "Connect SDA to Pi 5 Pin 19 · GPIO10 / MOSI"
+          },
+          "hint": {
+            "zh-TW": "此處 SDA 是 SPI 資料，不是 I²C Pin 3。",
+            "en": "Here SDA is SPI data, not I²C Pin 3."
+          }
+        },
+        {
+          "id": "cs",
+          "componentPin": "CS",
+          "boardPin": "GPIO8",
+          "boardLabel": "Pin 24 · GPIO8 / CE0",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 CS 接到 Pi 5 Pin 24 · GPIO8 / CE0",
+            "en": "Connect CS to Pi 5 Pin 24 · GPIO8 / CE0"
+          },
+          "hint": {
+            "zh-TW": "片選使用 SPI0 CE0。",
+            "en": "Use SPI0 CE0 for chip select."
+          }
+        },
+        {
+          "id": "res",
+          "componentPin": "RES",
+          "boardPin": "GPIO25",
+          "boardLabel": "Pin 22 · GPIO25",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 RES 接到 Pi 5 Pin 22 · GPIO25",
+            "en": "Connect RES to Pi 5 Pin 22 · GPIO25"
+          },
+          "hint": {
+            "zh-TW": "RES 是重設訊號；後續驅動設定必須使用相同 GPIO。",
+            "en": "RES is reset; the later display driver must use this GPIO."
+          }
+        },
+        {
+          "id": "dc",
+          "componentPin": "DC",
+          "boardPin": "GPIO24",
+          "boardLabel": "Pin 18 · GPIO24",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 DC 接到 Pi 5 Pin 18 · GPIO24",
+            "en": "Connect DC to Pi 5 Pin 18 · GPIO24"
+          },
+          "hint": {
+            "zh-TW": "DC 是資料／命令選擇。下一頁仍會列出未確認的供電項目。",
+            "en": "DC selects data/command. The next page will still list unresolved supply items."
+          }
+        }
+      ],
+      "unresolved": [
+        {
+          "pin": "VCC",
+          "reason": {
+            "zh-TW": "供電電壓／電流待核實：不指定 Pi 電源腳，也不高亮接線。",
+            "en": "Supply voltage/current unverified: no Pi power pin or wiring target is assigned."
+          }
+        },
+        {
+          "pin": "BLK",
+          "reason": {
+            "zh-TW": "背光輸入與限流電路待核實：不可假定能直接接 GPIO。",
+            "en": "Backlight input/current limiting unverified: do not assume a direct GPIO connection is safe."
+          }
+        }
+      ],
+      "functionalTest": {
+        "zh-TW": "尚未整合功能測試。確認模組規格與驅動後才可上電，測試色塊和文字；背光亮不代表顯示功能正常。",
+        "en": "Functional testing is not integrated. Confirm the module and driver before powering on, then test colour bars/text; backlight alone is not a display test."
+      },
+      "price": 220,
+      "runtime": {
+        "supported": false,
+        "imports": [],
+        "devices": [
+          "/dev/spidev0.0"
+        ],
+        "reason": "TFT 供電、背光與驅動未核實；禁止上電。"
+      }
+    }
+  ],
+  "retired_module_ids": [
+    "hw-123"
+  ]
+}

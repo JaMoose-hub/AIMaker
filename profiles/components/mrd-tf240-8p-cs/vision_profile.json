@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "id": "mrd-tf240-8p-cs",
+  "canonical_orientation": "display upright; 8-pin header at top; GND on the left and BLK on the right",
+  "corner_order": [
+    "mount_TL",
+    "mount_TR",
+    "mount_BR",
+    "mount_BL"
+  ],
+  "keypoint_count": 4,
+  "corner_refinement": "mounting_holes",
+  "display_outline": [
+    {"x_norm": -0.100, "y_norm": -0.045},
+    {"x_norm": 1.090, "y_norm": -0.045},
+    {"x_norm": 1.090, "y_norm": 1.047},
+    {"x_norm": -0.100, "y_norm": 1.047}
+  ],
+  "pins": [
+    {"id": "GND", "x_norm": 0.287, "y_norm": -0.040},
+    {"id": "VCC", "x_norm": 0.350, "y_norm": -0.040},
+    {"id": "SCL", "x_norm": 0.412, "y_norm": -0.040},
+    {"id": "SDA", "x_norm": 0.475, "y_norm": -0.040},
+    {"id": "RES", "x_norm": 0.538, "y_norm": -0.040},
+    {"id": "DC", "x_norm": 0.600, "y_norm": -0.040},
+    {"id": "CS", "x_norm": 0.663, "y_norm": -0.040},
+    {"id": "BLK", "x_norm": 0.727, "y_norm": -0.040}
+  ],
+  "reference_size": [800, 1000],
+  "reference_mounting_holes_px": {
+    "mount_TL": [100, 100],
+    "mount_TR": [700, 100],
+    "mount_BR": [700, 900],
+    "mount_BL": [100, 900]
+  },
+  "reference_pins_px": {
+    "GND": [272, 112],
+    "VCC": [310, 112],
+    "SCL": [347, 112],
+    "SDA": [385, 112],
+    "RES": [423, 112],
+    "DC": [460, 112],
+    "CS": [498, 112],
+    "BLK": [536, 112]
+  }
+}

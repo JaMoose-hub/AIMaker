@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "id": "sg90-servo",
+  "version": "1.0.0",
+  "name": {"zh-TW": "SG90 伺服馬達", "en": "SG90 servo"},
+  "pins": [
+    {"id": "VCC", "role": "vcc", "direction": "power", "required": true, "voltage": 5.0, "required_rail": "5v"},
+    {"id": "GND", "role": "ground", "direction": "power", "required": true, "required_rail": "gnd"},
+    {"id": "SIGNAL", "role": "pwm", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["pwm"]}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "data": "C:\\Project\\PnP\\board-vision\\training\\hw-123-corner-pose-v2-robust.yaml",
+  "split": "train",
+  "model": "C:\\Project\\PnP\\board-vision\\models\\hw-123-pose-pilot.pt",
+  "confidence": "0.3",
+  "keypoint_confidence": "0.25",
+  "auto_save": true
+}

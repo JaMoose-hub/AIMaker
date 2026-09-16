@@ -1,0 +1,8 @@
+{
+  "data": "C:\\Users\\james\\Downloads\\pi5_data\\data.yaml",
+  "split": "train",
+  "mode": "box",
+  "auto_save": true,
+  "model": "C:\\Project\\PnP\\board-vision\\runs\\segment\\runs\\components\\pi5-components-seg-v1\\weights\\best.pt",
+  "confidence": "0.3"
+}

@@ -1,0 +1,1926 @@
+{
+  "schema_version": "1.0",
+  "board": {
+    "id": "arduino-uno-q",
+    "name": {
+      "zh-TW": "Arduino UNO Q",
+      "en": "Arduino UNO Q"
+    },
+    "vendor": "Arduino",
+    "revision": "ABX00162",
+    "mcu": {
+      "part": "STM32U585",
+      "core": "Arm Cortex-M33",
+      "max_clock_mhz": 160.0,
+      "os": "Zephyr OS",
+      "role_note": {
+        "zh-TW": "即時控制器：所有排針 I/O 都由 STM32 控制，Arduino sketch 在 Zephyr OS 上執行",
+        "en": "Real-time controller: every header I/O is driven by the STM32; Arduino sketches run on Zephyr OS"
+      }
+    },
+    "mpu": {
+      "part": "Qualcomm QRB2210",
+      "core": "4x Arm Cortex-A53",
+      "max_clock_mhz": 2000.0,
+      "os": "Debian Linux",
+      "role_note": {
+        "zh-TW": "應用處理器：執行 Debian Linux（App Lab、Python 等），經內部匯流排與 STM32 溝通，不直接控制排針",
+        "en": "Application processor running Debian Linux (App Lab, Python, ...); talks to the STM32 over an internal bus and does not drive the headers directly"
+      }
+    },
+    "logic_voltage": 3.3,
+    "five_volt_tolerant": false,
+    "form_factor": "arduino-uno-r3",
+    "outline_mm": [
+      68.58,
+      53.34
+    ],
+    "header_top_z_mm": 8.5,
+    "docs_url": "https://docs.arduino.cc/hardware/uno-q/"
+  },
+  "reference": {
+    "image": "reference_captured.jpg",
+    "width_px": 1280,
+    "height_px": 720,
+    "mm_to_px": [
+      [
+        -0.09915170126640281,
+        3.94825706519405,
+        572.7999877929688
+      ],
+      [
+        -4.055117459559359,
+        -0.09561320459542487,
+        427.6000061035156
+      ],
+      [
+        4.22344854733583e-09,
+        -9.958194789496328e-11,
+        1.0
+      ]
+    ]
+  },
+  "headers": [
+    {
+      "id": "JDIGITAL",
+      "name": {
+        "zh-TW": "數位排針（上排）",
+        "en": "Digital header (top row)"
+      },
+      "side": "top"
+    },
+    {
+      "id": "JANALOG",
+      "name": {
+        "zh-TW": "電源與類比排針（下排）",
+        "en": "Power & analog header (bottom row)"
+      },
+      "side": "bottom"
+    }
+  ],
+  "buses": [
+    {
+      "id": "i2c0",
+      "type": "i2c",
+      "pins": [
+        "SDA",
+        "SCL",
+        "A4",
+        "A5"
+      ],
+      "note": {
+        "zh-TW": "優先使用專用 SDA/SCL。注意：UNO Q 上 A4/A5 對應 STM32 第二組 I2C（SDA2/SCL2，PC1/PC0），與專用 SDA/SCL（PB11/PB10）並非同一組 MCU 腳位（與傳統 UNO 不同）；官方 Wire 函式庫使用專用 SDA/SCL",
+        "en": "Prefer the dedicated SDA/SCL pins. Note: on the UNO Q, A4/A5 map to a second STM32 I2C (SDA2/SCL2 on PC1/PC0) — not the same MCU pins as the dedicated SDA/SCL (PB11/PB10), unlike the classic UNO; the stock Wire library uses the dedicated pins"
+      }
+    },
+    {
+      "id": "spi0",
+      "type": "spi",
+      "pins": [
+        "D10",
+        "D11",
+        "D12",
+        "D13"
+      ],
+      "note": {
+        "zh-TW": "SPI 直接由排針 D10–D13 提供（SS/MOSI/MISO/SCK = PB9/PB15/PB14/PB13）",
+        "en": "SPI is carried by header pins D10-D13 (SS/MOSI/MISO/SCK = PB9/PB15/PB14/PB13)"
+      }
+    },
+    {
+      "id": "uart0",
+      "type": "uart",
+      "pins": [
+        "D0",
+        "D1"
+      ],
+      "note": {
+        "zh-TW": "硬體序列埠 USART1：D0 = RX（PB7）、D1 = TX（PB6），3.3V 準位",
+        "en": "Hardware serial USART1: D0 = RX (PB7), D1 = TX (PB6), 3.3V levels"
+      }
+    }
+  ],
+  "groups": {
+    "power_rails": [
+      "3V3",
+      "5V",
+      "GND_D",
+      "GND_P1",
+      "GND_P2",
+      "VIN",
+      "IOREF"
+    ],
+    "pwm_all": [
+      "D3",
+      "D5",
+      "D6",
+      "D9",
+      "D10",
+      "D11"
+    ]
+  },
+  "pins": [
+    {
+      "id": "SCL",
+      "silkscreen": "SCL",
+      "header": "JDIGITAL",
+      "index": 0,
+      "pos_mm": [
+        18.796,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "i2c",
+          "role": "scl",
+          "bus": "i2c0",
+          "mcu_pin": "PB10",
+          "note": {
+            "zh-TW": "主要 I2C 時脈（Wire，Arduino 編號 D21）",
+            "en": "Primary I2C clock (Wire, Arduino pin D21)"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB10"
+        }
+      ],
+      "description": {
+        "zh-TW": "專用 I2C 時脈腳位 SCL（STM32 PB10，Arduino D21）。Wire 函式庫的預設 I2C 匯流排走這裡，與旁邊的 SDA 成對使用；匯流排上可掛多顆位址不同的 I2C 裝置。",
+        "en": "Dedicated I2C clock pin SCL (STM32 PB10, Arduino D21). The default Wire bus lives here, paired with the neighbouring SDA pin; multiple I2C devices with distinct addresses can share the bus."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 SSD1306 OLED 顯示器（I2C 位址 0x3C）",
+          "en": "Connect an SSD1306 OLED display (I2C address 0x3C)"
+        },
+        {
+          "zh-TW": "讀取 BME280 溫濕度氣壓感測器",
+          "en": "Read a BME280 temperature/humidity/pressure sensor"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "i2c",
+        "digital"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "SDA",
+      "silkscreen": "SDA",
+      "header": "JDIGITAL",
+      "index": 1,
+      "pos_mm": [
+        21.336,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "i2c",
+          "role": "sda",
+          "bus": "i2c0",
+          "mcu_pin": "PB11",
+          "note": {
+            "zh-TW": "主要 I2C 資料（Wire，Arduino 編號 D20）",
+            "en": "Primary I2C data (Wire, Arduino pin D20)"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB11"
+        }
+      ],
+      "description": {
+        "zh-TW": "專用 I2C 資料腳位 SDA（STM32 PB11，Arduino D20）。與 SCL 成對，為 Wire 函式庫預設匯流排；大多數 I2C 模組（感測器、OLED、RTC）接這兩支即可。",
+        "en": "Dedicated I2C data pin SDA (STM32 PB11, Arduino D20). Paired with SCL as the default Wire bus; most I2C modules (sensors, OLEDs, RTCs) connect to these two pins."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "連接 I2C 感測器模組（如 MPU6050 六軸 IMU（加速度計＋陀螺儀））",
+          "en": "Connect I2C sensor modules (e.g. MPU6050 six-axis IMU, accelerometer + gyroscope)"
+        },
+        {
+          "zh-TW": "連接 DS3231 RTC 即時時鐘模組",
+          "en": "Connect a DS3231 real-time-clock module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "i2c",
+        "digital"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "AREF",
+      "silkscreen": "AREF",
+      "header": "JDIGITAL",
+      "index": 2,
+      "pos_mm": [
+        23.876,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "aref",
+          "note": {
+            "zh-TW": "外部 ADC 參考電壓輸入：analogReference(AR_EXTERNAL)",
+            "en": "External ADC reference input: analogReference(AR_EXTERNAL)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "類比參考電壓輸入。預設 ADC 參考為 3.3V，呼叫 analogReference(AR_EXTERNAL) 後改用此腳位的外部參考電壓，可提高特定量測範圍的解析度。輸入電壓不得超過 3.3V。",
+        "en": "Analog reference voltage input. The default ADC reference is 3.3V; after calling analogReference(AR_EXTERNAL) the ADC uses the external reference supplied on this pin, improving resolution over a narrower range. Never exceed 3.3V."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "以 2.5V 精密參考源提升 ADC 量測精度",
+          "en": "Use a 2.5V precision reference to improve ADC accuracy"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 接上 5V 訊號會永久損壞板子",
+            "en": "3.3V logic — connecting a 5V signal will permanently damage the board"
+          }
+        }
+      ],
+      "tags": [
+        "analog",
+        "reference"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "GND_D",
+      "silkscreen": "GND",
+      "header": "JDIGITAL",
+      "index": 3,
+      "pos_mm": [
+        26.416,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地（數位排針側）。與板上其他 GND 腳位電氣相同，接線時選最靠近訊號線的一支即可。",
+        "en": "Ground (digital header side). Electrically identical to every other GND pin; use whichever GND is closest to your signal wiring."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "感測器 / 模組共地",
+          "en": "Common ground for sensors and modules"
+        }
+      ],
+      "warnings": [],
+      "tags": [
+        "power",
+        "ground"
+      ]
+    },
+    {
+      "id": "D13",
+      "silkscreen": "13",
+      "header": "JDIGITAL",
+      "index": 4,
+      "pos_mm": [
+        28.956,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB13"
+        },
+        {
+          "type": "spi",
+          "role": "sck",
+          "bus": "spi0",
+          "mcu_pin": "PB13"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D13（STM32 PB13），同時是 SPI 匯流排的 SCK 時脈腳位。使用 SPI 裝置（SD 卡、顯示器、無線模組）時由函式庫自動接管。",
+        "en": "Digital pin D13 (STM32 PB13), also the SPI bus SCK clock line. Taken over by the SPI library when talking to SPI devices (SD cards, displays, radios)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "SPI 裝置的時脈線（SD 卡模組、TFT 顯示器）",
+          "en": "SPI clock line for SD-card modules or TFT displays"
+        },
+        {
+          "zh-TW": "讀取數位感測器輸出（PIR、傾斜開關等）",
+          "en": "Read a digital sensor output (PIR, tilt switch, ...)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D12",
+      "silkscreen": "12",
+      "header": "JDIGITAL",
+      "index": 5,
+      "pos_mm": [
+        31.496,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB14"
+        },
+        {
+          "type": "spi",
+          "role": "miso",
+          "bus": "spi0",
+          "mcu_pin": "PB14"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D12（STM32 PB14），同時是 SPI 的 MISO（主入從出）資料腳位，SPI 裝置回傳資料走這裡。",
+        "en": "Digital pin D12 (STM32 PB14), also the SPI MISO (main-in, sub-out) line — data coming back from SPI devices arrives here."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取 SD 卡模組回傳的資料",
+          "en": "Read data returned by an SD-card module"
+        },
+        {
+          "zh-TW": "按鈕輸入（搭配 INPUT_PULLUP 內部上拉）",
+          "en": "Push-button input (with INPUT_PULLUP)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D11",
+      "silkscreen": "~11",
+      "header": "JDIGITAL",
+      "index": 6,
+      "pos_mm": [
+        34.036,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB15"
+        },
+        {
+          "type": "pwm",
+          "mcu_pin": "PB15",
+          "note": {
+            "zh-TW": "PWM 頻率固定為 500 Hz",
+            "en": "PWM frequency is fixed at 500 Hz"
+          }
+        },
+        {
+          "type": "spi",
+          "role": "mosi",
+          "bus": "spi0",
+          "mcu_pin": "PB15"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D11（STM32 PB15），支援 PWM 輸出，同時是 SPI 的 MOSI（主出從入）資料腳位。",
+        "en": "Digital pin D11 (STM32 PB15) with PWM output; also the SPI MOSI (main-out, sub-in) data line."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "控制伺服馬達（Servo 函式庫）",
+          "en": "Drive a hobby servo (Servo library)"
+        },
+        {
+          "zh-TW": "LED 呼吸燈 / 調光（analogWrite）",
+          "en": "LED dimming / breathing (analogWrite)"
+        },
+        {
+          "zh-TW": "SPI 傳送資料至 TFT 顯示器",
+          "en": "Send SPI data to a TFT display"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "pwm",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D10",
+      "silkscreen": "~10",
+      "header": "JDIGITAL",
+      "index": 7,
+      "pos_mm": [
+        36.576,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB9"
+        },
+        {
+          "type": "pwm",
+          "mcu_pin": "PB9",
+          "note": {
+            "zh-TW": "PWM 頻率固定為 500 Hz",
+            "en": "PWM frequency is fixed at 500 Hz"
+          }
+        },
+        {
+          "type": "spi",
+          "role": "cs",
+          "bus": "spi0",
+          "mcu_pin": "PB9",
+          "note": {
+            "zh-TW": "SPI 晶片選擇（SS）",
+            "en": "SPI chip select (SS)"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D10（STM32 PB9），支援 PWM 輸出，同時是 SPI 的預設晶片選擇（SS/CS）腳位。多顆 SPI 裝置時，每顆裝置各用一支 GPIO 作 CS。",
+        "en": "Digital pin D10 (STM32 PB9) with PWM output; also the default SPI chip-select (SS/CS). With multiple SPI devices, give each one its own GPIO as CS."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "控制伺服馬達（Servo 函式庫）",
+          "en": "Drive a hobby servo (Servo library)"
+        },
+        {
+          "zh-TW": "作為 SD 卡模組的 CS 腳位",
+          "en": "Chip-select for an SD-card module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "pwm",
+        "spi"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D9",
+      "silkscreen": "~9",
+      "header": "JDIGITAL",
+      "index": 8,
+      "pos_mm": [
+        39.116,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB8"
+        },
+        {
+          "type": "pwm",
+          "mcu_pin": "PB8",
+          "note": {
+            "zh-TW": "PWM 頻率固定為 500 Hz",
+            "en": "PWM frequency is fixed at 500 Hz"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D9（STM32 PB8），支援 PWM 輸出，經典的伺服馬達 / LED 調光腳位。",
+        "en": "Digital pin D9 (STM32 PB8) with PWM output — a classic choice for servos and LED dimming."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "控制伺服馬達（Servo 函式庫）",
+          "en": "Drive a hobby servo (Servo library)"
+        },
+        {
+          "zh-TW": "LED 呼吸燈 / 調光（analogWrite）",
+          "en": "LED dimming / breathing (analogWrite)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "pwm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D8",
+      "silkscreen": "8",
+      "header": "JDIGITAL",
+      "index": 9,
+      "pos_mm": [
+        41.656,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB4"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "泛用數位 I/O 腳位 D8（STM32 PB4），可作輸入或輸出，適合按鈕、繼電器模組、指示燈等。",
+        "en": "General-purpose digital I/O pin D8 (STM32 PB4) for input or output — buttons, relay modules, indicator LEDs and similar."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "按鈕輸入（搭配 INPUT_PULLUP 內部上拉）",
+          "en": "Push-button input (with INPUT_PULLUP)"
+        },
+        {
+          "zh-TW": "驅動繼電器模組（經電晶體/模組輸入端）",
+          "en": "Drive a relay module input"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D7",
+      "silkscreen": "7",
+      "header": "JDIGITAL",
+      "index": 10,
+      "pos_mm": [
+        45.72,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB2"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "泛用數位 I/O 腳位 D7（STM32 PB2），無特殊複用功能，最適合當單純的輸入/輸出使用。",
+        "en": "General-purpose digital I/O pin D7 (STM32 PB2) with no special alternate function — ideal as a plain input/output."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取數位感測器輸出（PIR、傾斜開關等）",
+          "en": "Read a digital sensor output (PIR, tilt switch, ...)"
+        },
+        {
+          "zh-TW": "超音波模組 HC-SR04 的 Trig/Echo 腳位",
+          "en": "Trig/Echo line for an HC-SR04 ultrasonic module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D6",
+      "silkscreen": "~6",
+      "header": "JDIGITAL",
+      "index": 11,
+      "pos_mm": [
+        48.26,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB1"
+        },
+        {
+          "type": "pwm",
+          "mcu_pin": "PB1",
+          "note": {
+            "zh-TW": "PWM 頻率固定為 500 Hz",
+            "en": "PWM frequency is fixed at 500 Hz"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D6（STM32 PB1），支援 PWM 輸出，適合調光、馬達速度控制與伺服馬達。",
+        "en": "Digital pin D6 (STM32 PB1) with PWM output — good for dimming, motor speed control and servos."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "控制伺服馬達（Servo 函式庫）",
+          "en": "Drive a hobby servo (Servo library)"
+        },
+        {
+          "zh-TW": "透過馬達驅動板控制直流馬達轉速",
+          "en": "DC motor speed control through a motor driver board"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "pwm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D5",
+      "silkscreen": "~5",
+      "header": "JDIGITAL",
+      "index": 12,
+      "pos_mm": [
+        50.8,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PA11"
+        },
+        {
+          "type": "pwm",
+          "mcu_pin": "PA11",
+          "note": {
+            "zh-TW": "PWM 頻率固定為 500 Hz",
+            "en": "PWM frequency is fixed at 500 Hz"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D5（STM32 PA11），支援 PWM 輸出；亦為 FDCAN 匯流排 RX 的替代功能腳位（需外接 CAN 收發器）。",
+        "en": "Digital pin D5 (STM32 PA11) with PWM output; also the FDCAN bus RX alternate function (external CAN transceiver required)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "控制伺服馬達（Servo 函式庫）",
+          "en": "Drive a hobby servo (Servo library)"
+        },
+        {
+          "zh-TW": "LED 呼吸燈 / 調光（analogWrite）",
+          "en": "LED dimming / breathing (analogWrite)"
+        },
+        {
+          "zh-TW": "搭配 D4 與 CAN 收發器連接 CAN 匯流排",
+          "en": "CAN bus with D4 and a CAN transceiver"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "pwm",
+        "can"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D4",
+      "silkscreen": "4",
+      "header": "JDIGITAL",
+      "index": 13,
+      "pos_mm": [
+        53.34,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PA12",
+          "note": {
+            "zh-TW": "亦為 FDCAN 匯流排 TX 替代功能",
+            "en": "Also the FDCAN bus TX alternate function"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "泛用數位 I/O 腳位 D4（STM32 PA12）；亦為 FDCAN 匯流排 TX 的替代功能腳位（需外接 CAN 收發器）。",
+        "en": "General-purpose digital I/O pin D4 (STM32 PA12); also the FDCAN bus TX alternate function (external CAN transceiver required)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "按鈕輸入（搭配 INPUT_PULLUP 內部上拉）",
+          "en": "Push-button input (with INPUT_PULLUP)"
+        },
+        {
+          "zh-TW": "搭配 D5 與 CAN 收發器連接 CAN 匯流排",
+          "en": "CAN bus with D5 and a CAN transceiver"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "can"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D3",
+      "silkscreen": "~3",
+      "header": "JDIGITAL",
+      "index": 14,
+      "pos_mm": [
+        55.88,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB0",
+          "note": {
+            "zh-TW": "亦為運算放大器（OPAMP）輸出",
+            "en": "Also the operational-amplifier (OPAMP) output"
+          }
+        },
+        {
+          "type": "pwm",
+          "mcu_pin": "PB0",
+          "note": {
+            "zh-TW": "PWM 頻率固定為 500 Hz",
+            "en": "PWM frequency is fixed at 500 Hz"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D3（STM32 PB0），支援 PWM 輸出，亦是內建運算放大器的輸出腳位。",
+        "en": "Digital pin D3 (STM32 PB0) with PWM output; also the output of the built-in operational amplifier."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "控制伺服馬達（Servo 函式庫）",
+          "en": "Drive a hobby servo (Servo library)"
+        },
+        {
+          "zh-TW": "LED 呼吸燈 / 調光（analogWrite）",
+          "en": "LED dimming / breathing (analogWrite)"
+        },
+        {
+          "zh-TW": "透過馬達驅動板控制直流馬達轉速",
+          "en": "DC motor speed control through a motor driver board"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "任何模式下都不可接 5V — D3 為 TT 型 I/O，最高僅耐 3.6V，接 5V 會永久損壞",
+            "en": "Never apply 5V in any mode — D3 is a TT-type I/O rated to 3.6V absolute maximum; 5V causes permanent damage"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "pwm"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "D2",
+      "silkscreen": "2",
+      "header": "JDIGITAL",
+      "index": 15,
+      "pos_mm": [
+        58.42,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB3"
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "泛用數位 I/O 腳位 D2（STM32 PB3），傳統上常用來接外部中斷訊號（按鈕、編碼器、感測器警報）。",
+        "en": "General-purpose digital I/O pin D2 (STM32 PB3), traditionally used for external interrupt sources (buttons, encoders, sensor alerts)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "旋轉編碼器的 A 相中斷輸入",
+          "en": "Interrupt input for a rotary-encoder A phase"
+        },
+        {
+          "zh-TW": "按鈕輸入（搭配 INPUT_PULLUP 內部上拉）",
+          "en": "Push-button input (with INPUT_PULLUP)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "interrupt"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D1",
+      "silkscreen": "1",
+      "header": "JDIGITAL",
+      "index": 16,
+      "pos_mm": [
+        60.96,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB6"
+        },
+        {
+          "type": "uart",
+          "role": "tx",
+          "bus": "uart0",
+          "mcu_pin": "PB6",
+          "note": {
+            "zh-TW": "USART1 傳送（TX）",
+            "en": "USART1 transmit (TX)"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D1（STM32 PB6），同時是硬體 UART 的 TX（傳送）腳位。使用序列埠與外部裝置通訊時，避免把它當一般 GPIO。",
+        "en": "Digital pin D1 (STM32 PB6), also the hardware UART TX (transmit) line. Avoid using it as plain GPIO while the serial port is talking to an external device."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "傳送指令給序列裝置（如 DFPlayer MP3 模組）",
+          "en": "Send commands to a serial device (e.g. DFPlayer MP3 module)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "uart"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "D0",
+      "silkscreen": "0",
+      "header": "JDIGITAL",
+      "index": 17,
+      "pos_mm": [
+        63.5,
+        2.54,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "digital_io",
+          "mcu_pin": "PB7"
+        },
+        {
+          "type": "uart",
+          "role": "rx",
+          "bus": "uart0",
+          "mcu_pin": "PB7",
+          "note": {
+            "zh-TW": "USART1 接收（RX）",
+            "en": "USART1 receive (RX)"
+          }
+        },
+        {
+          "type": "interrupt",
+          "note": {
+            "zh-TW": "STM32 EXTI 外部中斷（attachInterrupt）",
+            "en": "STM32 EXTI external interrupt (attachInterrupt)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "數位腳位 D0（STM32 PB7），同時是硬體 UART 的 RX（接收）腳位。使用序列埠時避免把它當一般 GPIO。",
+        "en": "Digital pin D0 (STM32 PB7), also the hardware UART RX (receive) line. Avoid using it as plain GPIO while the serial port is in use."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "接收 GPS 模組的 NMEA 序列資料",
+          "en": "Receive NMEA serial data from a GPS module"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "3.3V 邏輯 — 輸出皆為 3.3V；官方標示數位輸入可耐 5V（僅輸入）。與 5V 模組介接時建議仍用電平轉換，並絕不可將本板輸出接到需要 5V 準位的輸入",
+            "en": "3.3V logic — all outputs are 3.3V; officially the pin is 5V tolerant as a digital INPUT only. Prefer a level shifter when interfacing 5V modules, and never feed this board's outputs into inputs that require 5V levels"
+          }
+        }
+      ],
+      "tags": [
+        "digital",
+        "uart"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": true
+      }
+    },
+    {
+      "id": "BOOT",
+      "silkscreen": "BOOT",
+      "header": "JANALOG",
+      "index": 0,
+      "pos_mm": [
+        27.94,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "boot",
+          "note": {
+            "zh-TW": "STM32 BOOT0 開機模式選腳（官方腳位圖標示 BOOT / MCU_BOOT0），於 reset 時取樣以決定開機來源",
+            "en": "STM32 BOOT0 boot-mode strap (official pinout: BOOT / MCU_BOOT0), sampled at reset to select the boot source"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "STM32U585 開機模式選腳（MCU_BOOT0），reset 時取樣。平常保持不接或低電位即可正常開機；官方 ABX00162 完整腳位圖將此位置標示為 BOOT（傳統 UNO R3 此位置為 NC）。",
+        "en": "STM32U585 boot-mode strap pin (MCU_BOOT0), sampled at reset. Leave it unconnected or low for normal boot; the official ABX00162 full-pinout diagram labels this position BOOT (the classic UNO R3 kept it NC)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "進階用途：reset 時拉高可強制 STM32 進入系統 bootloader（韌體救援）",
+          "en": "Advanced: hold high through reset to force the STM32 system bootloader (firmware recovery)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "開機/重置期間請勿拉高此腳，否則 MCU 會進入系統 bootloader 而不執行程式",
+            "en": "Do not pull this pin high during boot/reset, or the MCU will enter the system bootloader instead of running your program"
+          }
+        }
+      ],
+      "tags": [
+        "system",
+        "boot"
+      ],
+      "electrical": {
+        "voltage": 3.3
+      }
+    },
+    {
+      "id": "IOREF",
+      "silkscreen": "IOREF",
+      "header": "JANALOG",
+      "index": 1,
+      "pos_mm": [
+        30.48,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "ioref",
+          "direction": "output",
+          "note": {
+            "zh-TW": "向擴充板宣告本板 I/O 邏輯電壓（3.3V）",
+            "en": "Tells shields this board's I/O logic voltage (3.3V)"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "I/O 參考電壓腳位。擴充板（shield）讀取此腳位得知主板邏輯電壓；UNO Q 為 3.3V（傳統 UNO R3 為 5V，選購擴充板時務必確認相容 3.3V）。",
+        "en": "I/O reference voltage pin. Shields read it to learn the host board's logic voltage; on the UNO Q it is 3.3V (the classic UNO R3 was 5V — check shield compatibility)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "支援雙電壓的擴充板據此自動切換準位",
+          "en": "Dual-voltage shields use it to auto-select their level"
+        }
+      ],
+      "warnings": [],
+      "tags": [
+        "power"
+      ],
+      "electrical": {
+        "voltage": 3.3
+      }
+    },
+    {
+      "id": "RESET",
+      "silkscreen": "RESET",
+      "header": "JANALOG",
+      "index": 2,
+      "pos_mm": [
+        33.02,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "reset",
+          "note": {
+            "zh-TW": "低電位觸發：拉到 GND 會重置 STM32",
+            "en": "Active-low: pulling to GND resets the STM32"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "重置腳位（低電位有效）。把它接到 GND 會重置 STM32 微控制器；擴充板的 RESET 按鈕也是接到這裡。",
+        "en": "Reset pin (active low). Pulling it to GND resets the STM32 microcontroller; shield reset buttons connect here."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "外接重置按鈕（按下時接地）",
+          "en": "External reset button (shorts to ground when pressed)"
+        }
+      ],
+      "warnings": [],
+      "tags": [
+        "system"
+      ],
+      "electrical": {
+        "voltage": 3.3
+      }
+    },
+    {
+      "id": "3V3",
+      "silkscreen": "3V3",
+      "header": "JANALOG",
+      "index": 3,
+      "pos_mm": [
+        35.56,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "3v3",
+          "direction": "output"
+        }
+      ],
+      "description": {
+        "zh-TW": "3.3V 電源輸出，供感測器與模組使用。UNO Q 的邏輯電壓即為 3.3V，多數 3.3V 模組可直接由此供電。",
+        "en": "3.3V power output for sensors and modules. The UNO Q's logic level is 3.3V, so most 3.3V modules can be powered directly from this pin."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "供電給 3.3V 感測器模組（BME280、MPU6050）",
+          "en": "Power 3.3V sensor modules (BME280, MPU6050)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "info",
+          "text": {
+            "zh-TW": "輸出電流能力有限，大負載（馬達、燈條）請用外部電源",
+            "en": "Limited output current — power heavy loads (motors, LED strips) externally"
+          }
+        }
+      ],
+      "tags": [
+        "power"
+      ],
+      "electrical": {
+        "voltage": 3.3
+      }
+    },
+    {
+      "id": "5V",
+      "silkscreen": "5V",
+      "header": "JANALOG",
+      "index": 4,
+      "pos_mm": [
+        38.1,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "5v",
+          "direction": "bidirectional",
+          "note": {
+            "zh-TW": "USB-C 供電時輸出 5V；也可由穩壓 5V 電源反向供電給板子",
+            "en": "Outputs 5V when USB-C powered; the board can also be powered by a regulated 5V supply on this pin"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "5V 電源腳位。這是「電源軌」而不是訊號腳位 — UNO Q 的 I/O 全部是 3.3V 邏輯。可為 5V 週邊（如部分 LED 條、繼電器模組電源端）供電，或以穩壓 5V 由此供電給板子。",
+        "en": "5V power rail — a supply pin, not a signal pin (all UNO Q I/O is 3.3V logic). Use it to feed 5V peripherals (some LED strips, relay module supply inputs) or to power the board from a regulated 5V source."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "供電給 5V 繼電器模組的 VCC（控制訊號仍須 3.3V 相容）",
+          "en": "Power a 5V relay module's VCC (its control input must still accept 3.3V)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "電源腳位，切勿接到任何 I/O 訊號腳，否則會損壞板子",
+            "en": "Power pin — never wire it to any I/O signal pin or the board will be damaged"
+          }
+        }
+      ],
+      "tags": [
+        "power"
+      ],
+      "electrical": {
+        "voltage": 5.0
+      }
+    },
+    {
+      "id": "GND_P1",
+      "silkscreen": "GND",
+      "header": "JANALOG",
+      "index": 5,
+      "pos_mm": [
+        40.64,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地（電源排針，第一支）。與板上其他 GND 電氣相同。",
+        "en": "Ground (power header, first of two). Electrically identical to every other GND."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "電源與訊號共地",
+          "en": "Common ground for power and signals"
+        }
+      ],
+      "warnings": [],
+      "tags": [
+        "power",
+        "ground"
+      ]
+    },
+    {
+      "id": "GND_P2",
+      "silkscreen": "GND",
+      "header": "JANALOG",
+      "index": 6,
+      "pos_mm": [
+        43.18,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "gnd"
+        }
+      ],
+      "description": {
+        "zh-TW": "接地（電源排針，第二支）。與板上其他 GND 電氣相同。",
+        "en": "Ground (power header, second of two). Electrically identical to every other GND."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "電源與訊號共地",
+          "en": "Common ground for power and signals"
+        }
+      ],
+      "warnings": [],
+      "tags": [
+        "power",
+        "ground"
+      ]
+    },
+    {
+      "id": "VIN",
+      "silkscreen": "VIN",
+      "header": "JANALOG",
+      "index": 7,
+      "pos_mm": [
+        45.72,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "power",
+          "rail": "vin",
+          "direction": "input",
+          "note": {
+            "zh-TW": "外部電源輸入 7–24 VDC",
+            "en": "External supply input, 7-24 VDC"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "外部電源輸入腳位，接受 7–24 VDC，經板上穩壓器供電給整塊板子。",
+        "en": "External power input pin accepting 7-24 VDC, feeding the whole board through the on-board regulator."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "以 12V 電源供應器為專題供電",
+          "en": "Power a project from a 12V wall supply"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "僅限 7–24V 輸入並注意極性；請勿由此腳位取電驅動大負載",
+            "en": "7-24V input only, mind the polarity; do not use it as a high-current output"
+          }
+        }
+      ],
+      "tags": [
+        "power"
+      ]
+    },
+    {
+      "id": "A0",
+      "silkscreen": "A0",
+      "header": "JANALOG",
+      "index": 8,
+      "pos_mm": [
+        50.8,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "adc",
+          "channel": "A0",
+          "mcu_pin": "PA4",
+          "note": {
+            "zh-TW": "ADC 最高 14 位元（呼叫 analogReadResolution(14)，0–16383）；analogRead 預設 10 位元（0–1023）；預設參考電壓 3.3V",
+            "en": "ADC up to 14-bit (call analogReadResolution(14), 0-16383); analogRead defaults to 10-bit (0-1023); default reference 3.3V"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PA4",
+          "note": {
+            "zh-TW": "亦支援 DAC 類比輸出",
+            "en": "Also supports DAC analog output"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "類比輸入腳位 A0（STM32 PA4），analogRead 預設 10 位元（0–1023），可呼叫 analogReadResolution(14) 提升至 14 位元（0–16383），量測範圍 0–3.3V；同時是 DAC 類比輸出腳位，也可當一般數位 I/O。",
+        "en": "Analog input A0 (STM32 PA4); analogRead defaults to 10-bit (0-1023), up to 14-bit (0-16383) via analogReadResolution(14), over 0-3.3V; also a DAC analog output and usable as plain digital I/O."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取可變電阻旋鈕位置",
+          "en": "Read a potentiometer knob position"
+        },
+        {
+          "zh-TW": "以 DAC 輸出產生類比波形",
+          "en": "Generate an analog waveform with the DAC"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "不耐 5V（Direct ADC 腳）— 高於 3.3V 的訊號請先分壓",
+            "en": "Not 5V tolerant (direct ADC pin) — divide down any signal above 3.3V first"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "ADC 輸入專用 — 請勿拉/灌直流電流（不可直接驅動 LED 等負載）；高電壓感測請用分壓電阻",
+            "en": "ADC input only — do not source or sink DC current (do not drive LEDs or other loads directly); use a resistor divider for higher-voltage sensing"
+          }
+        }
+      ],
+      "tags": [
+        "analog",
+        "adc",
+        "dac"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "A1",
+      "silkscreen": "A1",
+      "header": "JANALOG",
+      "index": 9,
+      "pos_mm": [
+        53.34,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "adc",
+          "channel": "A1",
+          "mcu_pin": "PA5",
+          "note": {
+            "zh-TW": "ADC 最高 14 位元（呼叫 analogReadResolution(14)，0–16383）；analogRead 預設 10 位元（0–1023）；預設參考電壓 3.3V",
+            "en": "ADC up to 14-bit (call analogReadResolution(14), 0-16383); analogRead defaults to 10-bit (0-1023); default reference 3.3V"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PA5",
+          "note": {
+            "zh-TW": "亦支援 DAC 類比輸出",
+            "en": "Also supports DAC analog output"
+          }
+        }
+      ],
+      "description": {
+        "zh-TW": "類比輸入腳位 A1（STM32 PA5），analogRead 預設 10 位元（0–1023），可呼叫 analogReadResolution(14) 提升至 14 位元（0–16383），量測 0–3.3V；同時是第二個 DAC 類比輸出腳位，也可當一般數位 I/O。",
+        "en": "Analog input A1 (STM32 PA5); analogRead defaults to 10-bit (0-1023), up to 14-bit (0-16383) via analogReadResolution(14), over 0-3.3V; also the second DAC analog output and usable as plain digital I/O."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取光敏電阻（LDR）分壓",
+          "en": "Read an LDR light-sensor voltage divider"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "danger",
+          "text": {
+            "zh-TW": "不耐 5V（Direct ADC 腳）— 高於 3.3V 的訊號請先分壓",
+            "en": "Not 5V tolerant (direct ADC pin) — divide down any signal above 3.3V first"
+          }
+        },
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "ADC 輸入專用 — 請勿拉/灌直流電流（不可直接驅動 LED 等負載）；高電壓感測請用分壓電阻",
+            "en": "ADC input only — do not source or sink DC current (do not drive LEDs or other loads directly); use a resistor divider for higher-voltage sensing"
+          }
+        }
+      ],
+      "tags": [
+        "analog",
+        "adc",
+        "dac"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "A2",
+      "silkscreen": "A2",
+      "header": "JANALOG",
+      "index": 10,
+      "pos_mm": [
+        55.88,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "adc",
+          "channel": "A2",
+          "mcu_pin": "PA6",
+          "note": {
+            "zh-TW": "亦為 OPAMP 同相輸入（IN+）",
+            "en": "Also the OPAMP non-inverting input (IN+)"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PA6"
+        }
+      ],
+      "description": {
+        "zh-TW": "類比輸入腳位 A2（STM32 PA6），analogRead 預設 10 位元（0–1023），最高 14 位元（analogReadResolution(14)，0–16383）；亦為內建運算放大器的同相輸入（IN+），可搭配 D3（輸出）與 A3（IN−）組成放大電路。",
+        "en": "Analog input A2 (STM32 PA6); analogRead defaults to 10-bit (0-1023), up to 14-bit (analogReadResolution(14), 0-16383); also the built-in OPAMP non-inverting input (IN+), usable with D3 (output) and A3 (IN-) as an amplifier."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "量測土壤濕度感測器輸出",
+          "en": "Measure a soil-moisture sensor output"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "類比（ADC）模式下不耐 5V；官方文件標示僅作數位輸入時可耐 5V。建議一律使用 3.3V 訊號",
+            "en": "Not 5V tolerant in analog (ADC) mode; the official docs mark it 5V tolerant only as a digital input. Recommended: keep every signal at 3.3V"
+          }
+        }
+      ],
+      "tags": [
+        "analog",
+        "adc"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "A3",
+      "silkscreen": "A3",
+      "header": "JANALOG",
+      "index": 11,
+      "pos_mm": [
+        58.42,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "adc",
+          "channel": "A3",
+          "mcu_pin": "PA7",
+          "note": {
+            "zh-TW": "亦為 OPAMP 反相輸入（IN−）",
+            "en": "Also the OPAMP inverting input (IN-)"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PA7"
+        }
+      ],
+      "description": {
+        "zh-TW": "類比輸入腳位 A3（STM32 PA7），analogRead 預設 10 位元（0–1023），最高 14 位元（analogReadResolution(14)，0–16383）；亦為內建運算放大器的反相輸入（IN−）。",
+        "en": "Analog input A3 (STM32 PA7); analogRead defaults to 10-bit (0-1023), up to 14-bit (analogReadResolution(14), 0-16383); also the built-in OPAMP inverting input (IN-)."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "量測電流感測模組（如 ACS712 的 3.3V 版本）輸出",
+          "en": "Measure a current-sensor module output (3.3V-compatible types)"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "類比（ADC）模式下不耐 5V；官方文件標示僅作數位輸入時可耐 5V。建議一律使用 3.3V 訊號",
+            "en": "Not 5V tolerant in analog (ADC) mode; the official docs mark it 5V tolerant only as a digital input. Recommended: keep every signal at 3.3V"
+          }
+        }
+      ],
+      "tags": [
+        "analog",
+        "adc"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "A4",
+      "silkscreen": "A4",
+      "header": "JANALOG",
+      "index": 12,
+      "pos_mm": [
+        60.96,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "adc",
+          "channel": "A4",
+          "mcu_pin": "PC1",
+          "note": {
+            "zh-TW": "ADC 最高 14 位元（呼叫 analogReadResolution(14)，0–16383）；analogRead 預設 10 位元（0–1023）；預設參考電壓 3.3V",
+            "en": "ADC up to 14-bit (call analogReadResolution(14), 0-16383); analogRead defaults to 10-bit (0-1023); default reference 3.3V"
+          }
+        },
+        {
+          "type": "i2c",
+          "role": "sda",
+          "bus": "i2c0",
+          "mcu_pin": "PC1",
+          "note": {
+            "zh-TW": "第二組 I2C 資料（SDA2）。優先使用專用 SDA/SCL；UNO Q 上 A4/A5 對應 STM32 另一組 I2C 腳位（PC1/PC0），與專用 SDA/SCL（PB11/PB10）不是同一組 MCU 腳位",
+            "en": "Secondary I2C data (SDA2). Prefer the dedicated SDA/SCL pins; on the UNO Q A4/A5 map to a different STM32 I2C (PC1/PC0) than the dedicated SDA/SCL (PB11/PB10)"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PC1"
+        }
+      ],
+      "description": {
+        "zh-TW": "類比輸入腳位 A4（STM32 PC1），analogRead 預設 10 位元（0–1023），最高 14 位元（analogReadResolution(14)，0–16383）；亦標示為 SDA2 —— 第二組 I2C 的資料腳位。接 I2C 模組時建議優先使用專用 SDA/SCL 腳位。",
+        "en": "Analog input A4 (STM32 PC1); analogRead defaults to 10-bit (0-1023), up to 14-bit (analogReadResolution(14), 0-16383); also labelled SDA2 — the data line of a secondary I2C. Prefer the dedicated SDA/SCL pins for I2C modules."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取搖桿模組的 X 軸電壓",
+          "en": "Read a joystick module's X-axis voltage"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "類比（ADC）模式下不耐 5V；官方文件標示僅作數位輸入時可耐 5V。建議一律使用 3.3V 訊號",
+            "en": "Not 5V tolerant in analog (ADC) mode; the official docs mark it 5V tolerant only as a digital input. Recommended: keep every signal at 3.3V"
+          }
+        }
+      ],
+      "tags": [
+        "analog",
+        "adc",
+        "i2c"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": false
+      }
+    },
+    {
+      "id": "A5",
+      "silkscreen": "A5",
+      "header": "JANALOG",
+      "index": 13,
+      "pos_mm": [
+        63.5,
+        50.8,
+        8.5
+      ],
+      "capabilities": [
+        {
+          "type": "adc",
+          "channel": "A5",
+          "mcu_pin": "PC0",
+          "note": {
+            "zh-TW": "ADC 最高 14 位元（呼叫 analogReadResolution(14)，0–16383）；analogRead 預設 10 位元（0–1023）；預設參考電壓 3.3V",
+            "en": "ADC up to 14-bit (call analogReadResolution(14), 0-16383); analogRead defaults to 10-bit (0-1023); default reference 3.3V"
+          }
+        },
+        {
+          "type": "i2c",
+          "role": "scl",
+          "bus": "i2c0",
+          "mcu_pin": "PC0",
+          "note": {
+            "zh-TW": "第二組 I2C 時脈（SCL2）。優先使用專用 SDA/SCL；UNO Q 上 A4/A5 對應 STM32 另一組 I2C 腳位（PC1/PC0），與專用 SDA/SCL（PB11/PB10）不是同一組 MCU 腳位",
+            "en": "Secondary I2C clock (SCL2). Prefer the dedicated SDA/SCL pins; on the UNO Q A4/A5 map to a different STM32 I2C (PC1/PC0) than the dedicated SDA/SCL (PB11/PB10)"
+          }
+        },
+        {
+          "type": "digital_io",
+          "mcu_pin": "PC0"
+        }
+      ],
+      "description": {
+        "zh-TW": "類比輸入腳位 A5（STM32 PC0），analogRead 預設 10 位元（0–1023），最高 14 位元（analogReadResolution(14)，0–16383）；亦標示為 SCL2 —— 第二組 I2C 的時脈腳位。接 I2C 模組時建議優先使用專用 SDA/SCL 腳位。",
+        "en": "Analog input A5 (STM32 PC0); analogRead defaults to 10-bit (0-1023), up to 14-bit (analogReadResolution(14), 0-16383); also labelled SCL2 — the clock line of a secondary I2C. Prefer the dedicated SDA/SCL pins for I2C modules."
+      },
+      "usage_examples": [
+        {
+          "zh-TW": "讀取搖桿模組的 Y 軸電壓",
+          "en": "Read a joystick module's Y-axis voltage"
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "text": {
+            "zh-TW": "類比（ADC）模式下不耐 5V；官方文件標示僅作數位輸入時可耐 5V。建議一律使用 3.3V 訊號",
+            "en": "Not 5V tolerant in analog (ADC) mode; the official docs mark it 5V tolerant only as a digital input. Recommended: keep every signal at 3.3V"
+          }
+        }
+      ],
+      "tags": [
+        "analog",
+        "adc",
+        "i2c"
+      ],
+      "electrical": {
+        "voltage": 3.3,
+        "max_current_ma": 20.0,
+        "five_volt_tolerant": false
+      }
+    }
+  ]
+}

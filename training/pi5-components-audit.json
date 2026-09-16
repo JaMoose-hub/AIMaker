@@ -1,0 +1,91 @@
+{
+  "status": "warning",
+  "ready_to_train": true,
+  "data_yaml": "C:\\Users\\james\\Downloads\\pi5_data\\data.yaml",
+  "dataset_root": "C:\\Users\\james\\Downloads\\pi5_data",
+  "task": "segment",
+  "class_names": [
+    "CPU",
+    "Ethernet",
+    "GPIO",
+    "HDMI",
+    "RAM",
+    "RAM-3",
+    "Raspberry",
+    "micro-hdmi"
+  ],
+  "class_count": 8,
+  "total_images": 257,
+  "splits": {
+    "train": {
+      "image_root": "C:\\Users\\james\\Downloads\\pi5_data\\train\\images",
+      "label_root": "C:\\Users\\james\\Downloads\\pi5_data\\train\\labels",
+      "images": 225,
+      "label_files": 225,
+      "background_images": 0,
+      "orphan_labels": 0,
+      "instances": 1422,
+      "class_instances": {
+        "CPU": 225,
+        "Ethernet": 219,
+        "GPIO": 219,
+        "HDMI": 102,
+        "RAM": 114,
+        "RAM-3": 105,
+        "Raspberry": 225,
+        "micro-hdmi": 213
+      },
+      "invalid_rows": 0
+    },
+    "val": {
+      "image_root": "C:\\Users\\james\\Downloads\\pi5_data\\valid\\images",
+      "label_root": "C:\\Users\\james\\Downloads\\pi5_data\\valid\\labels",
+      "images": 21,
+      "label_files": 21,
+      "background_images": 0,
+      "orphan_labels": 0,
+      "instances": 137,
+      "class_instances": {
+        "CPU": 21,
+        "Ethernet": 20,
+        "GPIO": 21,
+        "HDMI": 8,
+        "RAM": 13,
+        "RAM-3": 8,
+        "Raspberry": 20,
+        "micro-hdmi": 26
+      },
+      "invalid_rows": 0
+    },
+    "test": {
+      "image_root": "C:\\Users\\james\\Downloads\\pi5_data\\test\\images",
+      "label_root": "C:\\Users\\james\\Downloads\\pi5_data\\test\\labels",
+      "images": 11,
+      "label_files": 11,
+      "background_images": 0,
+      "orphan_labels": 0,
+      "instances": 68,
+      "class_instances": {
+        "CPU": 12,
+        "Ethernet": 11,
+        "GPIO": 9,
+        "HDMI": 6,
+        "RAM": 5,
+        "RAM-3": 5,
+        "Raspberry": 11,
+        "micro-hdmi": 9
+      },
+      "invalid_rows": 0
+    }
+  },
+  "annotation_rows": {
+    "segment": 1627
+  },
+  "cross_split_duplicate_groups": [],
+  "fingerprint": "8c6f46ec850784845b28eebf93ee173e0db969c4e70a0a8ef081b480ba6cf043",
+  "errors": [],
+  "warnings": [
+    "class 'HDMI' has 102 train instances, below 50% of the largest class (225); add more varied samples",
+    "class 'RAM-3' has 105 train instances, below 50% of the largest class (225); add more varied samples"
+  ]
+}
