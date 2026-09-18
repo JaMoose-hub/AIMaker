@@ -9,6 +9,7 @@ import {
 import { toDisplay, type DisplayPoint, type Letterbox } from "../lib/geometry";
 import { guidanceCalloutGeometry, guidancePointerGeometry } from "../lib/guidanceCallout";
 import { piHeaderGuideText } from "../lib/piHeaderGuide";
+import { headerCountDirection } from "../lib/headerCountDirection";
 import { pointBounds, placeWiringLabel, type LabelRect, type WiringLabel } from "../lib/wiringLabelLayout";
 import {
   capColorVar,
@@ -370,6 +371,10 @@ export function PinOverlay({
     const pin = target.pin;
     const labels = HEADER_GUIDE_LABELS[pin.header];
     const pi = piHeaderGuideText(pin, t);
+    const rowStart = pi ? displayPins.find(p => p.pin?.header === "J8" && p.pin.index === (pi.row === "inner" ? 1 : 2)) : null;
+    const rowEnd = pi ? displayPins.find(p => p.pin?.header === "J8" && p.pin.index === (pi.row === "inner" ? 39 : 40)) : null;
+    const direction = visualDetection?.tracking === "locked" && !guidanceHeld
+      ? headerCountDirection(rowStart, rowEnd, width, height, t) : null;
     const ordinal = pi?.number ?? pin.index + 1;
     const peerPin = guidePeerPose?.tracking !== "searching"
       ? guidePeerPose?.pins.find(p => p.id === guidePeerPinId && p.v) : null;
@@ -386,6 +391,7 @@ export function PinOverlay({
       target,
       pin,
       pi,
+      countHint: direction ? t("headerCount.pi", { direction }) : pi?.countFromLabel,
       label,
       ordinal,
       headerLabel: labels ? t(labels.headerKey) : pin.header,
@@ -394,7 +400,7 @@ export function PinOverlay({
       ...(pi ? guidancePointerGeometry(target.x, target.y, width, height) : {}),
       ...(label ? { startX: label.startX, startY: label.startY, endX: label.endX, endY: label.endY } : {}),
     };
-  }, [activeGuidePinId, displayPins, displayOutline, guidePeerPose, guidePeerPinId, guideLabel, letterbox, height, t, width]);
+  }, [activeGuidePinId, displayPins, displayOutline, guidePeerPose, guidePeerPinId, guideLabel, letterbox, height, t, width, visualDetection?.tracking, guidanceHeld]);
 
   return (
     <>
@@ -417,11 +423,12 @@ export function PinOverlay({
             viewBox="0 0 10 10"
             refX="9"
             refY="5"
-            markerWidth="7"
-            markerHeight="7"
+            markerUnits="userSpaceOnUse"
+            markerWidth="9"
+            markerHeight="9"
             orient="auto-start-reverse"
           >
-            <path className="component-guidance-arrowhead" d="M 0 0 L 10 5 L 0 10 z" />
+            <path className="component-guidance-arrowhead" d="M 1 1 L 9 5 L 1 9" />
           </marker>
         </defs>
         {outlinePoints && <polygon className="board-outline" points={outlinePoints} strokeDasharray={visualDetection?.pose_quality?.stability === 'motion_prediction' ? '6 5' : undefined} />}
@@ -514,7 +521,7 @@ export function PinOverlay({
         </g>
         {guidanceCallout && (
           <g className={`component-pin-callout board-pin-callout${guidanceCallout.pi ? " pi-guidance-pointer" : ""}`}
-            role={guidanceCallout.pi ? "img" : undefined} aria-label={guidanceCallout.pi?.title}>
+            role={guidanceCallout.pi ? "img" : undefined} aria-label={guidanceCallout.pi ? `${guidanceCallout.pi.title}；${guidanceCallout.countHint}` : undefined}>
             <line
               className="component-pin-callout-arrow"
               x1={guidanceCallout.startX}
@@ -528,6 +535,9 @@ export function PinOverlay({
                 width={guidanceCallout.label.width} height={guidanceCallout.label.height} rx="8" />
               <text className="pi-row-label-text" x={guidanceCallout.label.x + 10} y={guidanceCallout.label.y + 21}>
                 {guidanceCallout.pi.title}
+              </text>
+              <text className="header-count-hint" x={guidanceCallout.label.x + 10} y={guidanceCallout.label.y + 40}>
+                {guidanceCallout.countHint}
               </text>
             </> : null}
             {!guidanceCallout.pi ? <><rect

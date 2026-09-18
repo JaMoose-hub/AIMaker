@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "check:i18n": "node tools/check_i18n.mjs",
     "test:guides": "node --test tools/component_guides.test.mjs tools/pi_header_guide.test.mjs tools/pi_example.test.mjs tools/maker.test.mjs tools/maker_migration.test.mjs tools/circuit_layout.test.mjs tools/circuit_zoom.test.mjs tools/realtime_frame.test.mjs tools/studio_split.test.mjs tools/cloud_wiring.test.mjs tools/project_guide.test.mjs tools/glasses.test.mjs tools/display_mode.test.mjs",
-    "test:headers": "node --test tools/component_header.test.mjs",
+    "test:headers": "node --test tools/component_header.test.mjs tools/camera_tuning.test.mjs tools/status_layout.test.mjs",
     "test": "npm run check:i18n && npm run test:guides && npm run test:headers && npm run build",
     "preview": "vite preview"
   },

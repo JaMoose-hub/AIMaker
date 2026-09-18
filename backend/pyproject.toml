@@ -22,6 +22,8 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
+    "pillow>=10.4", # headless rendering tests for the generated Pi display program
+    "luma.lcd==2.13.0", # exercise the real ILI9341 driver with a fake SPI bus
 ]
 cuda = ["onnxruntime-gpu[cuda,cudnn]==1.24.4", "cupy-cuda12x==14.2.0"]
 directml = ["onnxruntime-directml==1.24.4; sys_platform == 'win32'"]

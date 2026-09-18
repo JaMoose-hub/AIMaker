@@ -44,15 +44,18 @@ test("module pin order and header edge follow camera vision profiles, not lesson
   }
 });
 
-test("unresolved TFT power pins are drawn but never connected", () => {
+test("TFT VCC uses Pin17 but unverified BLK is drawn without a connection", () => {
   const modules = circuitLayout(design()).modules;
   const display = modules.find(m => m.id === "mrd-tf240-8p-cs");
-  assert.deepEqual(display.pins.filter(p => p.state === "pending").map(p => p.id), ["VCC", "BLK"]);
+  assert.deepEqual(display.pins.filter(p => p.state === "pending").map(p => p.id), ["BLK"]);
+  assert.equal(display.pins.find(p => p.id === "VCC").wire.boardPin, "3V3_P17");
   assert(display.pins.filter(p => p.state === "pending").every(p => !p.wire));
 });
 
 test("ECHO divider branch terminates on this module's real GND route", () => {
-  const ultrasonic = circuitLayout(design()).modules[0];
+  const legacy = design();
+  legacy.wiring.find(w => w.componentPin === 'ECHO').connectionKind = 'divider';
+  const ultrasonic = circuitLayout(legacy).modules[0];
   const echo = ultrasonic.routes.find(r => r.pin.id === "ECHO");
   const ground = ultrasonic.routes.find(r => r.pin.id === "GND");
   assert.equal(echo.wire.connectionKind, "divider");
@@ -94,7 +97,7 @@ test("clearing Blueprint selection cannot revive a previously clicked pin or sel
   assert.equal(result.filter, 'hc-sr04');
 });
 
-test("camera guidance still overrides editable selection and retains ECHO protection", () => {
+test("camera guidance overrides selection with the selected variant's direct ECHO", () => {
   const d = design();
   const echo = d.wiring.find(w => w.componentPin === 'ECHO');
   const other = d.wiring.find(w => w.componentId === 'mrd-tf240-8p-cs' && w.componentPin === 'GND');
@@ -102,5 +105,5 @@ test("camera guidance still overrides editable selection and retains ECHO protec
   assert.equal(result.activeWire, echo);
   assert.equal(result.focus, echo);
   assert.equal(result.filter, 'hc-sr04');
-  assert.equal(result.focus.connectionKind, 'divider');
+  assert.equal(result.focus.connectionKind, 'direct');
 });

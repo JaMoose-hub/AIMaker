@@ -11,6 +11,8 @@ const layoutUrl = compile('lib/wiringLabelLayout.ts');
 const layout = await import(layoutUrl);
 const geometryUrl = compile('lib/geometry.ts');
 const {toDisplay} = await import(geometryUrl);
+const directionUrl = compile('lib/headerCountDirection.ts');
+const {headerCountDirection} = await import(directionUrl);
 const rows = {'hc-sr04':['VCC','TRIG','ECHO','GND'], 'mrd-tf240-8p-cs':['GND','VCC','SCL','SDA','RES','DC','CS','BLK']};
 function localeFixture(locale) {
   const messages = JSON.parse(readFileSync(new URL(`../src/locales/${locale}.json`,import.meta.url),'utf8'));
@@ -31,11 +33,12 @@ test('module ordinals use canonical physical order, including unused TFT pins', 
   assert.equal(header.componentHeaderLocation('hc-sr04',null),null);
 });
 
-test('both module overlays show one compact line and preserve ordinals through every mirror', async () => {
+test('both module overlays show row direction and preserve ordinals through every mirror', async () => {
   for(const locale of ['zh-TW','en']) {
     const {t,i18n}=localeFixture(locale);
     const {ComponentPinOverlay}=await import(compile('components/ComponentPinOverlay.tsx',{
       '../lib/componentHeaderGuide':componentHeaderUrl,'../lib/wiringLabelLayout':layoutUrl,
+      '../lib/headerCountDirection':directionUrl,
       '../lib/geometry':geometryUrl,'../lib/i18n':i18n,'../lib/guidanceCallout':compile('lib/guidanceCallout.ts'),
     }));
     for(const [id,pins] of Object.entries(rows)) for(const pin of pins) for(const mirrorX of [false,true]) for(const mirrorY of [false,true]) {
@@ -46,12 +49,15 @@ test('both module overlays show one compact line and preserve ordinals through e
       const text=header.componentHeaderGuideText(id,pin,t);
       const callout=html.match(/<g class="component-pin-callout"[\s\S]*?<\/g>/)?.[0];
       assert.ok(callout?.includes(text.title));
-      assert.equal((callout.match(/<text/g)??[]).length,1);
-      assert.match(callout,/width="228" height="32"/);
+      assert.equal((callout.match(/<text/g)??[]).length,2);
+      assert.match(callout,/width="288" height="52"/);
+      assert.ok(callout.includes(t('headerCount.component', {direction:t(mirrorX ? 'headerCount.left' : 'headerCount.right'),pin:pins[0]})));
       assert.ok(!callout.includes('component-pin-callout-hint'));
       assert.ok(!html.includes('component-header-start'));
+      assert.match(html,/markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9"/);
+      assert.match(html,/class="component-guidance-arrowhead" d="M 1 1 L 9 5 L 1 9"/);
       assert.ok(!html.includes('①'));
-      assert.equal(text.name,id === 'hc-sr04' ? 'HC-SR04' : 'MRD-TF240');
+      assert.equal(text.name,id === 'hc-sr04' ? 'HC-SR04+' : 'MRD-TFT240');
       assert.ok(!callout.includes('超音波') && !callout.includes('螢幕'));
       assert.deepEqual(pose,before);
       const noSpace=renderToStaticMarkup(createElement(ComponentPinOverlay,{...props,guideLabel:null}));
@@ -59,11 +65,68 @@ test('both module overlays show one compact line and preserve ordinals through e
       assert.ok(noSpace.includes('component-guidance-halo'));
       const missingStart=renderToStaticMarkup(createElement(ComponentPinOverlay,{...props,pose:{...pose,pins:pose.pins.map((p,i)=>({...p,v:i!==0}))}}));
       assert.ok(!missingStart.includes('component-header-start'));
+      if(pin!==pins[0]) assert.ok(missingStart.includes(t('headerCount.componentFallback',{pin:pins[0]})));
+      const held=renderToStaticMarkup(createElement(ComponentPinOverlay,{...props,held:true}));
+      assert.ok(held.includes(t('headerCount.componentFallback',{pin:pins[0]})));
       for(const extra of [{guidanceSuspended:true},{pose:{...pose,tracking:'searching'}}]) assert.equal(renderToStaticMarkup(createElement(ComponentPinOverlay,{...props,...extra})),'');
     }
     const legacy=renderToStaticMarkup(createElement(ComponentPinOverlay,{pose:{component_id:'photoresistor-module',tracking:'locked',pins:[{id:'GND',x:300,y:250,v:true}]},letterbox:{scale:1,offx:0,offy:0,elementWidth:1000,elementHeight:700},width:1000,height:700,targetPinId:'GND'}));
     assert.match(legacy,/width="132" height="44"/);
     assert.ok(legacy.includes(t('componentGuide.countFromAo')));
+  }
+});
+
+test('counting directions follow semantic endpoints across rotation, mirrors and perspective', () => {
+  const {t}=localeFixture('zh-TW');
+  const directions=['right','downRight','down','downLeft','left','upLeft','up','upRight'];
+  for(let i=0;i<8;i++) for(const mirrorX of [false,true]) for(const mirrorY of [false,true]) {
+    const theta=i*Math.PI/4, start={x:300,y:250};
+    const end={x:300+Math.cos(theta)*100,y:250+Math.sin(theta)*100};
+    const lb={scale:.8,offx:10,offy:15,elementWidth:800,elementHeight:600,mirrorX,mirrorY};
+    const a=toDisplay(lb,start.x,start.y),b=toDisplay(lb,end.x,end.y);
+    let index=i;
+    if(mirrorX) index=(4-index+8)%8;
+    if(mirrorY) index=(8-index)%8;
+    assert.equal(headerCountDirection(a,b,800,600,t),t(`headerCount.${directions[index]}`));
+  }
+  for(const endpoints of [[null,{x:30,y:50}],[{x:3,y:5},{x:4,y:6}],[{x:NaN,y:0},{x:30,y:50}],[{x:-5,y:0},{x:30,y:50}]]) {
+    assert.equal(headerCountDirection(...endpoints,800,600,t),null);
+  }
+  // Actual display transform, not raw camera X/Y; a 90-degree projective map.
+  const lb={scale:1,offx:0,offy:0,elementWidth:800,elementHeight:600,mirrorX:false,mirrorY:false,
+    sourceToDisplay:[0,-1,600,1,0,0,0,0,1]};
+  assert.equal(headerCountDirection(toDisplay(lb,100,100),toDisplay(lb,200,100),800,600,t),t('headerCount.down'));
+});
+
+test('thin connection arrows leave Pin centres clear without changing projected locations', async () => {
+  const {GuideConnectionOverlay}=await import(compile('components/GuideConnectionOverlay.tsx',{
+    '../lib/geometry':geometryUrl,
+    '../lib/useSmoothedDetection':dataUrl('export const useSmoothedDetection = value => value;'),
+  }));
+  const attr=(tag,key)=>Number(tag.match(new RegExp(` ${key}="([^"]+)"`))?.[1]);
+  for(const delta of [[200,100],[3,4],[0,0]]) for(const mirrorX of [false,true]) for(const mirrorY of [false,true]) {
+    const detection={tracking:'locked',pins:[{id:'6',x:100,y:200,v:true}]};
+    const componentPose={tracking:'locked',pins:[{id:'GND',x:100+delta[0],y:200+delta[1],v:true}]};
+    const letterbox={scale:.75,offx:10,offy:20,elementWidth:1000,elementHeight:700,mirrorX,mirrorY};
+    const props={detection,componentPose,letterbox,width:1000,height:700,boardPinId:'6',componentPinId:'GND',boardDisplayOffsetPx:{x:0,y:0}};
+    const before=structuredClone(props);
+    const html=renderToStaticMarkup(createElement(GuideConnectionOverlay,props));
+    const line=html.match(/<line class="guide-connection-line"[^>]*>/)?.[0];
+    const origin=html.match(/<circle class="guide-connection-origin"[^>]*>/)?.[0];
+    const target=html.match(/<circle class="guide-connection-target"[^>]*>/)?.[0];
+    const from=toDisplay(letterbox,100,200), to=toDisplay(letterbox,100+delta[0],200+delta[1]);
+    assert.ok(line && origin && target);
+    assert.deepEqual([attr(origin,'cx'),attr(origin,'cy')],[from.x,from.y]);
+    assert.deepEqual([attr(target,'cx'),attr(target,'cy')],[to.x,to.y]);
+    const distance=Math.hypot(to.x-from.x,to.y-from.y);
+    const gap=Math.min(8,distance/3);
+    assert.ok(Math.abs(Math.hypot(attr(line,'x1')-from.x,attr(line,'y1')-from.y)-gap)<1e-8);
+    assert.ok(Math.abs(Math.hypot(attr(line,'x2')-to.x,attr(line,'y2')-to.y)-gap)<1e-8);
+    assert.ok(Math.abs(Math.hypot(attr(line,'x2')-attr(line,'x1'),attr(line,'y2')-attr(line,'y1'))-(distance-2*gap))<1e-8);
+    assert.match(html,/markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9"/);
+    assert.match(html,/class="guide-connection-arrowhead" d="M 1 1 L 9 5 L 1 9"/);
+    assert.deepEqual(props,before);
+    assert.equal(renderToStaticMarkup(createElement(GuideConnectionOverlay,{...props,componentPose:{...componentPose,tracking:'searching'}})),'');
   }
 });
 

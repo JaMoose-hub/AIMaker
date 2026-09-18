@@ -23,7 +23,7 @@ const i18n = dataUrl(`export const useI18n=()=>({t:key=>(${JSON.stringify(messag
 const smooth = dataUrl("export const useSmoothedDetection = detection => detection;");
 const guidanceCallout = compile("lib/guidanceCallout.ts");
 const labelLayout = compile("lib/wiringLabelLayout.ts");
-const componentOverlay = compile("components/ComponentPinOverlay.tsx", { "../lib/componentHeaderGuide": componentHeaderUrl, "../lib/wiringLabelLayout": labelLayout, "../lib/geometry": geometry, "../lib/i18n": i18n, "../lib/guidanceCallout": guidanceCallout });
+const componentOverlay = compile("components/ComponentPinOverlay.tsx", { "../lib/headerCountDirection": compile("lib/headerCountDirection.ts"), "../lib/componentHeaderGuide": componentHeaderUrl, "../lib/wiringLabelLayout": labelLayout, "../lib/geometry": geometry, "../lib/i18n": i18n, "../lib/guidanceCallout": guidanceCallout });
 const connectionOverlay = compile("components/GuideConnectionOverlay.tsx", { "../lib/geometry": geometry, "../lib/useSmoothedDetection": smooth });
 const recognitionOverlay = compile("components/ObjectRecognitionOverlay.tsx", { "../lib/geometry": geometry, "../lib/i18n": i18n });
 
@@ -52,6 +52,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
   const ws = dataUrl(`export const useDetections=()=>(${JSON.stringify(snapshot)}); export const useGuidance=()=>({expected_pin_id:'GPIO18',status:'pending'});`);
   const pinOverlay = compile("components/PinOverlay.tsx", { "../lib/geometry":geometry,"../lib/i18n":i18n,"../lib/guidanceCallout":guidanceCallout,
     "../lib/piHeaderGuide":compile("lib/piHeaderGuide.ts"),
+    "../lib/headerCountDirection":compile("lib/headerCountDirection.ts"),
     "../lib/wiringLabelLayout":compile("lib/wiringLabelLayout.ts"),
     "../lib/capabilities":compile("lib/capabilities.ts"),"../lib/useSmoothedDetection":smooth,"../lib/wsClient":ws });
   const tracker = dataUrl(`export const calls=[]; export function useRealtimeTracking(...args){calls.push(args);return {frame:args[0]?${JSON.stringify(frame)}:null,fps:args[0]?30:0};}`);

@@ -1,8 +1,8 @@
 import type { DisplayPoint } from "./geometry";
 
 export interface LabelRect { x: number; y: number; width: number; height: number }
-export const WIRING_LABEL_WIDTH = 228;
-export const WIRING_LABEL_HEIGHT = 32;
+export const WIRING_LABEL_WIDTH = 288;
+export const WIRING_LABEL_HEIGHT = 52;
 export type WiringLabel = NonNullable<ReturnType<typeof placeWiringLabel>>;
 export interface LabelAnchor { target: DisplayPoint | null; bounds: LabelRect | null }
 type LabelLine = { from: DisplayPoint; to: DisplayPoint };

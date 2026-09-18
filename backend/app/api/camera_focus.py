@@ -29,10 +29,11 @@ import logging
 import time
 
 import numpy as np
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.api.errors import expected_error
+from app.api.camera_tuning import camera_mutation_guard
 
 log = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ async def get_focus(request: Request) -> dict:
     return {"ok": True, **source.focus_state()}
 
 
-@router.post("/camera/focus")
+@router.post("/camera/focus", dependencies=[Depends(camera_mutation_guard)])
 async def set_focus(body: FocusBody, request: Request) -> dict:
     state = request.app.state
     source = _device_source(state)
@@ -130,7 +131,7 @@ async def set_focus(body: FocusBody, request: Request) -> dict:
             "requested": target}
 
 
-@router.post("/camera/focus/sweep")
+@router.post("/camera/focus/sweep", dependencies=[Depends(camera_mutation_guard)])
 async def sweep_focus(body: SweepBody, request: Request) -> dict:
     """Step through focus values, score each on real frames, return the curve.
 

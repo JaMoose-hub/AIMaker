@@ -1,16 +1,19 @@
 {
-  "version": "1",
+  "version": "3",
   "modules": [
     {
       "id": "hc-sr04",
+      "electrical_profile": "variants/plus-3v3.json",
+      "variant": "HC-SR04+ / 3.3V",
+      "specification_source": "https://shop.playrobot.com/products/hc-sr04-3v3-5v-ultrasonic",
       "boardId": "raspberry-pi-5",
       "name": {
-        "zh-TW": "HC-SR04 超音波感測器",
-        "en": "HC-SR04 ultrasonic sensor"
+        "zh-TW": "HC-SR04+（3.3V 供電版）",
+        "en": "HC-SR04+ (3.3V supply)"
       },
       "safety": {
-        "zh-TW": "ECHO 是 5V 訊號，禁止直接接 Pi GPIO。分壓電路不是單顆串聯電阻。",
-        "en": "ECHO is a 5V signal: never connect it directly to Pi GPIO. A divider is not a single series resistor."
+        "zh-TW": "限 HC-SR04+ 寬電壓版：VCC 接 3.3V，並確認 ECHO 為 3.3V 訊號。標準 5V HC-SR04 不適用。",
+        "en": "HC-SR04+ wide-voltage variant only: power from 3.3V and confirm a 3.3V ECHO output. Not for the standard 5V HC-SR04."
       },
       "prerequisites": [
         {
@@ -21,10 +24,10 @@
           }
         },
         {
-          "id": "divider-ready",
+          "id": "variant-3v3",
           "text": {
-            "zh-TW": "我已按圖準備 330Ω／470Ω 分壓電路並確認共地；這是人工確認，不是系統量測。",
-            "en": "I have prepared the shown 330Ω/470Ω divider and common ground. This is my confirmation, not a system measurement."
+            "zh-TW": "我使用 HC-SR04+ 寬電壓版，已確認可由 3.3V 供電且 ECHO 可直接接 3.3V GPIO；不是標準 5V 版。",
+            "en": "I use the HC-SR04+ wide-voltage variant and have confirmed 3.3V supply and GPIO-compatible ECHO, not the standard 5V version."
           }
         }
       ],
@@ -40,8 +43,8 @@
             "en": "Connect GND to Pi 5 Pin 6 · GND"
           },
           "hint": {
-            "zh-TW": "感測器與分壓電路必須共地。",
-            "en": "The sensor and divider must share ground."
+            "zh-TW": "模組與 Pi 必須共地。",
+            "en": "The module and Pi must share ground."
           }
         },
         {
@@ -64,29 +67,29 @@
           "componentPin": "ECHO",
           "boardPin": "GPIO18",
           "boardLabel": "Pin 12 · GPIO18",
-          "connectionKind": "divider",
+          "connectionKind": "direct",
           "instruction": {
-            "zh-TW": "ECHO 經分壓電路接到 Pin 12 · GPIO18",
-            "en": "Connect ECHO through the divider to Pin 12 · GPIO18"
+            "zh-TW": "將 ECHO 接到 Pi 5 Pin 12 · GPIO18",
+            "en": "Connect ECHO to Pi 5 Pin 12 · GPIO18"
           },
           "hint": {
-            "zh-TW": "GPIO18 只接兩顆電阻的交會節點。畫面不畫 ECHO 到 GPIO 的直連線。",
-            "en": "Connect GPIO18 only to the resistor junction. No direct ECHO-to-GPIO line is drawn."
+            "zh-TW": "只適用 3.3V 供電且 ECHO 已確認相容的 HC-SR04+，此配置不需分壓電阻。",
+            "en": "No divider in this configuration: only use an HC-SR04+ powered at 3.3V with confirmed GPIO-compatible ECHO."
           }
         },
         {
           "id": "vcc",
           "componentPin": "VCC",
-          "boardPin": "5V_P2",
-          "boardLabel": "Pin 2 · 5V",
+          "boardPin": "3V3_P1",
+          "boardLabel": "Pin 1 · 3.3V",
           "connectionKind": "direct",
           "instruction": {
-            "zh-TW": "將 VCC 接到 Pi 5 Pin 2 · 5V",
-            "en": "Connect VCC to Pi 5 Pin 2 · 5V"
+            "zh-TW": "將 VCC 接到 Pi 5 Pin 1 · 3.3V",
+            "en": "Connect VCC to Pi 5 Pin 1 · 3.3V"
           },
           "hint": {
-            "zh-TW": "最後接 VCC，仍保持斷電；再次確認 ECHO 有分壓保護。",
-            "en": "Connect VCC last with power still off; recheck ECHO protection."
+            "zh-TW": "內排第 1 支，從遠離 USB-A／網路孔的一端數；不是 Pin 2 的 5V。",
+            "en": "Inner row, first pin, counting from the end away from USB-A/Ethernet; not the 5V pin 2."
           }
         }
       ],
@@ -108,14 +111,16 @@
     },
     {
       "id": "mrd-tf240-8p-cs",
+      "variant": "MRD_TFT240_8P_CS / ILI9341 / 240x320",
+      "verification": "Model, controller and resolution confirmed from user photographs. 3.3V is the proposed supply profile, not a measured module rating. BLK is left disconnected; default backlight operation requires a physical test.",
       "boardId": "raspberry-pi-5",
       "name": {
-        "zh-TW": "MRD-TF240 TFT 螢幕",
-        "en": "MRD-TF240 TFT display"
+        "zh-TW": "MRD_TFT240_8P_CS · ILI9341",
+        "en": "MRD_TFT240_8P_CS · ILI9341"
       },
       "safety": {
-        "zh-TW": "僅引導已定義的訊號線。供電、BLK 背光與驅動晶片尚未核實，禁止上電；SCL／SDA 在這塊板上是 SPI。",
-        "en": "Signal wiring only. Supply, BLK backlight and driver IC are unverified: do not power on. SCL/SDA on this module mean SPI."
+        "zh-TW": "ILI9341／240×320 已由照片確認。接線方案採 3.3V；上電前須核對模組支援 3.3V。BLK 先不接，背光預設狀態待實測；SCL／SDA 是 SPI。",
+        "en": "ILI9341 / 240×320 confirmed from photos. This plan uses 3.3V; verify module supply compatibility before power-on. Leave BLK disconnected; default backlight behavior needs testing. SCL/SDA are SPI."
       },
       "prerequisites": [
         {
@@ -126,10 +131,10 @@
           }
         },
         {
-          "id": "display-pending",
+          "id": "display-3v3",
           "text": {
-            "zh-TW": "我了解本次只有訊號線引導；VCC／BLK 保持未接，取得此模組規格前不上電。",
-            "en": "I understand this is signal-only guidance. Leave VCC/BLK disconnected and do not power on until this module's specifications are confirmed."
+            "zh-TW": "已核對此模組可用 3.3V；VCC 不接 5V，BLK 本輪留空，不接 GPIO。",
+            "en": "I have checked 3.3V supply compatibility. Do not use 5V; leave BLK disconnected, not connected to GPIO."
           }
         }
       ],
@@ -220,39 +225,47 @@
             "en": "Connect DC to Pi 5 Pin 18 · GPIO24"
           },
           "hint": {
-            "zh-TW": "DC 是資料／命令選擇。下一頁仍會列出未確認的供電項目。",
-            "en": "DC selects data/command. The next page will still list unresolved supply items."
+            "zh-TW": "DC 是資料／命令選擇，不是電源。",
+            "en": "DC selects data/command; it is not a power pin."
+          }
+        },
+        {
+          "id": "vcc",
+          "componentPin": "VCC",
+          "boardPin": "3V3_P17",
+          "boardLabel": "Pin 17 · 3.3V",
+          "connectionKind": "direct",
+          "instruction": {
+            "zh-TW": "將 VCC 接到 Pi 5 Pin 17 · 3.3V",
+            "en": "Connect VCC to Pi 5 Pin 17 · 3.3V"
+          },
+          "hint": {
+            "zh-TW": "內排第 9 支，從遠離 USB-A／網路孔的一端數。確認模組可用 3.3V 後採此接法；BLK 留空。",
+            "en": "Inner row, ninth pin from the end away from USB-A/Ethernet. Use after checking 3.3V module compatibility; leave BLK disconnected."
           }
         }
       ],
       "unresolved": [
         {
-          "pin": "VCC",
-          "reason": {
-            "zh-TW": "供電電壓／電流待核實：不指定 Pi 電源腳，也不高亮接線。",
-            "en": "Supply voltage/current unverified: no Pi power pin or wiring target is assigned."
-          }
-        },
-        {
           "pin": "BLK",
           "reason": {
-            "zh-TW": "背光輸入與限流電路待核實：不可假定能直接接 GPIO。",
-            "en": "Backlight input/current limiting unverified: do not assume a direct GPIO connection is safe."
+            "zh-TW": "本輪留空，不接 GPIO。背光是否預設亮起待實測；若不亮，先查 BLK 規格，不自行接 5V。",
+            "en": "Leave disconnected, not on GPIO. Default backlight behavior is untested; if dark, check BLK specifications rather than connecting 5V."
           }
         }
       ],
       "functionalTest": {
-        "zh-TW": "尚未整合功能測試。確認模組規格與驅動後才可上電，測試色塊和文字；背光亮不代表顯示功能正常。",
-        "en": "Functional testing is not integrated. Confirm the module and driver before powering on, then test colour bars/text; backlight alone is not a display test."
+        "zh-TW": "部署後先顯示 RGB 色塊與 ILI9341 文字，再顯示距離；沒有有效回波時顯示 NO ECHO。需親眼確認畫面，程式執行不等於螢幕已通過。",
+        "en": "Deployment first draws RGB bars and ILI9341 text, then distance; invalid echoes show NO ECHO. Visually confirm the screen: a running program is not a display pass."
       },
       "price": 220,
       "runtime": {
-        "supported": false,
-        "imports": [],
+        "supported": true,
+        "imports": ["gpiozero", "lgpio", "spidev", "PIL", "luma.lcd"],
         "devices": [
           "/dev/spidev0.0"
         ],
-        "reason": "TFT 供電、背光與驅動未核實；禁止上電。"
+        "reason": ""
       }
     }
   ],

@@ -7,7 +7,7 @@ import { useI18n } from "../lib/i18n";
 import { CircuitModuleArt } from "./CircuitModuleArt";
 import { CircuitViewport } from "./CircuitViewport";
 
-const shortNames: Record<GuidedComponentId, string> = { "hc-sr04": "HC-SR04", "mrd-tf240-8p-cs": "MRD-TF240" };
+const shortNames: Record<GuidedComponentId, string> = { "hc-sr04": "HC-SR04+", "mrd-tf240-8p-cs": "MRD-TFT240" };
 
 export function CircuitDiagram({ design, activeId, onSelect, selectedId, onClearSelection }: {
   design: ProjectDesign; activeId?: string; onSelect?: (wire: ProjectWire) => void;
@@ -105,8 +105,9 @@ export function CircuitDiagram({ design, activeId, onSelect, selectedId, onClear
       })}
     </svg>
     </CircuitViewport>
-    <div className="circuit-legend"><span><i className="signal" />{tr("訊號", "Signal")}</span><span><i className="power" />{tr("電源", "Power")}</span><span><i className="ground" />GND</span><span><i className="divider" />{tr("分壓保護", "Divider")}</span><span>NC · {tr("未使用", "Unused")}</span><span>! · {tr("待確認，勿接", "Pending")}</span></div>
+    <div className="circuit-legend"><span><i className="signal" />{tr("訊號", "Signal")}</span><span><i className="power" />{tr("電源", "Power")}</span><span><i className="ground" />GND</span>{design.wiring.some(w => w.connectionKind === "divider") && <span><i className="divider" />{tr("分壓保護", "Divider")}</span>}<span>NC · {tr("未使用", "Unused")}</span><span>! · {tr("待確認，勿接", "Pending")}</span></div>
     <small>{tr("外觀為辨識示意；腳位依既有 Profile 排列並拉開間距，非等比例。實際接線以模組絲印核對；線路不代表導通驗證。", "Illustrative bodies; pin order follows existing profiles, with spacing expanded. Check the actual silkscreen. Lines do not verify continuity.")}</small>
+    {design.component_ids.map(id => <p key={id} className="maker-warning">{tx(guideFor(id).safety)}</p>)}
     {design.unresolved.length ? <p className="maker-warning">{design.unresolved.join("\n")}</p> : null}
   </>;
   return <div className="maker-circuit">

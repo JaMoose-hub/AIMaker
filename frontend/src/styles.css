@@ -1216,29 +1216,33 @@ h3 {
 
 .guide-connection-glow {
   stroke: var(--guide-connection-color);
-  stroke-width: 11;
-  opacity: 0.20;
-  filter: blur(3px);
+  stroke-width: 4;
+  opacity: 0.12;
+  filter: blur(1px);
 }
 
 .guide-connection-line {
   stroke: var(--guide-connection-color);
-  stroke-width: 3;
+  stroke-width: 1.5;
   stroke-dasharray: 10 7;
-  filter: drop-shadow(0 0 4px var(--guide-connection-color));
+  filter: drop-shadow(0 0 1px var(--guide-connection-color));
 }
 
 .guide-connection-arrowhead {
-  fill: var(--guide-connection-color);
+  fill: none;
+  stroke: var(--guide-connection-color);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .guide-connection-origin,
 .guide-connection-target {
-  fill: color-mix(in srgb, var(--guide-connection-color) 22%, transparent);
+  fill: none;
   stroke: var(--guide-connection-color);
-  stroke-width: 2;
+  stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 5px var(--guide-connection-color));
+  filter: none;
 }
 
 .guide-connection-target {
@@ -1404,13 +1408,18 @@ h3 {
 
 .component-pin-callout-arrow {
   stroke: #ffd45c;
-  stroke-width: 2.5;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
   stroke-linecap: round;
   animation: component-arrow-pulse 0.8s ease-in-out infinite;
 }
 
 .component-guidance-arrowhead {
-  fill: #ffd45c;
+  fill: none;
+  stroke: #ffd45c;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .component-pin-callout-title,
@@ -1435,6 +1444,8 @@ h3 {
 
 .pi-row-label-text { fill: #ffe08a; font: 600 12px var(--font); }
 .component-row-label-text { fill: #ffe08a; font: 600 12px var(--font); }
+.header-count-hint { fill: #f0f4fa; font: 500 11px var(--font); }
+html[lang="en"] .header-count-hint { font-size: 10px; }
 html[lang="en"] .pi-row-label-text { font-size: 11px; }
 
 @keyframes component-arrow-pulse {
@@ -1920,9 +1931,16 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
 /* Status bar                                                          */
 /* ------------------------------------------------------------------ */
 
+.camera-auto-tune { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.camera-auto-trigger { display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border: 1px solid #357e71; border-radius: 16px; background: #193f36; color: #9ef1d3; font: inherit; font-weight: 600; cursor: pointer; }
+.camera-auto-trigger:hover:not(:disabled) { background: #225346; }
+.camera-auto-trigger:disabled { opacity: .55; cursor: default; }
+.camera-auto-trigger:focus-visible { outline: 2px solid #8ceacd; outline-offset: 3px; }
+.camera-auto-message { color: #a9baca; font-size: 12px; line-height: 1.5; max-width: 340px; }
+.camera-auto-message.success { color: #7de1b1; }
 .statusbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  min-width: 0;
   align-items: center;
   gap: 8px 14px;
   padding: 8px 14px;
@@ -1932,6 +1950,34 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
   font-size: 12.5px;
   color: var(--text-dim);
 }
+
+/* Telemetry must not resize the video whenever digits or tracking state change.
+   Fixed slots remain mounted during loss of tracking; narrow views scroll them. */
+.status-metrics {
+  display: grid;
+  grid-template-columns: 120px 110px 190px 110px 135px 235px 190px 230px 260px;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  overflow-x: auto;
+  height: 38px;
+  font-variant-numeric: tabular-nums;
+}
+.status-metrics > * { min-width: 0; }
+.status-metrics > .pill { justify-content: center; }
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+  overflow-x: auto;
+  min-height: 38px;
+}
+.status-actions > * { flex: 0 0 auto; }
+.status-actions .calibrate-trigger { margin-left: 0; }
+.status-actions .camera-auto-tune { flex-wrap: nowrap; }
+.status-actions .camera-auto-message { white-space: nowrap; max-width: none; }
+.mirror-controls .realtime-toggle { min-width: 158px; font-variant-numeric: tabular-nums; }
 
 .status-item {
   display: inline-flex;

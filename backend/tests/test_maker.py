@@ -72,14 +72,16 @@ def test_all_combinations_share_profiles_and_never_enable_unknown_hardware(ids):
         for step in MODULES[cid]["steps"]:
             wire = next(w for w in design["wiring"] if w["id"] == f"{cid}:{step['id']}")
             assert wire["boardPin"] == step["boardPin"]
-    if ids != ["hc-sr04"]:
-        assert design["unresolved"]
-        assert "raise RuntimeError" in design["code"]
-        assert "from gpiozero" not in design["code"]
-    else:
-        assert not design["unresolved"]
+    assert not design["unresolved"]
+    if "mrd-tf240-8p-cs" in ids:
+        assert "WiringDisplay" in design["code"]
+        assert "backlight=lambda enabled: None" in design["code"]
+    if ids == ["hc-sr04"]:
         assert "'TRIG': 17" in design["code"] and "'ECHO': 18" in design["code"]
-        assert {"resistor-330", "resistor-470"}.issubset({i["id"] for i in design["bom"]})
+        assert not {"resistor-330", "resistor-470", "breadboard"}.intersection(i["id"] for i in design["bom"])
+        assert next(i for i in design["bom"] if i["id"] == "jumper-wires")["quantity"] == 4
+        assert next(w for w in design["wiring"] if w["componentPin"] == "VCC")["boardPin"] == "3V3_P1"
+        assert next(w for w in design["wiring"] if w["componentPin"] == "ECHO")["connectionKind"] == "direct"
 
 
 def test_revisions_keep_identity_and_regenerate_from_profile_not_client_wires():
@@ -151,7 +153,7 @@ def test_model_cannot_add_modules_outside_available_parts():
 
 
 @pytest.mark.parametrize("cid,index,field,value", [
-    ("hc-sr04", 2, "connectionKind", "direct"),
+    ("hc-sr04", 3, "boardPin", "5V_P2"),
     ("mrd-tf240-8p-cs", 1, "boardPin", "GPIO10"),
     ("hc-sr04", 3, "boardPin", "GND_P9"),
 ])
@@ -164,7 +166,7 @@ def test_catalog_validation_rejects_unsafe_rails_swapped_bus_and_missing_protect
 def test_profile_revision_mismatch_requires_new_design():
     c, _ = client()
     result = c.post("/api/pi/deploy", json={"code": "print('x')", "project": {
-        "component_ids": ["hc-sr04"], "catalog_version": "1", "profile_versions": {"old": {"version": "0"}}}}).json()
+        "component_ids": ["hc-sr04"], "catalog_version": CATALOG["version"], "profile_versions": {"old": {"version": "0"}}}}).json()
     assert not result["ok"] and "Profile" in result["error"]
 
 

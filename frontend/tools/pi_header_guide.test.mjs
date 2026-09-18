@@ -80,7 +80,7 @@ test('Pi pointers stay short and do not move the target or depend on a floating 
   }
 });
 
-test('Pi restores one short row/ordinal label without extra instructions, including mirrored views', async () => {
+test('Pi names the row, ordinal and on-screen counting direction, including mirrored views', async () => {
   for (const locale of ['zh-TW','en']) {
     const messages = JSON.parse(readFileSync(new URL(`../src/locales/${locale}.json`, import.meta.url), 'utf8'));
     const t = (key,params={}) => Object.entries(params).reduce((s,[k,v]) => s.replace(`{${k}}`,String(v)),messages[key]??key);
@@ -89,6 +89,7 @@ test('Pi restores one short row/ordinal label without extra instructions, includ
       '../lib/geometry':compile('lib/geometry.ts'), '../lib/i18n':i18n,
       '../lib/piHeaderGuide':helperUrl,'../lib/guidanceCallout':calloutUrl,
       '../lib/wiringLabelLayout':labelUrl,
+      '../lib/headerCountDirection':compile('lib/headerCountDirection.ts'),
       '../lib/capabilities':compile('lib/capabilities.ts'),
       '../lib/useSmoothedDetection':url('export const useSmoothedDetection=d=>d;'),
       '../lib/wsClient':url('export const useGuidance=()=>null;'),
@@ -98,9 +99,9 @@ test('Pi restores one short row/ordinal label without extra instructions, includ
       try {
         console.error=(msg,...args)=>{if(typeof msg==='string' && msg.startsWith('Warning: A title element received an array'))return;report(msg,...args);};
         return renderToStaticMarkup(createElement(PinOverlay, {
-          detection:{board_id:board.board.id,tracking:'locked',confidence:1,outline:[[10,10],[350,10],[350,200],[10,200]],pins:[{id:pin.id,x:200,y:100,c:1,v:true}]},
+          detection:{board_id:board.board.id,tracking:'locked',confidence:1,outline:[[10,10],[350,10],[350,200],[10,200]],pins:pin.header === 'J8' ? board.pins.map(p=>({id:p.id,x:200+(p.index%2)*10,y:100+Math.floor((p.index-1)/2)*5,c:1,v:true})) : [{id:pin.id,x:200,y:100,c:1,v:true}]},
           letterbox:{scale:1,offx:0,offy:0,elementWidth:800,elementHeight:500,mirrorX,mirrorY},width:800,height:500,
-          pinsById:new Map([[pin.id,pin]]),highlightIds:null,selectedPinId:null,onSelectPin(){},interactive:false,lockSeq:1,
+          pinsById:new Map([...board.pins.map(p=>[p.id,p]),[pin.id,pin]]),highlightIds:null,selectedPinId:null,onSelectPin(){},interactive:false,lockSeq:1,
           tracking:'locked',displayOffsetPx:{x:0,y:0},guidePinId:pin.id,localGuidanceOnly:true,
           guidePeerPose:{component_id:'hc-sr04',tracking:'locked',outline:[[560,270],[650,270],[650,340],[560,340]],pins:[{id:'TRIG',x:600,y:300,v:true}]},guidePeerPinId:'TRIG',
         }));
@@ -116,9 +117,10 @@ test('Pi restores one short row/ordinal label without extra instructions, includ
       const pointer = html.match(/<g class="component-pin-callout board-pin-callout pi-guidance-pointer"[\s\S]*?<\/g>/)?.[0];
       assert.ok(pointer);
       assert.ok(pointer.includes('component-pin-callout-arrow'));
-      assert.equal((pointer.match(/<text/g)??[]).length, 1);
+      assert.equal((pointer.match(/<text/g)??[]).length, 2);
+      assert.ok(pointer.includes(t('headerCount.pi',{direction:t(my ? 'headerCount.up' : 'headerCount.down')})));
       assert.ok(pointer.includes('pi-row-label-box'));
-      assert.match(pointer, /width="228" height="32"/);
+      assert.match(pointer, /width="288" height="52"/);
       assert.ok(pointer.includes(label.title));
       assert.ok(!html.includes('pi-pin-callout-reference'));
     }

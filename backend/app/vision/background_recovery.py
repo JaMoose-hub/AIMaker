@@ -50,7 +50,7 @@ class BackgroundRecovery:
         if hint is None and allow_submit and self.pending is None and not self.closed:
             # Private OpenCV instance and pose arrays: the job cannot mutate
             # live flow, pins, leases or descriptor caches. Images are immutable.
-            clone = PlanarFlow()
+            clone = PlanarFlow(pi5_cable_guard=flow.pi5_cable_guard)
             clone.anchor = flow.anchor
             clone.quad = flow.quad.copy()
             clone.search_quad = self.search_quad(flow, ts_ms)

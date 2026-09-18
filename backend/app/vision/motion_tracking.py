@@ -37,7 +37,10 @@ def warm_motion_runtime():
 
 
 class PlanarFlow:
-    def __init__(self) -> None:
+    def __init__(self, *, pi5_cable_guard: bool = False) -> None:
+        self.pi5_cable_guard = pi5_cable_guard
+        self.support_cells = 0
+        self.support_quadrants = 0
         self.gray = None
         self.points = None
         self.quad = None
@@ -75,16 +78,20 @@ class PlanarFlow:
             self.failure_reason = 'seed_too_small'
             return False
         crop = gray[lo[1]:hi[1], lo[0]:hi[0]]
-        mask = np.zeros_like(crop)
-        cv2.fillConvexPoly(mask, np.rint(quad-lo).astype(np.int32), 255)
-        mask = cv2.erode(mask, np.ones((5, 5), np.uint8))
+        mask = self._feature_mask(crop.shape, quad-lo)
         points = cv2.goodFeaturesToTrack(
-            crop, maxCorners=100, qualityLevel=0.015, minDistance=5, mask=mask,
+            crop, maxCorners=300 if self.pi5_cable_guard else 100,
+            qualityLevel=0.015, minDistance=5, mask=mask,
         )
         if points is not None:
             points = np.float32(points + lo)
+            if self.pi5_cable_guard:
+                points = points[self._balanced_indices(points, quad)]
         if points is None or len(points) < 16 or not self._spread(points, quad):
             self.failure_reason = 'seed_insufficient_texture'
+            return False
+        if self.pi5_cable_guard and not self._distributed_support(points, quad):
+            self.failure_reason = 'seed_localized_features'
             return False
         self.gray, self.points, self.quad = gray, points, quad
         self.anchor = (gray, points.copy(), quad.copy())
@@ -94,6 +101,55 @@ class PlanarFlow:
         self._descriptors = self._keypoints = None
         self.failure_reason = None
         return True
+
+    @staticmethod
+    def _board_coordinates(points, quad):
+        canonical = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
+        mapping = cv2.getPerspectiveTransform(np.float32(quad), canonical)
+        return transform(points, mapping)
+
+    def _feature_mask(self, shape, quad):
+        mask = np.zeros(shape, np.uint8)
+        cv2.fillConvexPoly(mask, np.rint(quad).astype(np.int32), 255)
+        mask = cv2.erode(mask, np.ones((5, 5), np.uint8))
+        if not self.pi5_cable_guard:
+            return mask
+        canonical = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
+        mapping = cv2.getPerspectiveTransform(canonical, np.float32(quad))
+        inner = transform([[.05, .05], [.95, .05], [.95, .95], [.05, .95]], mapping)
+        interior = np.zeros(shape, np.uint8)
+        cv2.fillConvexPoly(interior, np.rint(inner).astype(np.int32), 255)
+        mask = cv2.bitwise_and(mask, interior)
+        # The Pi profile's canonical reference has USB-C at the top-right
+        # (GPIO along the bottom). Exclude only that connector neighbourhood,
+        # not a screen-fixed rectangle or the GPIO row. This is NOT a cable
+        # segmentation mask and must never be used as electrical evidence.
+        connector = transform([[.76, 0], [1, 0], [1, .25], [.76, .25]], mapping)
+        cv2.fillConvexPoly(mask, np.rint(connector).astype(np.int32), 0)
+        return mask
+
+    def _balanced_indices(self, points, quad):
+        uv = self._board_coordinates(points, quad)
+        cells = np.clip((uv * 3).astype(int), 0, 2)
+        ids = cells[:, 1] * 3 + cells[:, 0]
+        # GFTT returns strongest first. Cap each cell so one high-contrast
+        # connector/cable cannot consume the whole feature budget.
+        return np.concatenate([np.flatnonzero(ids == i)[:12] for i in range(9)])
+
+    def _distributed_support(self, points, quad):
+        uv = self._board_coordinates(points, quad)
+        valid = np.isfinite(uv).all(axis=1) & (uv >= 0).all(axis=1) & (uv <= 1).all(axis=1)
+        uv = uv[valid]
+        cells = np.clip((uv * 3).astype(int), 0, 2)
+        counts = np.bincount(cells[:, 1] * 3 + cells[:, 0], minlength=9)
+        quadrants = (uv[:, 0] >= .5).astype(int) + 2 * (uv[:, 1] >= .5).astype(int)
+        self.support_cells = int(np.count_nonzero(counts >= 3))
+        self.support_quadrants = int(np.count_nonzero(np.bincount(quadrants, minlength=4) >= 3))
+        # A genuinely visible half-board can still support a transform. Do
+        # not require all four quadrants or regress existing partial tracking.
+        span = np.ptp(uv, axis=0) if len(uv) else np.zeros(2)
+        broad_half = float(span.min()) >= .30 and float(span.max()) >= .65
+        return self.support_cells >= 4 and (self.support_quadrants >= 3 or broad_half)
 
     @staticmethod
     def _roi(points, shape, margin):
@@ -122,11 +178,14 @@ class PlanarFlow:
         # hand must never become a new feature source, nor may the reduced
         # feature set masquerade as 100% support on the next frame.
         was_partial = self.partial
-        used_anchor = was_partial or recovering
+        # Pi cable guard measures against a clear keyframe even when all
+        # points survive. Integrating tiny connector/noise displacements and
+        # reseeding every 15 frames otherwise makes a stationary box drift.
+        used_anchor = self.pi5_cable_guard or was_partial or recovering
         matrix = (self._lk_step(gray, self.anchor_matrix, anchored=True, allow_partial=True)
                   if used_anchor else self._lk_step(gray))
         if matrix is not None:
-            if self.partial and not was_partial:
+            if self.partial and not was_partial and not used_anchor:
                 # Once motion is known, align the clear keyframe again. Fast
                 # motion can lose LK points without any actual obstruction.
                 refined = self._lk_step(gray, self.anchor_matrix, anchored=True, allow_partial=True)
@@ -172,8 +231,11 @@ class PlanarFlow:
         if self._descriptors is None:
             lo, hi = self._roi(anchor_quad, anchor_gray.shape, 32)
             crop = anchor_gray[lo[1]:hi[1], lo[0]:hi[0]]
-            mask = np.zeros_like(crop)
-            cv2.fillConvexPoly(mask, np.rint(anchor_quad-lo).astype(np.int32), 255)
+            if self.pi5_cable_guard:
+                mask = self._feature_mask(crop.shape, anchor_quad-lo)
+            else:
+                mask = np.zeros_like(crop)
+                cv2.fillConvexPoly(mask, np.rint(anchor_quad-lo).astype(np.int32), 255)
             keypoints, self._descriptors = self._orb.detectAndCompute(crop, mask)
             self._keypoints = np.float32([np.array(k.pt) + lo for k in keypoints])
         if self._descriptors is None or len(self._descriptors) < 16:
@@ -197,6 +259,12 @@ class PlanarFlow:
             return None
         a = np.float32([self._keypoints[m.queryIdx] for m in matches])
         b = np.float32([np.array(keypoints[m.trainIdx].pt) + lo for m in matches])
+        if self.pi5_cable_guard:
+            # Balance correspondences, preserving source/destination pairing.
+            indices = self._balanced_indices(a, anchor_quad)
+            a, b = a[indices], b[indices]
+            if len(a) < 16:
+                return None
         # ORB keypoint coordinates are coarser than subpixel LK. This is only
         # an initialization proposal; the 1.5 px LK/RANSAC gate below remains.
         matrix, inliers = cv2.findHomography(a, b, cv2.RANSAC, 3.0)
@@ -204,6 +272,8 @@ class PlanarFlow:
             return None
         keep = inliers.ravel().astype(bool)
         if keep.sum() < 16 or keep.mean() < .65 or not self._spread(a[keep], anchor_quad):
+            return None
+        if self.pi5_cable_guard and not self._distributed_support(a[keep], anchor_quad):
             return None
         # Every visible corner must still obey shape, orientation and bounds.
         if not self._valid_transform(matrix @ np.linalg.inv(self.anchor_matrix), gray.shape, wide=True):
@@ -257,6 +327,11 @@ class PlanarFlow:
                 or not self._spread(a[keep], source_quad)):
             self.failure_reason = 'spatial_support'
             return None
+        if self.pi5_cable_guard and not self._distributed_support(a[keep], source_quad):
+            # Not eligible for velocity prediction: a localized cable/hand
+            # motion must not keep tugging the board after image rejection.
+            self.failure_reason = 'localized_motion'
+            return None
         increment = matrix @ np.linalg.inv(self.anchor_matrix) if anchored else matrix
         quad = transform(source_quad, matrix)
         if not self._valid_transform(increment, gray.shape, wide=hint is not None):
@@ -269,7 +344,11 @@ class PlanarFlow:
         self.anchor_matrix = matrix if anchored else matrix @ self.anchor_matrix
         self.gray, self.points, self.quad = gray, b[keep], quad
         self.steps += 1
-        if self.steps % 15 == 0 and self.support_ratio >= .97:
+        anchor_quad = self.anchor[2]
+        moved_from_anchor = float(np.max(np.linalg.norm(quad-anchor_quad, axis=1)))
+        meaningful_motion = moved_from_anchor > .20 * float(np.linalg.norm(anchor_quad[2]-anchor_quad[0]))
+        if (self.steps % 15 == 0 and self.support_ratio >= .97
+                and (not self.pi5_cable_guard or meaningful_motion)):
             # Replenish only after a fully validated image step. The semantic
             # lease remains bounded independently of this feature refresh.
             self.seed(gray, quad)
@@ -440,7 +519,7 @@ class MotionTrack:
         if message['tracking'] != 'locked' or not message.get('outline'):
             return
         quad = np.asarray(message['outline'], np.float32)
-        candidate = PlanarFlow()
+        candidate = PlanarFlow(pi5_cable_guard=message.get('board_id') == 'raspberry-pi-5')
         if not candidate.seed(source_gray, quad * scale):
             self.failure_reason = candidate.failure_reason or 'seed_rejected'
             return
@@ -485,7 +564,7 @@ class MotionTrack:
             return
         self._refresh_count = 0
         self._refresh_after = ts + 500  # bound allocations / retries
-        candidate = PlanarFlow()
+        candidate = PlanarFlow(pi5_cable_guard=message.get('board_id') == 'raspberry-pi-5')
         if not candidate.seed(source_gray, quad * scale):
             return  # failed candidate never erases the old visible outline
         self.flow = candidate
@@ -576,6 +655,9 @@ class MotionTrack:
             'detector_age_ms': round(ts_ms - self.confirmed_ts, 1),
             'recovered': recovered,
             'support_ratio': round(self.flow.support_ratio, 3),
+            'feature_policy': 'pi5_cable_guard' if self.flow.pi5_cable_guard else 'standard',
+            'support_cells': self.flow.support_cells,
+            'support_quadrants': self.flow.support_quadrants,
             'outline_only': outline_only,
             'partial': partial,
             'object_supported': True,

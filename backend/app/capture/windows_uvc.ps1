@@ -2,7 +2,7 @@
    Microsoft IAMVideoProcAmp / IAMCameraControl GetRange, Set, Get.
    Only explicit, range-checked values are changed; every write is read back. #>
 param([Parameter(Mandatory=$true)][string]$DeviceName,
-      [string]$SettingsBase64 = 'e30=')
+      [string]$SettingsBase64 = 'e30=', [switch]$ReadOnly)
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
@@ -33,6 +33,9 @@ namespace BoardVisionUvc {
  public class Result {
   public string Name; public int RequestedValue, RequestedFlags, ReadHresult, SetHresult;
   public int? Value, Flags; public bool Verified;
+ }
+ public class Property {
+  public string Name; public int Min, Max, Step, Default, Caps, Value, Flags;
  }
  public static class Controls {
   static void Release(object value) { if(value!=null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
@@ -71,6 +74,24 @@ namespace BoardVisionUvc {
     if(found==null) throw new InvalidOperationException("Device not found");
     object result=found; found=null; return result;
    } finally { Release(found); Release(enumerator); Release(system); }
+  }
+  public static Property[] Read(string device) {
+   object filter=FindFilter(device);
+   try {
+    var results=new List<Property>();
+    foreach(string name in new string[] {"exposure","focus","gain","white_balance","brightness","contrast","saturation","sharpness","backlight_compensation"}) {
+     var p=new Property {Name=name}; int id=Id(name), hr;
+     try {
+      hr=Camera(name) ? ((IAMCameraControl)filter).GetRange(id,out p.Min,out p.Max,out p.Step,out p.Default,out p.Caps)
+                      : ((IAMVideoProcAmp)filter).GetRange(id,out p.Min,out p.Max,out p.Step,out p.Default,out p.Caps);
+      if(hr<0) continue;
+      hr=Camera(name) ? ((IAMCameraControl)filter).Get(id,out p.Value,out p.Flags)
+                      : ((IAMVideoProcAmp)filter).Get(id,out p.Value,out p.Flags);
+      if(hr>=0) results.Add(p);
+     } catch(COMException) { } catch(InvalidCastException) { }
+    }
+    return results.ToArray();
+   } finally { Release(filter); }
   }
   public static Result[] Apply(string device, Request[] requests) {
    object filter=FindFilter(device);
@@ -118,6 +139,10 @@ namespace BoardVisionUvc {
  }
 }
 '@
+if ($ReadOnly) {
+    [ordered]@{ device_name=$DeviceName; controls=@([BoardVisionUvc.Controls]::Read($DeviceName)) } | ConvertTo-Json -Depth 5 -Compress
+    exit 0
+}
 $settings = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($SettingsBase64)) | ConvertFrom-Json
 $requests = @($settings.PSObject.Properties | ForEach-Object {
     $request = [BoardVisionUvc.Request]::new()

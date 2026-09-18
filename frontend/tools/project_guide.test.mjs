@@ -4,6 +4,23 @@ import {board, piGuide, designFor, maker, renderGuide} from './project_guide_fix
 import {resultFixture} from './cloud_wiring_fixture.mjs';
 
 const checkButtons = html => [...html.matchAll(/<button[^>]*class="cloud-wiring-button"[^>]*>/g)];
+test('HC-SR04+ VCC points to inner row position one and ECHO is a direct step', async () => {
+  const design = designFor();
+  for (const pin of ['VCC', 'ECHO']) {
+    const index = design.wiring.findIndex(w => w.componentPin === pin);
+    const html = await renderGuide({design, session:{...maker.startProjectGuide(maker.emptyGuide()), index}});
+    assert.ok(html.includes('HC-SR04+'));
+    assert.ok(html.includes('3.3V'));
+    assert.ok(!html.includes('class="wiring-divider"'));
+    assert.ok(!html.includes('330Ω') && !html.includes('470Ω'));
+    if (pin === 'VCC') {
+      assert.ok(html.includes('<strong>第 1 支</strong>'));
+      assert.ok(html.includes('內排（靠板中央）'));
+      assert.ok(html.includes('3.3V · 實體 Pin 1'));
+    }
+  }
+});
+
 test('restart stays visible in the header in every phase without tracking or cloud access', async () => {
   for (const locale of ['zh-TW', 'en']) for (const phase of ['prepare', 'active', 'review']) {
     const html = await renderGuide({locale, session: {...maker.emptyGuide(), phase}, poseReady:false,
@@ -65,7 +82,7 @@ test('each supported module uses its profile target and divider is not a direct-
       assert.ok(html.includes(`<strong>第 ${location.number} 支</strong>`));
       assert.ok(html.includes(location.row === 'inner' ? '內排（靠板中央）' : '外排（靠板邊緣）'));
       assert.ok(html.includes(`實體 Pin ${location.physical}`));
-      assert.ok(html.includes('從遠離 USB-A／網路孔的一端數'));
+      assert.ok(html.includes('遠離 USB-A／網路孔端起算，第一支算 1'));
       const row = html.match(/<ol class="pi-row-count"[^>]*>([\s\S]*?)<\/ol>/)?.[1];
       assert.equal((row.match(/<li/g) ?? []).length, 20);
       assert.equal((row.match(/aria-current="step"/g) ?? []).length, 1);

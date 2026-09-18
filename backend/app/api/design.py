@@ -215,6 +215,7 @@ def demo(sensor_only: bool = False):
 
 
 @router.post("/design/migrate-retired")
+@router.post("/design/migrate-catalog")
 def migrate_retired(body: dict):
     try:
         return migrate_maker_state(body)

@@ -10,13 +10,68 @@ const maker = dataURL(readFileSync(new URL("../src/lib/maker.ts", import.meta.ur
   .replace(/import catalog from [^;]+;/, `const catalog = ${catalog};`));
 const source = readFileSync(new URL("../src/lib/makerMigration.ts", import.meta.url), "utf8")
   .replace('from "./maker"', `from "${maker}"`);
-const { MAKER_STORAGE, RETIREMENT_BACKUP, needsRetirementMigration, migrateStoredMaker } = await import(dataURL(source));
+const { MAKER_STORAGE, RETIREMENT_BACKUP, CATALOG_BACKUP, needsCatalogMigration, needsRetirementMigration, migrateStoredMaker } = await import(dataURL(source));
 const { initialMaker } = await import(maker);
 const legacy = () => JSON.stringify({ ...initialMaker(), selected: ["hc-sr04", "hw-123", "mrd-tf240-8p-cs"], code: "user's code" });
 function storage(raw) {
   const map = new Map([[MAKER_STORAGE, raw]]);
   return { getItem: key => map.get(key) ?? null, setItem: (key, value) => map.set(key, value) };
 }
+
+const currentCatalog = JSON.parse(catalog);
+function currentState() {
+  const design = { id: 'supply-migration', revision: 2, source: 'demo', catalog_version: currentCatalog.version,
+    title: 'My project', summary: 'My project', component_ids: ['hc-sr04'],
+    wiring: currentCatalog.modules[0].steps.map(s => ({...s, id: `hc-sr04:${s.id}`, componentId: 'hc-sr04'})),
+    code: '# new generated', tests: [], features: [], instructions: [], unresolved: [], bom: [] };
+  return {...initialMaker(), design, code: design.code, stage: 'blueprint'};
+}
+
+test('3.3V migration backs up before request, preserves the project, and runs only once', async () => {
+  const old = currentState();
+  old.design.catalog_version = '1';
+  old.design.wiring.find(w => w.componentPin === 'VCC').boardPin = '5V_P2';
+  const raw = JSON.stringify(old), store = storage(raw);
+  let calls = 0;
+  await migrateStoredMaker(store, async (path, state) => {
+    calls++;
+    assert.equal(path, 'design/migrate-catalog');
+    assert.equal(store.getItem(CATALOG_BACKUP), raw);
+    assert.equal(state.design.id, old.design.id);
+    return currentState();
+  });
+  assert.equal(JSON.parse(store.getItem(MAKER_STORAGE)).stage, 'blueprint');
+  await migrateStoredMaker(store, async () => { calls++; });
+  assert.equal(calls, 1);
+  assert.equal(store.getItem(CATALOG_BACKUP), raw);
+});
+
+test('unknown versions and incomplete candidate migrations preserve the original draft', async () => {
+  for (const version of ['1', 'unknown']) {
+    const old = currentState();
+    old.candidate = {...old.design, catalog_version: version};
+    const raw = JSON.stringify(old);
+    assert(needsCatalogMigration(raw));
+    for (const request of [async () => { throw Error('offline'); }, async () => old,
+      async () => ({...currentState(), candidate: {...currentState().design, wiring: []}})]) {
+      const store = storage(raw);
+      await assert.rejects(migrateStoredMaker(store, request));
+      assert.equal(store.getItem(MAKER_STORAGE), raw);
+    }
+  }
+});
+
+test('TFT v2 upgrade creates a distinct backup without overwriting the earlier 3.3V backup', async () => {
+  const old = currentState();
+  old.design.catalog_version = '2';
+  const raw = JSON.stringify(old), store = storage(raw);
+  const earlier = 'boardvision.maker.v1.before-hcsr04-3v3';
+  store.setItem(earlier, 'original 5V project');
+  await migrateStoredMaker(store, async () => currentState());
+  assert.equal(store.getItem(earlier), 'original 5V project');
+  assert.equal(store.getItem(CATALOG_BACKUP), raw);
+  assert.equal(needsCatalogMigration(store.getItem(MAKER_STORAGE)), false);
+});
 
 test("only active draft references trigger migration; historical conversation stays intact", () => {
   assert(needsRetirementMigration(legacy()));

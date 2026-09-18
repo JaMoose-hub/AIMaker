@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0",
   "id": "mrd-tf240-8p-cs",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": {
-    "zh-TW": "MRD_TF240_8P_CS 2.4 吋 TFT 螢幕",
-    "en": "MRD_TF240_8P_CS 2.4-inch TFT display"
+    "zh-TW": "MRD_TFT240_8P_CS · ILI9341 · 240×320",
+    "en": "MRD_TFT240_8P_CS · ILI9341 · 240×320"
   },
   "pins": [
     {"id": "GND", "role": "ground", "direction": "power", "required": true, "required_rail": "gnd"},

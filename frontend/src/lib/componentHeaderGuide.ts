@@ -29,6 +29,6 @@ export function componentHeaderGuideText(componentId: string, pinId: string | nu
   const name = t(location.nameKey);
   return { ...location, name,
     title: t("componentGuide.compactTarget", { name, number: location.number, pin: location.pinId }),
-    countFrom: t("componentGuide.countFromPin", { pin: location.startPin }),
+    countFrom: t(componentId === "hc-sr04" ? "componentGuide.countHc" : "componentGuide.countTft"),
   };
 }

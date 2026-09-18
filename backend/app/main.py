@@ -18,6 +18,7 @@ from app.components.availability import RETIRED_COMPONENT_IDS, retired_target
 
 import asyncio
 import logging
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,6 +28,7 @@ from fastapi import FastAPI
 from app.api import calibrate as api_calibrate
 from app.api import controllers as api_controllers
 from app.api import camera_focus as api_camera_focus
+from app.api import camera_tuning as api_camera_tuning
 from app.api import cameras as api_cameras
 from app.api import glasses as api_glasses
 from app.api import guidance as api_guidance
@@ -490,6 +492,7 @@ def build_app(
         try:
             yield
         finally:
+            await asyncio.to_thread(state.camera_tuner.close)
             state.glasses_stream.stop_yolo_worker()
             if state.motion_worker is not None:
                 state.motion_worker.stop()
@@ -549,6 +552,9 @@ def build_app(
     app.state.vlm_service = vlm_service
     app.state.detector = detector
     app.state.source = source
+    from app.camera_tuning import CameraTuner
+    app.state.camera_control_lock = threading.Lock()
+    app.state.camera_tuner = CameraTuner(app.state)
     app.state.scene = scene
     app.state.capture_service = None
     app.state.vision_worker = None
@@ -571,6 +577,7 @@ def build_app(
     app.include_router(api_cameras.router)
     app.include_router(api_glasses.router)
     app.include_router(api_camera_focus.router)
+    app.include_router(api_camera_tuning.router)
     app.include_router(api_guidance.router)
     app.include_router(api_video.router)
     app.include_router(api_tracking.router)

@@ -10,7 +10,8 @@ import time
 
 import cv2
 
-from app.component_worker import component_pose_message
+from app.component_worker import component_pose_message, ComponentPoseTracker
+from app.vision.component_identity import hc_tft_conflict
 from app.vision.motion_tracking import MotionTrack, warm_motion_runtime
 from app.vision.body_tracking import BodyTrack
 from app.vision.tracking_diagnostics import TrackingDiagnostics
@@ -310,6 +311,7 @@ class MotionOverlayWorker:
                 tracked['pins'] = []
                 tracked['pose_quality']['reason'] = 'pin_orientation_unverified'
             object_ms[key] = round((time.perf_counter()-object_started)*1000, 2)
+        self._resolve_component_identities(outputs, slot, seed_map)
         detection = outputs['board']
         components = [outputs[key] for key in keys if key != 'board']
         # Non-trial modules retain their old low-rate detector path. Mark
@@ -346,6 +348,37 @@ class MotionOverlayWorker:
             'pi_fresh_source_recovery': True,
             'component_prediction_ids': list(PREDICTED_COMPONENT_IDS),
         }
+
+    def _resolve_component_identities(self, outputs, slot, seed_map):
+        hc, tft = outputs.get('hc-sr04'), outputs.get('mrd-tf240-8p-cs')
+        if hc is None:
+            return
+        evidence = None
+        pair = seed_map.get('hc-sr04')
+        source_quality = {}
+        if pair is not None and 0 <= slot.ts_ms - pair[0].ts_ms <= 750:
+            source_quality = pair[1].get('pose_quality', {})
+            if source_quality.get('reason') == 'component_identity_conflict':
+                evidence = source_quality.get('identity_check')
+        # Both tracked outlines are projected into THIS image. Never compare
+        # independently timed raw boxes, nor let a prediction veto a detector.
+        if evidence is None and tft is not None and tft.get('tracking') == 'locked':
+            reference = source_quality.get('reference_recovery', {})
+            evidence = hc_tft_conflict(slot.frame, hc.get('outline'), tft.get('outline'),
+                hc_visible=ComponentPoseTracker._hc_transducers_visible,
+                reference_confirmed=bool(reference.get('accepted')
+                    and reference.get('frame_id') == slot.frame_id))
+        if evidence is None:
+            return
+        rejected = absent(hc, slot.frame_id, slot.ts_ms)
+        rejected['pose_quality'].update(reason='component_identity_conflict',
+            identity_check=dict(evidence), model_source=hc.get('pose_quality', {}).get('model_source'))
+        outputs['hc-sr04'] = rejected
+        # Clearing the display template/prediction prevents an old false HC
+        # from returning for its semantic lease after the TFT moves or vanishes.
+        self.tracks.pop('hc-sr04', None)
+        self.body_tracks.pop('hc-sr04', None)
+        self.component_predictions['hc-sr04'] = DisplayPrediction()
 
     def _run(self):
         try:

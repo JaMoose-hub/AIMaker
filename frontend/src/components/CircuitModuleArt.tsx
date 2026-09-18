@@ -17,7 +17,7 @@ export function CircuitModuleArt({ id, x, y, height }: { id: GuidedComponentId; 
         {[-20, -10, 0, 10, 20].map(offset => <path key={offset} d={`M ${cx - 24} ${57 + offset} h 48 M ${cx + offset} 33 v 48`} stroke="#354c5d" strokeWidth="2" />)}
       </g>)}
       <rect x="156" y="48" width="40" height="22" rx="3" fill="#142730" stroke="#7f9395" />
-      <text x={width / 2} y="27" textAnchor="middle" fill="#c4e6e7" fontSize="13">HC-SR04</text>
+      <text x={width / 2} y="27" textAnchor="middle" fill="#c4e6e7" fontSize="13">HC-SR04+</text>
     </> : <>
       <rect x="30" y="36" width={width - 60} height={height - 52} rx="5" fill="#b6b9bf" />
       <rect x="37" y="43" width={width - 74} height={height - 66} rx="3" fill="#08121e" stroke="#2b404f" strokeWidth="2" />

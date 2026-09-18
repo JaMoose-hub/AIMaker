@@ -619,6 +619,10 @@ class FfmpegMjpegCameraSource:
         self._focus_read_back: float | None = None
         self._autofocus_read_back: float | None = None
 
+        from . import control_store
+        self.control_identity = control_store.identity(self._device_name, width, height, fps)
+        self._live_control_overrides = control_store.load(self.control_identity) if self._native_uvc_controls else {}
+
     @property
     def current_index(self) -> int:
         return self._index
@@ -664,6 +668,7 @@ class FfmpegMjpegCameraSource:
             self._white_balance_temperature is not None,
             bool(self._uvc_image_controls),
             self._native_autofocus_requested,
+            bool(self._live_control_overrides),
         ))
 
     def _apply_native_uvc_controls(self) -> None:
@@ -676,12 +681,16 @@ class FfmpegMjpegCameraSource:
                 settings[key] = {"value": int(value), "flags": 2}
         if self._native_autofocus_requested:
             settings["focus"] = {"value": int(self._focus_read_back or 0), "flags": 1}
+        settings.update(self._live_control_overrides)
         try:
             self._uvc_control_report = apply_controls(self._device_name, settings)
             for control in self._uvc_control_report['controls']:
                 if control['Name'] == 'focus':
                     self._focus_read_back = control['Value']
                     self._autofocus_read_back = control['Flags']
+                    self._focus = control['Value'] if control['Flags'] == 2 else None
+                    self._lock_auto_focus = control['Flags'] == 2
+                    self._native_autofocus_requested = control['Flags'] == 1
         except Exception as error:
             self._uvc_control_report = {"verified": False, "error": str(error)}
             self._focus_read_back = self._autofocus_read_back = None
@@ -945,8 +954,49 @@ class FfmpegMjpegCameraSource:
         )
         return False, 0, 0
 
+    @property
+    def supports_live_controls(self) -> bool:
+        return self._native_uvc_controls
+
+    def read_live_controls(self) -> dict:
+        from .windows_uvc import read_controls
+        if not self.supports_live_controls:
+            raise RuntimeError('Live property controls unavailable')
+        with self._lifecycle_lock:
+            return read_controls(self._device_name)
+
+    def apply_live_controls(self, settings: dict) -> dict:
+        from .windows_uvc import apply_controls
+        from .control_store import valid_settings
+        settings = valid_settings(settings)
+        if not self.supports_live_controls:
+            raise RuntimeError('Live property controls unavailable')
+        with self._lifecycle_lock:
+            # A verified write updates the settings reused by reconnect/startup.
+            # Never stop FFmpeg or open an OpenCV capture handle here.
+            report = apply_controls(self._device_name, settings)
+            self._live_control_overrides.update(settings)
+            self._uvc_control_report = report
+            if 'focus' in settings:
+                entry = settings['focus']
+                self._focus = entry['value'] if entry['flags'] == 2 else None
+                self._lock_auto_focus = entry['flags'] == 2
+                self._native_autofocus_requested = entry['flags'] == 1
+                self._focus_read_back = next((p['Value'] for p in report['controls'] if p['Name'] == 'focus'), None)
+                self._autofocus_read_back = entry['flags']
+            return report
+
     def set_focus(self, value: float | None) -> tuple[bool, float | None]:
         with self._lifecycle_lock:
+            if self.supports_live_controls:
+                try:
+                    current = next(p for p in self.read_live_controls()['controls'] if p['Name'] == 'focus')
+                    self.apply_live_controls({'focus': {'value': current['Value'] if value is None else int(value),
+                                                       'flags': 1 if value is None else 2}})
+                    return True, self._focus_read_back
+                except Exception:
+                    log.warning('Native live focus failed; stream left running', exc_info=True)
+                    return False, None
             self._native_autofocus_requested = value is None
             if value is None:
                 self._focus = None

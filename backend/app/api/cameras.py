@@ -31,11 +31,12 @@ import base64
 import logging
 import sys
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.api.errors import expected_error
+from app.api.camera_tuning import camera_mutation_guard
 from app.capture.sources import frame_has_signal, read_signal_frame
 
 log = logging.getLogger(__name__)
@@ -235,7 +236,7 @@ async def get_cameras(request: Request) -> dict:
     return {"cameras": [results[i] for i in indices]}
 
 
-@router.post("/cameras/select")
+@router.post("/cameras/select", dependencies=[Depends(camera_mutation_guard)])
 async def post_cameras_select(body: SelectRequest, request: Request) -> JSONResponse:
     state = request.app.state
     config = state.config

@@ -2,6 +2,7 @@ import { useMemo, type CSSProperties } from "react";
 import { toDisplay, type Letterbox } from "../lib/geometry";
 import { guidanceCalloutGeometry } from "../lib/guidanceCallout";
 import { componentHeaderGuideText } from "../lib/componentHeaderGuide";
+import { headerCountDirection } from "../lib/headerCountDirection";
 import { pointBounds, placeWiringLabel, type WiringLabel } from "../lib/wiringLabelLayout";
 import { useI18n } from "../lib/i18n";
 import type { ComponentPoseMessage } from "../lib/types";
@@ -84,6 +85,18 @@ export function ComponentPinOverlay({
       .filter((pin) => pin.v && (targetPinId === null || pin.id === targetPinId))
       .map((pin) => ({ ...pin, ...toDisplay(letterbox, pin.x, pin.y) }));
   }, [pose, letterbox, targetPinId]);
+
+  const countHint = useMemo(() => {
+    if (!headerGuide) return null;
+    const endpoint = (id: string) => {
+      const pin = pose?.pins.find(p => p.id === id && p.v);
+      return pin ? toDisplay(letterbox, pin.x, pin.y) : null;
+    };
+    const direction = pose?.tracking === "locked" && !held
+      ? headerCountDirection(endpoint(headerGuide.startPin), endpoint(headerGuide.pins.at(-1)!), width, height, t) : null;
+    return direction ? t("headerCount.component", { direction, pin: headerGuide.startPin })
+      : t("headerCount.componentFallback", { pin: headerGuide.startPin });
+  }, [headerGuide, pose, held, letterbox, width, height, t]);
 
   const targetCallout = useMemo(() => {
     if (targetPinId === null) return null;
@@ -176,11 +189,12 @@ export function ComponentPinOverlay({
           viewBox="0 0 10 10"
           refX="9"
           refY="5"
-          markerWidth="7"
-          markerHeight="7"
+          markerUnits="userSpaceOnUse"
+          markerWidth="9"
+          markerHeight="9"
           orient="auto-start-reverse"
         >
-          <path className="component-guidance-arrowhead" d="M 0 0 L 10 5 L 0 10 z" />
+          <path className="component-guidance-arrowhead" d="M 1 1 L 9 5 L 1 9" />
         </marker>
       </defs>
       {outline && (
@@ -225,7 +239,7 @@ export function ComponentPinOverlay({
         );
       })}
       {targetCallout && (
-        <g className="component-pin-callout" aria-label={headerGuide?.title}>
+        <g className="component-pin-callout" aria-label={headerGuide ? `${headerGuide.title}；${countHint}` : undefined}>
           <line
             className="component-pin-callout-arrow"
             x1={targetCallout.startX}
@@ -252,6 +266,9 @@ export function ComponentPinOverlay({
               pin: targetCallout.target.id,
             }))}
           </text>
+          {headerGuide ? <text className="header-count-hint" x={targetCallout.boxX + 10} y={targetCallout.boxY + 40}>
+            {countHint}
+          </text> : null}
           {!headerGuide ? <text
             className="component-pin-callout-hint"
             x={targetCallout.boxX + 10}

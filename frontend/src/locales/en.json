@@ -147,10 +147,23 @@
   "boardGuide.pi.outer": "Outer row (board edge)",
   "boardGuide.pi.ordinal": "Position {number}",
   "boardGuide.pi.target": "{row} · Position {number}",
-  "boardGuide.pi.countFrom": "Count from the end away from USB-A / Ethernet",
+  "boardGuide.pi.countFrom": "Start away from USB-A / Ethernet; first pin = 1",
   "boardGuide.pi.instruction": "Start at the end away from USB-A / Ethernet. Count along this one row to position {number}.",
   "boardGuide.pi.reference": "{signal} · Physical Pin {physical}",
-  "boardGuide.pi.diagram": "Single row: start at 1 → 20 pins per row",
+  "boardGuide.pi.diagram": "Unfolded diagram (not camera direction): one row, 1 → 20",
+  "headerCount.right": "Left to right →",
+  "headerCount.downRight": "Upper-left to lower-right ↘",
+  "headerCount.down": "Top to bottom ↓",
+  "headerCount.downLeft": "Upper-right to lower-left ↙",
+  "headerCount.left": "Right to left ←",
+  "headerCount.upLeft": "Lower-right to upper-left ↖",
+  "headerCount.up": "Bottom to top ↑",
+  "headerCount.upRight": "Lower-left to upper-right ↗",
+  "headerCount.pi": "{direction}; start = 1",
+  "headerCount.component": "{direction}; {pin} = 1",
+  "headerCount.componentFallback": "Start at the {pin} end; first pin = 1",
+  "componentGuide.countHc": "Front facing you, pins below: left → right; VCC = 1",
+  "componentGuide.countTft": "Screen facing you, pins above: left → right; GND = 1",
   "verification.overall": "Overall confidence",
   "verification.scoreCap": "Current verification level is capped at {cap}",
   "verification.layer.geometry": "Dual-end geometry",
@@ -641,9 +654,33 @@
   ,"glasses.inferenceRate": "Inference"
   ,"glasses.preprocessing": "Preprocessing"
   ,"glasses.denoise.pending": "Initializing"
-  ,"componentGuide.ultrasonic": "HC-SR04"
-  ,"componentGuide.screen": "MRD-TF240"
+  ,"componentGuide.ultrasonic": "HC-SR04+"
+  ,"componentGuide.screen": "MRD-TFT240"
   ,"componentGuide.compactTarget": "{name} · Pin {number} · {pin}"
   ,"componentGuide.ordinal": "Pin {number}"
   ,"componentGuide.countFromPin": "Count from the {pin} end"
+  ,"cameraTune.button": "Smart adjust"
+  ,"cameraTune.running": "Adjusting"
+  ,"cameraTune.tooltip": "Tune the webcam and keep clearer settings without changing wiring progress."
+  ,"cameraTune.cancel": "Cancel"
+  ,"cameraTune.restore": "Undo"
+  ,"cameraTune.loading": "Reading camera status…"
+  ,"cameraTune.ready": "Press once after changing environments"
+  ,"cameraTune.adjusting": "Keep parts still while comparing clarity…"
+  ,"cameraTune.restoring": "Restoring camera settings…"
+  ,"cameraTune.improved": "Image quality improved; settings saved"
+  ,"cameraTune.restored": "Previous settings restored"
+  ,"cameraTune.cancelled": "Cancelled; original settings retained"
+  ,"cameraTune.unsupported": "Smart adjustment is unavailable for this camera"
+  ,"cameraTune.busy": "Camera adjustment is already in progress"
+  ,"cameraTune.no_restore": "No previous settings to restore"
+  ,"cameraTune.needs_light": "Kept original settings. More light is needed"
+  ,"cameraTune.no_improvement": "Original settings remain the better choice"
+  ,"cameraTune.moving": "Movement detected; reverted. Keep parts still and retry"
+  ,"cameraTune.no_frames": "No fresh frames; check the camera"
+  ,"cameraTune.camera_changed": "Camera changed; adjustment stopped"
+  ,"cameraTune.timeout": "Adjustment timed out; previous settings restored"
+  ,"cameraTune.control_failed": "Adjustment failed; previous settings restored"
+  ,"cameraTune.restore_failed": "Could not verify restoration. Press Undo to retry"
+  ,"cameraTune.network": "Connection unavailable; the server will finish or roll back"
 }

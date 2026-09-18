@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+from app.api.camera_tuning import camera_mutation_guard
 from pydantic import BaseModel, model_validator
 
 router = APIRouter(prefix="/api/glasses")
@@ -30,13 +31,13 @@ async def stream_status(request: Request):
     return await asyncio.to_thread(request.app.state.glasses_stream.snapshot)
 
 
-@router.put("/stream")
+@router.put("/stream", dependencies=[Depends(camera_mutation_guard)])
 async def configure_stream(body: GlassesSettings, request: Request):
     return await asyncio.to_thread(
         request.app.state.glasses_stream.configure, body.model_dump(),
     )
 
 
-@router.delete("/stream")
+@router.delete("/stream", dependencies=[Depends(camera_mutation_guard)])
 async def stop_stream(request: Request):
     return await asyncio.to_thread(request.app.state.glasses_stream.restore)

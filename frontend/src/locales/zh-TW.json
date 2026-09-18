@@ -147,10 +147,23 @@
   "boardGuide.pi.outer": "外排（靠板邊緣）",
   "boardGuide.pi.ordinal": "第 {number} 支",
   "boardGuide.pi.target": "{row} · 第 {number} 支",
-  "boardGuide.pi.countFrom": "從遠離 USB-A／網路孔的一端數",
+  "boardGuide.pi.countFrom": "遠離 USB-A／網路孔端起算，第一支算 1",
   "boardGuide.pi.instruction": "從遠離 USB-A／網路孔的一端開始，沿同一排數到第 {number} 支。",
   "boardGuide.pi.reference": "{signal} · 實體 Pin {physical}",
-  "boardGuide.pi.diagram": "單排示意：從 1 開始 → 每排 20 支",
+  "boardGuide.pi.diagram": "展開示意（非鏡頭方向）：沿同一排 1 → 20",
+  "headerCount.right": "從左往右 →",
+  "headerCount.downRight": "從左上往右下 ↘",
+  "headerCount.down": "從上往下 ↓",
+  "headerCount.downLeft": "從右上往左下 ↙",
+  "headerCount.left": "從右往左 ←",
+  "headerCount.upLeft": "從右下往左上 ↖",
+  "headerCount.up": "從下往上 ↑",
+  "headerCount.upRight": "從左下往右上 ↗",
+  "headerCount.pi": "{direction} 數，起點算第 1 支",
+  "headerCount.component": "{direction} 數，{pin} 算第 1 支",
+  "headerCount.componentFallback": "從 {pin} 端起算，第一支算 1",
+  "componentGuide.countHc": "正面朝你、排針朝下：左 → 右，VCC 算第 1 支",
+  "componentGuide.countTft": "螢幕朝你、排針朝上：左 → 右，GND 算第 1 支",
   "verification.overall": "整體信心度",
   "verification.scoreCap": "目前驗證層級最高 {cap} 分",
   "verification.layer.geometry": "雙端幾何定位",
@@ -641,9 +654,33 @@
   ,"glasses.inferenceRate": "推論"
   ,"glasses.preprocessing": "前處理"
   ,"glasses.denoise.pending": "初始化中"
-  ,"componentGuide.ultrasonic": "HC-SR04"
-  ,"componentGuide.screen": "MRD-TF240"
+  ,"componentGuide.ultrasonic": "HC-SR04+"
+  ,"componentGuide.screen": "MRD-TFT240"
   ,"componentGuide.compactTarget": "{name} · 第 {number} 支 · {pin}"
   ,"componentGuide.ordinal": "第 {number} 支"
   ,"componentGuide.countFromPin": "從 {pin} 端開始數"
+  ,"cameraTune.button": "智慧調整"
+  ,"cameraTune.running": "調整中"
+  ,"cameraTune.tooltip": "自動調整鏡頭，保留較清楚的設定；不影響接線進度。"
+  ,"cameraTune.cancel": "取消"
+  ,"cameraTune.restore": "還原"
+  ,"cameraTune.loading": "讀取鏡頭狀態…"
+  ,"cameraTune.ready": "換環境時按一下即可"
+  ,"cameraTune.adjusting": "零件先放穩，正在比較清晰度…"
+  ,"cameraTune.restoring": "正在還原鏡頭設定…"
+  ,"cameraTune.improved": "畫面品質已改善，設定已保存"
+  ,"cameraTune.restored": "已還原調整前設定"
+  ,"cameraTune.cancelled": "已取消，保留原設定"
+  ,"cameraTune.unsupported": "此相機目前不支援智慧調整"
+  ,"cameraTune.busy": "鏡頭正在調整，請稍候"
+  ,"cameraTune.no_restore": "目前沒有可還原的設定"
+  ,"cameraTune.needs_light": "已保留原設定；光線不足，建議補光"
+  ,"cameraTune.no_improvement": "原設定較合適，已保留"
+  ,"cameraTune.moving": "零件有移動，已還原；放穩後再按一次"
+  ,"cameraTune.no_frames": "沒有取得新影像，請確認鏡頭"
+  ,"cameraTune.camera_changed": "鏡頭已切換，調整已停止"
+  ,"cameraTune.timeout": "調整逾時，已還原原設定"
+  ,"cameraTune.control_failed": "調整未完成，已還原原設定"
+  ,"cameraTune.restore_failed": "無法確認還原成功，請按「還原」重試"
+  ,"cameraTune.network": "無法連線；請稍候，伺服器仍會保留或還原設定"
 }

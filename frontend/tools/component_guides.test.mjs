@@ -29,14 +29,18 @@ test("both lessons use existing pins, correct bus roles and bilingual instructio
   assert.equal(guideFor("mrd-tf240-8p-cs").steps.find((s) => s.componentPin === "SDA").boardPin, "GPIO10");
   assert.equal(guideFor("mrd-tf240-8p-cs").steps.find((s) => s.componentPin === "SCL").boardPin, "GPIO11");
 });
-test("HC-SR04 ECHO is protected and display supply/backlight have no wiring target", () => {
+test("HC-SR04+ uses direct ECHO; TFT proposes 3.3V and never assigns BLK a GPIO", () => {
   const hc = guideFor("hc-sr04");
-  assert.equal(hc.steps.find((s) => s.componentPin === "ECHO").connectionKind, "divider");
-  assert(hc.prerequisites.some((p) => p.id === "divider-ready"));
+  assert.equal(hc.steps.find((s) => s.componentPin === "ECHO").connectionKind, "direct");
+  assert.equal(hc.steps.find((s) => s.componentPin === "VCC").boardPin, "3V3_P1");
+  assert(hc.prerequisites.some((p) => p.id === "variant-3v3"));
+  assert(hc.safety.en.includes('standard 5V'));
   assert.equal(hc.steps.at(-1).componentPin, "VCC");
   const display = guideFor("mrd-tf240-8p-cs");
-  assert(!display.steps.some((s) => ["VCC", "BLK"].includes(s.componentPin)));
-  assert.deepEqual(display.unresolved.map((p) => p.pin), ["VCC", "BLK"]);
+  assert.equal(display.steps.at(-1).componentPin, "VCC");
+  assert.equal(display.steps.at(-1).boardPin, "3V3_P17");
+  assert(!display.steps.some((s) => s.componentPin === "BLK"));
+  assert.deepEqual(display.unresolved.map((p) => p.pin), ["BLK"]);
 });
 test("prepare checks are mandatory and never carry to another module", () => {
   let state = initialGuideSession();

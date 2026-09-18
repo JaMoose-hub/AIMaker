@@ -177,7 +177,7 @@ class PiDeployer:
             self._set(busy=False)
         return {"ok": failure is None, "error": failure, "status": self.snapshot()}
 
-    def deploy(self, code: str) -> dict:
+    def deploy(self, code: str, *, imports=(), devices=()) -> dict:
         with self._state_lock:
             if self._closed or not self._state.connected:
                 return {"ok": False, "error": "Connect to the Pi first", "status": self.snapshot()}
@@ -187,7 +187,7 @@ class PiDeployer:
             self._state.deployment = "preparing"
             self._state.error = None
             self._state.connection_error = None
-            self._worker = threading.Thread(target=self._deploy, args=(code,), name="pi-deploy", daemon=True)
+            self._worker = threading.Thread(target=self._deploy, args=(code, tuple(imports), tuple(devices)), name="pi-deploy", daemon=True)
             self._worker.start()
         return {"ok": True, "status": self.snapshot()}
 
@@ -196,7 +196,7 @@ class PiDeployer:
             with sftp.file(path, "wb") as target:
                 target.write(contents.encode("utf-8"))
 
-    def _deploy(self, code: str):
+    def _deploy(self, code: str, imports=(), devices=()):
         with self._io_lock:
             try:
                 self._open()
@@ -220,6 +220,24 @@ class PiDeployer:
                     raise RemoteCommandError("Pi GPIO environment is not ready. On Raspberry Pi OS, prepare "
                         "python3-gpiozero and python3-lgpio, then recreate the --system-site-packages venv if needed. "
                         "No packages were installed automatically.\n" + str(error)) from error
+                # Catalog-owned requirements, checked before stopping the old
+                # service. Neither generated code nor the browser selects pip packages.
+                extra = set(imports) - {"gpiozero", "lgpio"}
+                if extra - {"spidev", "PIL", "luma.lcd"} or set(devices) - {"/dev/spidev0.0"}:
+                    raise RemoteCommandError("Unknown catalog runtime requirement")
+                if extra:
+                    check = "import importlib; " + "; ".join(f"importlib.import_module({name!r})" for name in sorted(extra))
+                    try:
+                        self._run(f"{shlex.quote(python)} -c {shlex.quote(check)}")
+                    except RemoteCommandError as error:
+                        raise RemoteCommandError("ILI9341 environment is not ready. Install luma.lcd==2.13.0 in the deployment venv "
+                            "and prepare python3-spidev / python3-pil. No packages were installed automatically.\n" + str(error)) from error
+                for device in devices:
+                    try:
+                        self._run(f"test -r {shlex.quote(device)} && test -w {shlex.quote(device)}")
+                    except RemoteCommandError as error:
+                        raise RemoteCommandError("SPI0 is missing or inaccessible. Enable SPI in raspi-config, reboot if required, "
+                            "and check that this user belongs to the spi group: " + device) from error
                 unit = (
                     "[Unit]\nDescription=BoardVision Pi program\nStartLimitIntervalSec=0\n\n[Service]\nType=simple\n"
                     f'WorkingDirectory={root}\nExecStart="{python}" -u "{main}"\n'

@@ -32,6 +32,7 @@ export function PiDeployPanel({ project, draft, onDraftChange }: { project?: Pro
   const busy = pending !== null || Boolean(status?.busy);
   const connected = Boolean(status?.connected) && !networkError;
   const error = status?.connection_error || status?.error || actionError;
+  const hasDisplay = project?.component_ids.includes("mrd-tf240-8p-cs");
 
   useEffect(() => {
     let cancelled = false;
@@ -111,13 +112,26 @@ export function PiDeployPanel({ project, draft, onDraftChange }: { project?: Pro
     <p className="pi-intro">{project ? project.title : t("pi.intro")}</p>
     {project ? <small className="maker-muted">{tr("載入作品不會自動部署。下方狀態來自 Pi 目前服務，可能是上次部署的程式。", "Loading a project does not deploy it. Status below is the current Pi service, possibly an earlier program.")}</small> : null}
     {project?.unresolved.length ? <pre className="pi-error" role="alert">{project.unresolved.join("\n")}</pre> : null}
+    {hasDisplay ? <div className="guide-module-review" aria-label={tr("螢幕首次測試", "First display test")}>
+      <strong>ILI9341 · 240×320</strong>
+      <p>{tr("接線方案：VCC → Pin 17（3.3V），BLK 留空。照片已確認型號；上電前仍須核對模組支援 3.3V。", "Plan: VCC → Pin 17 (3.3V), BLK disconnected. Photos confirm identity; verify module supply compatibility before power-on.")}</p>
+      <p>{tr("核對後接 Pi USB-C 電源 → 連線 Pi → 部署。先看 3 秒 RGB 色塊／文字，再看距離與警告；無回波顯示 NO ECHO。", "After checking, connect Pi USB-C power → Connect Pi → Deploy. Check the 3-second RGB/text card, then distance and warnings; missing echoes show NO ECHO.")}</p>
+      <small>{tr("只有螢幕的作品會保留測試圖。BLK 留空若未亮，先核對背光規格；不要改接 5V 或任意 GPIO。", "Display-only projects keep the test card. If BLK left open does not light the backlight, check its specifications; do not switch to 5V or an arbitrary GPIO.")}</small>
+    </div> : null}
     {project ? <details><summary>{tr("執行環境與硬體準備", "Runtime prerequisites")}</summary>
       <p>{tr("部署前檢查目錄指定的 GPIO 套件，不自動安裝 AI 指定的依賴。", "Catalog GPIO dependencies are checked before deployment; AI cannot install packages.")}</p>
       <code>{project.requirements.imports.join(", ") || tr("驅動待確認", "Drivers pending")}</code>
+      {hasDisplay ? <>
+        <p>{tr("在 Pi 終端機準備一次：raspi-config → Interface Options → SPI → Enable。以下指令由你手動執行，本頁不會自動安裝。", "Prepare once on the Pi: raspi-config → Interface Options → SPI → Enable. Run the following commands manually; this page does not install packages automatically.")}</p>
+        <pre>{`sudo apt install python3-venv python3-gpiozero python3-lgpio python3-spidev python3-pil\npython3 -m venv --system-site-packages ${status?.remote_dir ?? "~/Desktop/Pi_deployer"}/.venv\n${status?.remote_dir ?? "~/Desktop/Pi_deployer"}/.venv/bin/python -m pip install luma.lcd==2.13.0`}</pre>
+      </> : null}
       {project.requirements.devices.length ? <p>{tr("規格核實後，需先在 Pi 啟用對應 I²C／SPI 介面並檢查裝置：", "After specifications are confirmed, enable the required I²C / SPI interface and check: ")}{project.requirements.devices.join(", ")}</p> : null}
     </details> : null}
     <div className="pi-editor-heading">
       <label htmlFor="pi-python-code">{t("pi.editor")}</label>
+      {project && code !== project.code ? <button type="button" className="pi-text-button" onClick={() => {
+        if (window.confirm(tr("以新版作品程式替換目前編輯器內容？", "Replace the current editor content with the updated project program?"))) updateCode(project.code);
+      }}>{tr("載入新版作品程式", "Load updated project program")}</button> : null}
       {!project ? <button type="button" className="pi-text-button" onClick={() => updateCode(piPhotoresistorExample())}>
         {t("pi.example")}
       </button> : null}

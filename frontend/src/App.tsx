@@ -643,6 +643,7 @@ export default function App() {
           onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
         <div hidden={makerStage !== "guide"}><QueryBox result={queryResult} onResult={handleQueryResult} onClear={handleQueryClear} /></div>
         <div hidden={makerEnabled && (makerStage === "design" || makerStage === "blueprint")}><StatusBar
+          webcamTuningVisible={displayMode === "standard" && config?.camera_source === "device"}
           onOpenCalibrate={handleOpenCalibrate}
           calibrateDisabled={!profile || backendDown}
           onOpenCameraPicker={handleOpenCameraPicker}

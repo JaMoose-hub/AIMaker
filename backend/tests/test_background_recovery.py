@@ -78,3 +78,21 @@ def test_background_hint_cannot_skip_current_frame_validation(monkeypatch):
     assert flow.step(gray, ts_ms=33) is None
     assert len(calls) == 3
     assert calls[-1] is not None
+
+
+def test_background_search_keeps_pi_feature_policy(monkeypatch):
+    gray, quad = scene()
+    flow = PlanarFlow(pi5_cable_guard=True)
+    assert flow.seed(gray, quad)
+    policies = []
+    def search(clone, image):
+        policies.append(clone.pi5_cable_guard)
+        return np.eye(3)
+    monkeypatch.setattr(PlanarFlow, '_wide_search', search)
+    worker = BackgroundRecovery()
+    try:
+        assert worker.propose(flow, gray, 0, True) == (None, True)
+        worker.pending[-1].result(timeout=2)
+        assert policies == [True]
+    finally:
+        worker.close()

@@ -4,6 +4,10 @@
 接線步驟，並整合 Codex 作品設計、雲端照片檢查與 Pi 部署。
 保留原有板卡 Profile 與開發工具，支援繁體中文／English。
 
+作品接線預設為 **HC-SR04+ 寬電壓版、3.3V 供電**（Pi 實體 Pin 1），不再使用 ECHO 分壓電阻。
+僅適用於確認可輸出 3.3V ECHO 的版本，不適用標準 5V HC-SR04；視覺模型不變。
+接線對照與舊作品備份方式見 [3.3V 版本說明](docs/hcsr04-plus-3v3.md)。
+
 ## 從 GitHub 下載後首次啟動
 
 需要 Python 3.12、uv、Node.js 22+ 與 npm。以下為 Windows PowerShell，
@@ -205,6 +209,9 @@ npm run build                                       # TS 嚴格模式檢查 + �
   QueryService 預留 LLM adapter、`DetectionResult` 帶 6-DoF 姿態供接線驗證使用
 
 ## 目錄
+
+MRD_TFT240_8P_CS（ILI9341）接線、Pi 套件與首次亮屏驗收：見 [TFT 指南](docs/mrd-tft240-ili9341.md)。
+軟體支援 RGB 測試圖與距離顯示；3.3V 模組相容性及 BLK 留空時的背光狀態仍須核對／實测，不能由照片或程式測試推定通過。
 
 ```
 backend/    FastAPI + CV（Python 3.11+, uv, .venv 已含相依）

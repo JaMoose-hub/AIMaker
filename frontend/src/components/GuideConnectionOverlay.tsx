@@ -84,6 +84,14 @@ export function GuideConnectionOverlay({
 
   const color = CONNECTION_COLORS[componentPinId ?? ""] ?? "#66dfff";
   const style = { "--guide-connection-color": color } as CSSProperties;
+  // Display-only clearance: leave the real Pin centres unobstructed. Never
+  // change the detected coordinates or feed this shortened line to checking.
+  const dx = geometry.to.x - geometry.from.x;
+  const dy = geometry.to.y - geometry.from.y;
+  const distance = Math.hypot(dx, dy);
+  const inset = Math.min(8, distance / 3) / (distance || 1);
+  const lineFrom = { x: geometry.from.x + dx * inset, y: geometry.from.y + dy * inset };
+  const lineTo = { x: geometry.to.x - dx * inset, y: geometry.to.y - dy * inset };
 
   return (
     <svg
@@ -100,39 +108,40 @@ export function GuideConnectionOverlay({
           viewBox="0 0 10 10"
           refX="9"
           refY="5"
-          markerWidth="6"
-          markerHeight="6"
+          markerUnits="userSpaceOnUse"
+          markerWidth="9"
+          markerHeight="9"
           orient="auto"
         >
-          <path className="guide-connection-arrowhead" d="M 0 0 L 10 5 L 0 10 z" />
+          <path className="guide-connection-arrowhead" d="M 1 1 L 9 5 L 1 9" />
         </marker>
       </defs>
       <line
         className="guide-connection-glow"
-        x1={geometry.from.x}
-        y1={geometry.from.y}
-        x2={geometry.to.x}
-        y2={geometry.to.y}
+        x1={lineFrom.x}
+        y1={lineFrom.y}
+        x2={lineTo.x}
+        y2={lineTo.y}
       />
       <line
         className="guide-connection-line"
-        x1={geometry.from.x}
-        y1={geometry.from.y}
-        x2={geometry.to.x}
-        y2={geometry.to.y}
+        x1={lineFrom.x}
+        y1={lineFrom.y}
+        x2={lineTo.x}
+        y2={lineTo.y}
         markerEnd="url(#guide-connection-arrowhead)"
       />
       <circle
         className="guide-connection-origin"
         cx={geometry.from.x}
         cy={geometry.from.y}
-        r="7"
+        r="5"
       />
       <circle
         className="guide-connection-target"
         cx={geometry.to.x}
         cy={geometry.to.y}
-        r="9"
+        r="6"
       />
     </svg>
   );

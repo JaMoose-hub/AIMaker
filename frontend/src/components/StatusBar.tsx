@@ -2,8 +2,11 @@ import { useI18n } from "../lib/i18n";
 import { useDetections } from "../lib/wsClient";
 import { pinDisplayNameWithNumber } from "../lib/capabilities";
 import type { AccuracySummary, Pin } from "../lib/types";
+import { CameraAutoTune } from "./CameraAutoTune";
+import { useState } from "react";
 
 interface StatusBarProps {
+  webcamTuningVisible?: boolean;
   /** Opens the "新增/校正板型" admin panel. */
   onOpenCalibrate: () => void;
   /** True while there's no loaded board profile to calibrate against (or the backend is down). */
@@ -28,6 +31,7 @@ interface StatusBarProps {
 }
 
 export function StatusBar({
+  webcamTuningVisible = false,
   onOpenCalibrate,
   calibrateDisabled,
   onOpenCameraPicker,
@@ -41,6 +45,7 @@ export function StatusBar({
   pinsById,
 }: StatusBarProps) {
   const { t } = useI18n();
+  const [cameraTuningBusy, setCameraTuningBusy] = useState(false);
   const { detection, connected, detectionsPerSec, guidance } = useDetections();
 
   const tracking = detection?.tracking ?? "searching";
@@ -54,20 +59,17 @@ export function StatusBar({
 
   return (
     <div className="statusbar">
+      <div className="status-metrics">
       <span className={`pill ${tracking}`}>
         <span className="pill-dot" aria-hidden="true" />
         {t(`status.${tracking}`)}
       </span>
-      {confidence !== null && (
         <span className="status-item">
-          {t("status.confidence")} <strong>{confidence}%</strong>
+          {t("status.confidence")} <strong>{confidence === null ? "—" : `${confidence}%`}</strong>
         </span>
-      )}
-      {detection?.video_size && (
         <span className="status-item" title={t("status.resolutionTooltip")}>
-          {t("status.resolution")} <strong>{detection.video_size[0]}×{detection.video_size[1]}</strong>
+          {t("status.resolution")} <strong>{detection?.video_size ? `${detection.video_size[0]}×${detection.video_size[1]}` : "—"}</strong>
         </span>
-      )}
       <span className="status-item">
         <span className={`ws-dot${connected ? " on" : ""}`} aria-hidden="true" />
         {t(connected ? "status.connected" : "status.disconnected")}
@@ -75,40 +77,34 @@ export function StatusBar({
       <span className="status-item">
         {t("status.rate")} <strong>{detectionsPerSec}/s</strong>
       </span>
-      {liveGeometry && (
         <span
-          className={`status-item${liveGeometry.px_per_mm < 8 ? " status-warning" : ""}`}
+          className={`status-item${liveGeometry && liveGeometry.px_per_mm < 8 ? " status-warning" : ""}`}
           title={t("status.geometryTooltip")}
         >
-          {t("status.pitch")} <strong>{liveGeometry.pitch_px.toFixed(1)}px / {liveGeometry.px_per_mm.toFixed(2)} px/mm</strong>
+          {t("status.pitch")} <strong>{liveGeometry ? `${liveGeometry.pitch_px.toFixed(1)}px / ${liveGeometry.px_per_mm.toFixed(2)} px/mm` : "—"}</strong>
         </span>
-      )}
-      {poseQuality && poseQuality.inliers != null && poseQuality.reproj_px != null && (
         <span
-          className={`status-item${poseQuality.inlier_board_area_frac != null && poseQuality.inlier_board_area_frac < 0.05 ? " status-warning" : ""}`}
+          className={`status-item${poseQuality?.inlier_board_area_frac != null && poseQuality.inlier_board_area_frac < 0.05 ? " status-warning" : ""}`}
           title={t("status.poseQualityTooltip")}
         >
-          {t("status.poseQuality")} <strong>{poseQuality.inliers} / {poseQuality.reproj_px.toFixed(2)}px</strong>
+          {t("status.poseQuality")} <strong>{poseQuality?.inliers != null && poseQuality.reproj_px != null ? `${poseQuality.inliers} / ${poseQuality.reproj_px.toFixed(2)}px` : "—"}</strong>
         </span>
-      )}
-      {accuracy && accuracy.status !== "ready" && (
         <span
           className="status-item status-warning"
-          title={accuracy.warnings.join(" | ")}
+          title={accuracy?.warnings.join(" | ")}
         >
-          {t("status.accuracyWarning")}
+          {accuracy && accuracy.status !== "ready" ? t("status.accuracyWarning") : "—"}
         </span>
-      )}
-      {guidance && (
-        <span className={`status-item guidance-${guidance.status}`}>
-          {t("status.guidance", { status: guidance.status, pin: guidancePin ?? guidance.expected_pin_id })}
+        <span className={`status-item guidance-${guidance?.status ?? "idle"}`}>
+          {guidance ? t("status.guidance", { status: guidance.status, pin: guidancePin ?? guidance.expected_pin_id }) : "—"}
         </span>
-      )}
+      </div>
+      <div className="status-actions">
       <button
         type="button"
         className="calibrate-trigger"
         onClick={onOpenCalibrate}
-        disabled={calibrateDisabled}
+        disabled={calibrateDisabled || cameraTuningBusy}
         title={t("calibrate.triggerTooltip")}
       >
         {t("calibrate.triggerLabel")}
@@ -118,17 +114,18 @@ export function StatusBar({
           type="button"
           className="camera-trigger"
           onClick={onOpenCameraPicker}
-          disabled={cameraPickerDisabled}
+          disabled={cameraPickerDisabled || cameraTuningBusy}
           title={t("camera.triggerTooltip")}
         >
           {t("camera.triggerLabel")}
         </button>
       )}
+      {webcamTuningVisible ? <CameraAutoTune disabled={cameraPickerDisabled} onBusyChange={setCameraTuningBusy} /> : null}
       <button
         type="button"
         className="smart-glasses-trigger"
         onClick={onEnterSmartGlassesDemo}
-        disabled={smartGlassesDemoDisabled}
+        disabled={smartGlassesDemoDisabled || cameraTuningBusy}
         title={t("smartGlasses.enterTooltip")}
       >
         {t("smartGlasses.enter")}
@@ -137,11 +134,12 @@ export function StatusBar({
         type="button"
         className="optical-hud-trigger"
         onClick={onEnterOpticalHud}
-        disabled={opticalHudDisabled}
+        disabled={opticalHudDisabled || cameraTuningBusy}
         title={t("opticalHud.enterTooltip")}
       >
         {t("opticalHud.enter")}
       </button>
+      </div>
     </div>
   );
 }

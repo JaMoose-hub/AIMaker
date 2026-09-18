@@ -231,7 +231,10 @@ def test_single_flight_and_no_automatic_retries_on_cloud_error():
     ({"board_endpoint": {"state": "other", "observed_pin": "GPIO18", "evidence": "adjacent"}}, "suspected_issue")])
 def test_verdict_is_cloud_visual_advice_and_unknown_does_not_pass(changes, expected):
     assert opinion_verdict(CloudWiringOpinion.model_validate(opinion(**changes)), request()) == expected
-    assert opinion_verdict(CloudWiringOpinion.model_validate(opinion()), request(index=2)) == "needs_review"
+    # The selected HC-SR04+ now has a direct 3.3V ECHO wire.
+    assert opinion_verdict(CloudWiringOpinion.model_validate(opinion()), request(index=2)) == "looks_matched"
+    divider = request(index=2).model_copy(update={"connection_kind": "divider"})
+    assert opinion_verdict(CloudWiringOpinion.model_validate(opinion()), divider) == "needs_review"
 
 
 def test_model_format_errors_do_not_become_success():

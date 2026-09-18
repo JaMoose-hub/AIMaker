@@ -35,7 +35,7 @@ def test_active_contract_has_only_distance_and_display_and_no_retired_model():
     assert list(TRACKED_COMPONENT_IDS) == list(MODULES)
     assert "hw-123" not in str(proposal_schema())
     design = demo_design()
-    assert len(design["wiring"]) == 10
+    assert len(design["wiring"]) == 11
     assert "HW-123" not in str(design) and "hw-123" not in str(design)
 
 
@@ -70,7 +70,7 @@ def test_migration_preserves_identity_progress_and_rebuilds_all_active_artifacts
         assert design["id"] == state[key]["id"]
         assert design["revision"] == state[key]["revision"] + 1
         assert design["component_ids"] == list(MODULES)
-        assert len(design["wiring"]) == 10
+        assert len(design["wiring"]) == 11
         assert "hw-123" not in str(design).lower()
         assert "image" not in design and design["image_error"]
         compile(design["code"], "migration.py", "exec")

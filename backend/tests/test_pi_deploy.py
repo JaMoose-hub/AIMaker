@@ -144,3 +144,36 @@ def test_api_contract_and_background_deployment():
         assert client.post("/api/pi/deploy", json={"code": "print('from editor')"}).json()["ok"]
         finish(pi)
         assert client.get("/api/pi/status").json()["deployment"] == "succeeded"
+
+
+@pytest.mark.parametrize("failure", ["dependency", "device"])
+def test_tft_preflight_failure_keeps_current_service_running(failure):
+    class FailedDisplayPi(RecordingPi):
+        def _run(self, command, timeout=20):
+            result = super()._run(command, timeout)
+            if failure == "dependency" and "importlib.import_module" in command:
+                raise RemoteCommandError("No module named luma")
+            if failure == "device" and "test -r /dev/spidev0.0" in command:
+                raise RemoteCommandError("No SPI device")
+            return result
+    pi = FailedDisplayPi()
+    pi.deploy("print('test')", imports=["luma.lcd", "PIL", "spidev"], devices=["/dev/spidev0.0"])
+    state = finish(pi)
+    assert state["deployment"] == "failed" and state["program"] == "running"
+    assert not any(f"stop {SERVICE}" in command for command in pi.commands)
+
+
+def test_project_tft_requirements_are_from_catalog_not_browser():
+    from app.designs import CATALOG
+    app = FastAPI()
+    app.include_router(router)
+    pi = RecordingPi()
+    app.state.pi_deployer = pi
+    with TestClient(app) as client:
+        response = client.post("/api/pi/deploy", json={"code": "print('test')", "project": {
+            "component_ids": ["hc-sr04", "mrd-tf240-8p-cs"], "catalog_version": CATALOG["version"]}})
+        assert response.json()["ok"]
+        assert finish(pi)["deployment"] == "succeeded"
+    assert any("importlib.import_module" in cmd and "luma.lcd" in cmd for cmd in pi.commands)
+    spi_check = next(i for i, cmd in enumerate(pi.commands) if "test -r /dev/spidev0.0" in cmd)
+    assert spi_check < pi.commands.index(f"systemctl --user stop {SERVICE}")

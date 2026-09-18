@@ -37,6 +37,9 @@ def deploy(body: DeployRequest, request: Request):
             errors.append(str(error))
         if errors:
             return {"ok": False, "error": "\n".join(errors), "status": request.app.state.pi_deployer.snapshot()}
+        imports = sorted({i for cid in body.project.component_ids for i in MODULES[cid]["runtime"]["imports"]})
+        devices = sorted({d for cid in body.project.component_ids for d in MODULES[cid]["runtime"]["devices"]})
+        return request.app.state.pi_deployer.deploy(body.code, imports=imports, devices=devices)
     return request.app.state.pi_deployer.deploy(body.code)
 
 

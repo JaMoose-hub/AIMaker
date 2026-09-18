@@ -126,7 +126,9 @@ export function ProjectGuidePanel({ design, session, visible, disabled, cloudAI,
         <div className="wiring-divider"><code>ECHO ─ 330Ω ─ ● ─ GPIO18</code><code>● ─ 470Ω ─ GND</code></div></div> : null}
     </> : session.phase === "review" ? <section className="guide-module-review"><span>{tr("本模組人工紀錄", "MODULE MANUAL RECORDS")}</span>
       <strong>{moduleCount} / {steps.length}</strong><p>{tx(guide.functionalTest)}</p></section> : null}
-    {guide.unresolved.length ? <p className="guide-caution">{tr("此模組規格待確認，勿上電。", "Module specifications are unconfirmed. Do not power on.")}</p> : null}
+    {guide.unresolved.map(item => <p key={item.pin} className="guide-caution">{item.pin} · {tx(item.reason)}</p>)}
+    {session.phase === "review" && session.componentIndex === design.component_ids.length - 1
+      ? <p className="guide-caution">{tr("核對接線與供電規格後，接上 Pi USB-C 電源；開機後前往部署。", "After checking wiring and supply ratings, connect Pi USB-C power; deploy after boot.")}</p> : null}
     {active ? <CloudWiringDetails variant="guide" job={check.job} error={check.error} stale={check.stale} busy={check.busy} readAgain={check.readAgain}
       onCheck={() => void check.start()} checkDisabled={!check.readAgain && !cloudReady} checkHint={cloudHint}
       captureHint={!cloudReady ? cloudHint : !pose.strictReady ? tr("未定位時從全景尋找端點、準備特寫", "Locates endpoint close-ups from the overview when tracking is unavailable") : undefined} /> : null}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "id": "hc-sr04",
+  "version": "2.0.0",
+  "name": {"zh-TW": "HC-SR04+（3.3V 供電版）", "en": "HC-SR04+ (3.3V supply)"},
+  "pins": [
+    {"id": "VCC", "role": "vcc", "direction": "power", "required": true, "voltage": 3.3, "required_rail": "3v3"},
+    {"id": "GND", "role": "ground", "direction": "power", "required": true, "required_rail": "gnd"},
+    {"id": "TRIG", "role": "digital_output", "direction": "input", "required": true, "signal_voltage": 3.3, "required_capabilities": ["digital_io"]},
+    {"id": "ECHO", "role": "signal", "direction": "output", "required": true, "signal_voltage": 3.3, "required_capabilities": ["digital_io"]}
+  ]
+}

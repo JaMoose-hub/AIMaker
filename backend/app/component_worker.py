@@ -24,6 +24,7 @@ from app.capture.bus import FrameBus, FrameSlot
 from app.vision.yolo_pose import BoardPoseLocator, BoardPoseObservation, create_yolo_pose_locator
 from app.vision.body_tracking import body_observation
 from app.vision.scale_recovery import ComponentScaleRecovery
+from app.vision.component_identity import hc_tft_conflict
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class ComponentPoseResult:
     reference_evidence: dict | None = None
     reacquire_evidence: dict | None = None
     visual_continuity: dict | None = None
+    identity_check: dict | None = None
 
 
 class ComponentPoseState:
@@ -1157,6 +1159,8 @@ def component_pose_message(result: ComponentPoseResult) -> dict:
         message["pose_quality"]["reacquisition"] = result.reacquire_evidence
     if result.visual_continuity is not None:
         message["pose_quality"]["visual_continuity"] = result.visual_continuity
+    if result.identity_check is not None:
+        message["pose_quality"]["identity_check"] = result.identity_check
     if result.diagnostic_reason is not None:
         message["diagnostic"] = {
             "detected": True,
@@ -1285,6 +1289,13 @@ class ComponentPoseTracker:
     def reset_tracking(self) -> None:
         """Forget a previous camera even when its new frames have the same size."""
         self._forget_pose("camera_changed")
+        self._last_input = None
+        self._last_result = None
+        self._hand_sample = None
+
+    def reject_identity(self) -> None:
+        """Do not keep a wrong class alive via hold/continuity/reacquisition."""
+        self._forget_pose('component_identity_conflict')
         self._last_input = None
         self._last_result = None
         self._hand_sample = None
@@ -2190,6 +2201,23 @@ class ComponentPoseWorker:
         self._state.set(result, slot)
         self._publish(component_pose_message(result))
 
+    def _identity_conflict(self, slot, observation, reference_evidence):
+        # Eye's yolo-only path and non-Webcam workers keep their own policies.
+        if (not self._tracker.motion_handoff or self._profile.component_id != 'hc-sr04'
+                or observation is None):
+            return None
+        pair = self._state.get_synchronized('mrd-tf240-8p-cs')
+        if pair is None:
+            return None
+        peer_slot, peer = pair
+        if (peer.tracking != 'locked' or peer_slot.frame.shape != slot.frame.shape
+                or peer.frame_id > slot.frame_id or not 0 <= slot.ts_ms-peer.ts_ms <= 200):
+            return None
+        evidence = reference_evidence or {}
+        return hc_tft_conflict(slot.frame, observation.corners_px, peer.outline_px,
+            hc_visible=self._tracker._hc_transducers_visible,
+            reference_confirmed=bool(evidence.get('accepted') and evidence.get('frame_id') == slot.frame_id))
+
     def _run(self) -> None:
         last_seq = -1
         while not self._stop.is_set():
@@ -2274,6 +2302,11 @@ class ComponentPoseWorker:
                         observation = recovery.locate(slot.frame, region=orientation_candidate)
                         reference_evidence = dict(recovery.evidence)
                     orientation_rejected = observation is None
+                identity_check = self._identity_conflict(slot, observation, reference_evidence)
+                if identity_check is not None:
+                    identity_check['frame_id'] = slot.frame_id
+                    self._tracker.reject_identity()
+                    observation, body = None, None
                 result = self._tracker.update(
                     slot.frame,
                     observation,
@@ -2285,6 +2318,11 @@ class ComponentPoseWorker:
                     reference_evidence=reference_evidence,
                     corner_refinement=refinement_evidence,
                     tracking_reason="pin_orientation_unverified" if orientation_rejected else result.tracking_reason)
+                if identity_check is not None:
+                    result = replace(result, tracking='searching', confidence=0.,
+                        outline_px=None, motion_outline_px=None, pins=(), body=None,
+                        diagnostic_box_px=None, diagnostic_pins=(), diagnostic_reason=None,
+                        identity_check=identity_check, tracking_reason='component_identity_conflict')
                 if orientation_rejected:
                     # Candidate found is not the same as a verified pin order.
                     # Never keep the old named pins when current order fails.
