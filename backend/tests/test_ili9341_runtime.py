@@ -41,7 +41,42 @@ def test_catalog_display_contract_and_unresolved_hardware_still_prevents_initial
 
 
 @pytest.fixture
-def hardware(monkeypatch):
+def reset_gpio(monkeypatch):
+    state = types.SimpleNamespace(pins=[], closed=[], events=[], handles=set(), fail_claim=False, fail_release=False)
+
+    def open_chip(chip):
+        assert chip == 4
+        state.handles.add(42)
+        return 42
+
+    def claim_output(handle, pin, value):
+        assert handle in state.handles
+        if state.fail_claim:
+            raise RuntimeError("GPIO busy")
+        state.pins.append(pin)
+        state.events.append(("output", pin, value))
+
+    def claim_input(handle, pin, flags):
+        assert handle in state.handles and flags == 32
+        state.events.append(("pull_up", pin))
+        if state.fail_release:
+            raise RuntimeError("release failed")
+        state.closed.append(pin)
+
+    def close_chip(handle):
+        state.events.append(("handle_closed", handle))
+        state.handles.remove(handle)
+
+    state.module = types.SimpleNamespace(SET_PULL_UP=32, gpiochip_open=open_chip,
+        gpio_claim_output=claim_output, gpio_claim_input=claim_input, gpiochip_close=close_chip,
+        gpio_read=lambda handle, pin: 1,
+        gpio_write=lambda handle, pin, value: state.events.append(("write", pin, value)))
+    monkeypatch.setitem(sys.modules, "lgpio", state.module)
+    return state
+
+
+@pytest.fixture
+def hardware(monkeypatch, reset_gpio):
     record = types.SimpleNamespace(pins=[], closed=[], frames=[], factory_closed=False, serial_closed=False,
                                    raw=.04, age=0, fail_display=False, sleeps=0)
 
@@ -49,6 +84,7 @@ def hardware(monkeypatch):
         pass
 
     class Factory:
+        chip = 4
         def close(self): record.factory_closed = True
 
     class Output:
@@ -112,7 +148,7 @@ def hardware(monkeypatch):
         module = types.ModuleType(name)
         module.__dict__.update(attrs)
         monkeypatch.setitem(sys.modules, name, module)
-    record.stop = StopLoop
+    record.stop, record.reset = StopLoop, reset_gpio
     return record
 
 
@@ -122,14 +158,15 @@ def test_combined_generated_runtime_and_cleanup(hardware, capsys, raw, age, expe
     with pytest.raises(hardware.stop):
         exec(demo_design()["code"], {})
     assert expected in capsys.readouterr().out
-    assert hardware.pins == [24, 25]  # not ECHO/GPIO18, CS or BLK
+    assert hardware.pins == [24] and hardware.reset.pins == [25]  # not ECHO/GPIO18, CS or BLK
     assert hardware.sensor["echo"] == 18 and hardware.sensor["trigger"] == 17
     assert len(hardware.frames) == 2
     assert hardware.frames[0].getpixel((5, 5)) == (255, 0, 0)
     assert hardware.frames[0].getpixel((85, 5)) == (0, 255, 0)
     assert hardware.frames[0].getpixel((165, 5)) == (0, 0, 255)
     assert hardware.factory_closed and hardware.serial_closed and hardware.sensor_closed
-    assert hardware.closed == [24, 25]
+    assert hardware.closed == [24] and hardware.reset.closed == [25]
+    assert not hardware.reset.handles
 
 
 def test_display_only_keeps_test_card_without_fake_distance(hardware, capsys):
@@ -144,10 +181,11 @@ def test_display_initialization_failure_closes_resources_before_sensor(hardware)
     with pytest.raises(OSError, match="SPI initialization"):
         exec(demo_design()["code"], {})
     assert hardware.factory_closed and hardware.serial_closed
-    assert hardware.closed == [24, 25] and not hasattr(hardware, "sensor")
+    assert hardware.closed == [24] and hardware.reset.closed == [25] and not hasattr(hardware, "sensor")
+    assert not hardware.reset.handles
 
 
-def test_actual_luma_213_driver_sends_pixels_without_claiming_echo(monkeypatch):
+def test_actual_luma_213_driver_sends_pixels_without_claiming_echo(monkeypatch, reset_gpio):
     from luma.core.interface.serial import spi as real_spi
     created, closed, writes = [], [], []
 
@@ -167,7 +205,7 @@ def test_actual_luma_213_driver_sends_pixels_without_claiming_echo(monkeypatch):
     source = Path(__file__).resolve().parents[1] / "app/runtime/ili9341_display.py"
     exec(source.read_text(encoding="utf-8"), namespace)
     namespace["spi"] = lambda **kwargs: real_spi(spi=Bus(), **kwargs)
-    display = namespace["WiringDisplay"]({"SCL": 11, "SDA": 10, "CS": 8, "DC": 24, "RES": 25}, None)
+    display = namespace["WiringDisplay"]({"SCL": 11, "SDA": 10, "CS": 8, "DC": 24, "RES": 25}, types.SimpleNamespace(chip=4))
     try:
         assert display.device.size == (240, 320)
         writes.clear()
@@ -175,7 +213,34 @@ def test_actual_luma_213_driver_sends_pixels_without_claiming_echo(monkeypatch):
         assert sum(map(len, writes)) >= 240 * 320 * 3
         display.show_distance(None, 20)
         display.show_distance(15, 20)
-        assert created == [24, 25]
+        assert created == [24] and reset_gpio.pins == [25]
     finally:
         display.close()
-    assert closed == [24, 25]
+    assert closed == [24] and reset_gpio.closed == [25]
+    assert not reset_gpio.handles
+    display.close()  # Repeated caller/exit cleanup must be harmless.
+    assert reset_gpio.closed == [25]
+
+
+@pytest.mark.parametrize("fail_claim,fail_release", [(False, False), (True, False), (False, True)])
+def test_reset_release_has_pull_up_no_leaked_claim_and_is_idempotent(monkeypatch, reset_gpio, fail_claim, fail_release):
+    monkeypatch.setitem(sys.modules, "gpiozero", types.SimpleNamespace(DigitalOutputDevice=object))
+    namespace = {}
+    exec((Path(__file__).parents[1] / "app/runtime/ili9341_display.py").read_text(encoding="utf-8"), namespace)
+    reset_gpio.fail_claim, reset_gpio.fail_release = fail_claim, fail_release
+    factory = types.SimpleNamespace(chip=4)
+    if fail_claim:
+        with pytest.raises(RuntimeError, match="GPIO busy"):
+            namespace["DisplayResetOutput"](factory, 25)
+        assert not any(event[0] == "pull_up" for event in reset_gpio.events)
+    else:
+        output = namespace["DisplayResetOutput"](factory, 25)
+        output.value = True
+        if fail_release:
+            with pytest.raises(RuntimeError, match="release failed"):
+                output.close()
+        else:
+            output.close()
+        assert reset_gpio.events[-2:] == [("pull_up", 25), ("handle_closed", 42)]
+        output.close()
+    assert not reset_gpio.handles

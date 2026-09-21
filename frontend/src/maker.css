@@ -261,3 +261,24 @@
   .maker-blueprint-page .maker-circuit > .circuit-zoom > .circuit-viewport { height: 340px; flex: none; }
   .maker-blueprint-page .maker-circuit > :is(.circuit-module-tabs, .circuit-inspector, .circuit-zoom, .circuit-legend, small, .maker-warning) { margin-top: 8px; }
 }
+.component-test-card { display:grid; gap:14px; padding:16px; margin:12px 0; border:1px solid #35576a; border-radius:12px; background:#101b24; min-width:0; line-height:1.65; }
+.component-test-card header { display:grid; gap:5px; }
+.component-test-card header > span { font-size:12px; color:#a4bdc9; }
+.component-test-card .test-outcome { font-size:22px; color:#dce7ed; }
+.component-test-card .test-outcome.passed { color:#6de0b4; }
+.component-test-card .test-outcome.failed { color:#ff9d9d; }
+.component-test-card p { margin:0; }
+.component-test-card small { color:#a7bbc8; font-size:12px; }
+.test-next-step { padding:12px; background:#1b2b37; border-left:3px solid #79bcdb; }
+.test-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.test-actions button { min-height:38px; white-space:normal; }
+.compact-guide .test-actions .guide-primary-action { flex:0 0 100%; width:100%; }
+.test-facts { display:grid; gap:4px; font-size:12px; color:#a7bbc8; font-variant-numeric:tabular-nums; min-height:24px; }
+.test-reading { font-size:28px; font-variant-numeric:tabular-nums; min-height:46px; }
+.test-visual-confirm { display:grid; gap:12px; min-width:0; border:1px solid #35576a; border-radius:8px; }
+.test-code-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.test-code-options label { background:#1b2b37; padding:8px; border-radius:6px; font-variant-numeric:tabular-nums; }
+.component-test-card input { accent-color:#42c5a3; margin-right:6px; }
+.component-test-card pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; font-size:11px; }
+.component-test-card details > summary { cursor:pointer; color:#a4bdc9; }
+.component-test-card button:focus-visible { outline:2px solid #79bcdb; outline-offset:3px; }

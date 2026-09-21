@@ -3805,7 +3805,9 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
 .guide-panel-progress progress::-webkit-progress-value { background: #57c6ab; }
 .guide-panel-progress progress::-moz-progress-bar { background: #57c6ab; }
 .guide-module-track { display: flex; flex-wrap: wrap; gap: 7px 14px; color: #899aaa; font-size: 10px; }
-.guide-module-track > span { display: inline-flex; align-items: center; gap: 5px; }
+.guide-module-track > span, .guide-module-track > button { display: inline-flex; align-items: center; gap: 5px; }
+.guide-module-track > button { padding: 4px 6px; border: 1px solid transparent; background: transparent; color: inherit; font: inherit; cursor: pointer; border-radius: 6px; }
+.guide-module-track > button:hover, .guide-module-track > button:focus-visible { border-color: #4a9e89; background: #17372e; }
 .guide-module-track > [aria-current="step"] { color: #a1e3d1; }
 .guide-module-dot { display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid #34434d; border-radius: 50%; font-size: 10px; }
 [aria-current="step"] > .guide-module-dot { border-color: #4a9e89; background: #17372e; }

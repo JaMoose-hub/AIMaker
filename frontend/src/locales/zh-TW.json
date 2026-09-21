@@ -598,7 +598,7 @@
   ,"wiring.backToComponents": "返回零件選擇（先結束原引導）"
   ,"wiring.waiting": "等待 Pi 與選定零件穩定鎖定，請讓目標腳位清楚入鏡。"
   ,"wiring.paused": "目標定位暫停：請移開遮擋並保持板子與零件清楚可見。離線時無法確認下一步。"
-  ,"wiring.manualUnlocated": "Pin 定位暫停；仍可手動接線或使用 AI 全景檢查。"
+  ,"wiring.manualUnlocated": "Pin 定位暫停；仍可手動接線，零件功能測試不需要鏡頭定位。"
   ,"wiring.trackingHold": "辨識暫時不穩，接線標記已固定在最後可信位置；重新穩定鎖定後才能繼續。"
   ,"wiring.manualNotice": "目標已定位；請自行核對接線。按下一步只記錄人工確認，不代表導通或電氣驗證。"
   ,"wiring.confirmNext": "我已接好／下一步"

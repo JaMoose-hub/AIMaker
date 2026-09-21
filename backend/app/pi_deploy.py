@@ -75,6 +75,7 @@ class PiDeployer:
         self._last_poll = 0.0
         self._worker: threading.Thread | None = None
         self._closed = False
+        self._test_reserved: str | None = None
 
     def _set(self, **values):
         with self._state_lock:
@@ -83,7 +84,7 @@ class PiDeployer:
 
     def snapshot(self) -> dict:
         with self._state_lock:
-            return asdict(self._state)
+            return {**asdict(self._state), "component_test_id": self._test_reserved}
 
     def _open(self):
         if self._closed:
@@ -155,7 +156,7 @@ class PiDeployer:
 
     def connect(self) -> dict:
         with self._state_lock:
-            if self._state.busy:
+            if self._state.busy or self._test_reserved:
                 return {"ok": False, "error": "Pi operation already in progress", "status": self.snapshot()}
             self._state.busy = True
         failure = None
@@ -181,7 +182,7 @@ class PiDeployer:
         with self._state_lock:
             if self._closed or not self._state.connected:
                 return {"ok": False, "error": "Connect to the Pi first", "status": self.snapshot()}
-            if self._state.busy:
+            if self._state.busy or self._test_reserved:
                 return {"ok": False, "error": "Pi operation already in progress", "status": self.snapshot()}
             self._state.busy = True
             self._state.deployment = "preparing"

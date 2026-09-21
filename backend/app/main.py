@@ -498,6 +498,7 @@ def build_app(
                 state.motion_worker.stop()
             if state.body_worker is not None:
                 state.body_worker.stop()
+            await asyncio.to_thread(state.component_tests.close)
             await asyncio.to_thread(state.pi_deployer.close)
             state.cloud_wiring_service.close()
             await asyncio.to_thread(state.design_service.bridge.close)
@@ -530,6 +531,8 @@ def build_app(
     # Shared state (available to routes even before lifespan runs).
     app.state.config = config
     app.state.pi_deployer = PiDeployer(config.pi_deploy)
+    from app.component_testing import ComponentTests
+    app.state.component_tests = ComponentTests(app.state.pi_deployer)
     app.state.design_service = api_design.DesignService()
     app.state.cloud_wiring_service = CloudWiringService()
     app.state.profile_store = store

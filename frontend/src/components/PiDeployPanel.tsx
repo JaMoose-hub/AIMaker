@@ -29,7 +29,7 @@ export function PiDeployPanel({ project, draft, onDraftChange }: { project?: Pro
   const consoleRef = useRef<HTMLPreElement>(null);
   const followOutput = useRef(true);
   const logs = status?.logs.join("\n") ?? "";
-  const busy = pending !== null || Boolean(status?.busy);
+  const busy = pending !== null || Boolean(status?.busy) || Boolean(status?.component_test_id);
   const connected = Boolean(status?.connected) && !networkError;
   const error = status?.connection_error || status?.error || actionError;
   const hasDisplay = project?.component_ids.includes("mrd-tf240-8p-cs");
@@ -110,6 +110,7 @@ export function PiDeployPanel({ project, draft, onDraftChange }: { project?: Pro
         onClick={() => void perform("connect")}>{t(pending === "connect" ? "pi.connecting" : "pi.connect")}</button>
     </div>
     <p className="pi-intro">{project ? project.title : t("pi.intro")}</p>
+    {status?.component_test_id ? <p className="guide-caution" role="status">{tr("零件測試尚未結束或停止待確認。請返回 Pin 接線引導完成／停止該測試，再部署作品。", "A component test is pending or its stop is unconfirmed. Return to Pin wiring to complete/stop it before deploying.")}</p> : null}
     {project ? <small className="maker-muted">{tr("載入作品不會自動部署。下方狀態來自 Pi 目前服務，可能是上次部署的程式。", "Loading a project does not deploy it. Status below is the current Pi service, possibly an earlier program.")}</small> : null}
     {project?.unresolved.length ? <pre className="pi-error" role="alert">{project.unresolved.join("\n")}</pre> : null}
     {hasDisplay ? <div className="guide-module-review" aria-label={tr("螢幕首次測試", "First display test")}>

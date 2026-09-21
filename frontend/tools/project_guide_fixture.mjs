@@ -21,6 +21,8 @@ function compile(path, replacements = {}) {
 }
 const makerUrl = compile('lib/maker.ts');
 export const maker = await import(makerUrl);
+const testsUrl = compile('lib/componentTests.ts', {'./maker':makerUrl});
+export const componentTests = await import(testsUrl);
 const guidesUrl = compile('lib/componentWiringGuides.ts');
 const cloudUrl = compile('lib/cloudWiring.ts');
 const piGuideUrl = compile('lib/piHeaderGuide.ts');
@@ -35,7 +37,7 @@ export function designFor(ids = ['hc-sr04']) {
 }
 
 export async function renderGuide({design = designFor(), session = maker.initialMaker().guide,
-  locale = 'zh-TW', check = {}, poseReady = true, cloudAI = {}, visible = true, capture = null, pinsById = new Map(board.pins.map(p => [p.id, p]))} = {}) {
+  locale = 'zh-TW', check = {}, poseReady = true, cloudAI = {}, visible = true, tests = {}, capture = null, pinsById = new Map(board.pins.map(p => [p.id, p]))} = {}) {
   const textUrl = dataUrl(`export const useMakerText = () => (zh, en) => ${JSON.stringify(locale)} === 'zh-TW' ? zh : en;`);
   const messages = JSON.parse(readFileSync(new URL(`../src/locales/${locale}.json`, import.meta.url), 'utf8'));
   const i18nUrl = dataUrl(`export const useI18n = () => ({locale: ${JSON.stringify(locale)},
@@ -49,6 +51,9 @@ export async function renderGuide({design = designFor(), session = maker.initial
   const checkModule = await import(checkUrl);
   checkModule.calls.length = 0;
   const projectUrl = compile('components/ProjectGuidePanel.tsx', {
+    '../lib/componentTests': testsUrl,
+    '../lib/useComponentTests': dataUrl(`export const useComponentTests = () => ({status:{connected:true,active:null,results:[],test_busy:false},error:null,pending:false,...${JSON.stringify(tests)},start(){throw Error('No hardware action during render');},connect(){},action(){},invalidate(){}});`),
+    './ComponentTestCard': compile('components/ComponentTestCard.tsx', {'../lib/useMaker':textUrl, '../lib/componentTests':testsUrl}),
     '../lib/componentHeaderGuide': componentHeaderUrl,
     './ComponentRowLocator': compile('components/ComponentRowLocator.tsx', {'../lib/i18n':i18nUrl, '../lib/componentHeaderGuide':componentHeaderUrl}),
     '../lib/piHeaderGuide': piGuideUrl,
@@ -64,6 +69,6 @@ export async function renderGuide({design = designFor(), session = maker.initial
     cloudAI: {model: 'fixture', effort: 'low', available: true, supportsImages: true, busy: false, ...cloudAI},
     onChange(){throw Error('Rendering must never change manual progress');}, onTargetChange(){}, onVisibleChange(){}, onDeploy(){},
   }));
-  if (capture) capture.cloudReady = checkModule.calls.at(-1)?.enabled;
+  if (capture) capture.cloudReady = checkModule.calls.at(-1)?.enabled ?? false;
   return html;
 }

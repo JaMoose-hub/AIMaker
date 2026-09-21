@@ -586,9 +586,6 @@ export default function App() {
           {project && maker.guide.mode === "2d" && !displayModeActive ? <div className="maker-2d-main"><h2>{tr("2D 人工接線引導", "2D manual wiring")}</h2><CircuitDiagram design={project} activeId={projectWire?.id} /></div> : null}
           {project && makerStage === "guide" ? <ProjectGuidePanel design={project} session={maker.guide} visible={guideVisible} disabled={backendDown}
             pinsById={pinsById}
-            cloudAI={{ model: makerAI.aiOptions.selectedModel?.id ?? maker.aiModel, effort: maker.aiEffort,
-              available: Boolean(makerAI.ai?.logged_in), busy: makerAI.busy,
-              supportsImages: Boolean(makerAI.aiOptions.selectedModel?.input_modalities?.includes("image")) }}
             onChange={guide => setMaker(s => ({ ...s, guide }))}
             onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDeploy={() => navigateMaker("deploy")} /> : null}
           {!project && config && profile ? (

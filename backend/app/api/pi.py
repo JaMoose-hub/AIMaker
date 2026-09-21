@@ -1,5 +1,6 @@
 """MVP Pi connection, deployment and console endpoints."""
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
+from typing import Literal
 from pydantic import BaseModel, Field
 from app.designs import CATALOG, MODULES, ComponentId, profile_versions, wiring_for
 
@@ -46,3 +47,48 @@ def deploy(body: DeployRequest, request: Request):
 @router.get("/status")
 def status(request: Request):
     return request.app.state.pi_deployer.status()
+
+
+class TestWire(BaseModel):
+    componentId: ComponentId
+    componentPin: str = Field(max_length=40)
+    boardPin: str = Field(max_length=40)
+    connectionKind: str = Field(max_length=40)
+
+
+class ComponentTestRequest(BaseModel):
+    project_id: str = Field(min_length=1, max_length=150)
+    revision: int = Field(ge=0)
+    component_id: ComponentId
+    catalog_version: str = Field(max_length=50)
+    profile_versions: dict
+    guide_key: str = Field(min_length=1, max_length=8192)
+    wires: list[TestWire] = Field(min_length=1, max_length=12)
+
+
+class TestAction(BaseModel):
+    action: Literal["stop", "invalidate", "stop_project", "near", "far", "visual"]
+    guide_key: str = Field(default="", max_length=8192)
+    code: str | None = Field(default=None, pattern=r"^\d{4}$")
+    appearance: Literal["normal", "black", "white", "abnormal"] | None = None
+
+
+@router.get("/component-tests")
+def component_tests(request: Request, project_id: str | None = None):
+    return request.app.state.component_tests.status(project_id)
+
+
+@router.post("/component-tests")
+def start_component_test(body: ComponentTestRequest, request: Request):
+    try:
+        return request.app.state.component_tests.start(body.model_dump())
+    except (ValueError, KeyError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/component-tests/{run_id}/action")
+def component_test_action(run_id: str, body: TestAction, request: Request):
+    try:
+        return request.app.state.component_tests.action(run_id, **body.model_dump())
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error

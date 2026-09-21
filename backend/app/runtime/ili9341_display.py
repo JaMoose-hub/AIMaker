@@ -10,31 +10,76 @@ from luma.core.interface.serial import spi
 from luma.lcd.device import ili9341
 
 
+class DisplayResetOutput:
+    """Own RES separately so gpiozero's factory cleanup cannot float it.
+
+    gpiozero 2.0.1 LGPIOPin.close() selects input/PULL_NONE, including a second
+    close from LGPIOFactory. A dedicated handle lets us release the reset line
+    as input/PULL_UP and then release *all* claims; no background owner remains.
+    """
+    def __init__(self, factory, pin, initial=0):
+        import lgpio
+        self._gpio, self._pin, self._claimed = lgpio, pin, False
+        self._handle = lgpio.gpiochip_open(factory.chip)
+        try:
+            lgpio.gpio_claim_output(self._handle, pin, int(bool(initial)))
+            self._claimed = True
+        except Exception:
+            self.close()
+            raise
+
+    @property
+    def value(self):
+        return self._gpio.gpio_read(self._handle, self._pin)
+
+    @value.setter
+    def value(self, value):
+        self._gpio.gpio_write(self._handle, self._pin, int(bool(value)))
+
+    def close(self):
+        handle, self._handle = self._handle, None
+        if handle is not None:
+            try:
+                if self._claimed:
+                    # RES is active-low. Preserve an inactive bias, not a
+                    # driven output or a GPIO lease waiting for the user.
+                    self._gpio.gpio_claim_input(handle, self._pin, self._gpio.SET_PULL_UP)
+            finally:
+                self._gpio.gpiochip_close(handle)
+
+
 class DisplayGPIO:
     LOW, HIGH, OUT = 0, 1, 1
 
-    def __init__(self, factory, allowed):
-        self.factory, self.allowed, self.outputs = factory, set(allowed), {}
+    def __init__(self, factory, dc, reset):
+        self.factory, self.allowed, self.outputs = factory, {dc, reset}, {}
+        self.reset = reset
 
     def setup(self, pin, direction, initial=0):
         if pin not in self.allowed or direction != self.OUT:
             raise ValueError("Display may control only its catalog DC and RES pins")
-        self.outputs[pin] = DigitalOutputDevice(pin, initial_value=initial, pin_factory=self.factory)
+        if pin in self.outputs:
+            raise ValueError("Display GPIO is already initialized")
+        self.outputs[pin] = (DisplayResetOutput(self.factory, pin, initial) if pin == self.reset
+                             else DigitalOutputDevice(pin, initial_value=initial, pin_factory=self.factory))
 
     def output(self, pin, value):
         self.outputs[pin].value = bool(value)
 
     def close(self):
-        for output in self.outputs.values():
-            output.close()
-        self.outputs.clear()
+        from contextlib import ExitStack
+        outputs, self.outputs = self.outputs, {}
+        # Release every resource even if one close fails.
+        with ExitStack() as stack:
+            for output in reversed(list(outputs.values())):
+                stack.callback(output.close)
 
 
 class WiringDisplay:
     def __init__(self, pins, factory):
         if (pins["SCL"], pins["SDA"], pins["CS"]) != (11, 10, 8):
             raise ValueError("ILI9341 runtime requires catalog SPI0 / CE0 wiring")
-        self.gpio = DisplayGPIO(factory, (pins["DC"], pins["RES"]))
+        self.gpio = DisplayGPIO(factory, pins["DC"], pins["RES"])
         self.serial = self.device = None
         try:
             self.serial = spi(port=0, device=0, gpio=self.gpio,

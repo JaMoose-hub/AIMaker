@@ -6,6 +6,7 @@ export interface PiStatus {
   hostname: string;
   python_version: string;
   busy: boolean;
+  component_test_id?: string | null;
   deployment: "idle" | "preparing" | "uploading" | "checking" | "starting" | "succeeded" | "failed";
   program: "unknown" | "not_deployed" | "starting" | "running" | "stopping" | "stopped" | "exited" | "failed";
   pid: number | null;

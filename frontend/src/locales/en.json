@@ -598,7 +598,7 @@
   ,"wiring.backToComponents": "Back to components (end the current guide first)"
   ,"wiring.waiting": "Waiting for stable Pi and selected-component poses. Keep the target pins clearly visible."
   ,"wiring.paused": "Target positioning paused: remove obstructions and keep the board and component visible. Confirmation is disabled offline."
-  ,"wiring.manualUnlocated": "Pin tracking paused; manual steps and AI overview checks remain available."
+  ,"wiring.manualUnlocated": "Pin tracking paused; manual wiring and component function tests do not require tracking."
   ,"wiring.trackingHold": "Detection is temporarily unstable. Wiring markers are frozen at the last trusted pose until a stable lock returns."
   ,"wiring.manualNotice": "Targets located. Check the wiring yourself. Next records your confirmation, not continuity or electrical verification."
   ,"wiring.confirmNext": "I have connected it / Next"
