@@ -15,6 +15,25 @@ from app.vision.yolo_pose import BoardPoseObservation
 from app.vision.scale_recovery import ComponentScaleRecovery
 
 
+def _mutual_ratio_matches(reference_descriptors, frame_descriptors):
+    """Exact mutual matching, but reverse-check only ratio-test survivors.
+
+    Reverse neighbours for the other frame descriptors cannot affect the
+    result. Avoiding those unused exhaustive searches keeps the same L2,
+    ratio and reciprocal gates while reducing recovery latency.
+    """
+    matcher = cv2.BFMatcher(cv2.NORM_L2)
+    pairs = matcher.knnMatch(reference_descriptors, frame_descriptors, k=2)
+    tentative = [a for pair in pairs if len(pair) == 2 for a, b in [pair]
+                 if a.distance < .72 * b.distance]
+    if not tentative:
+        return []
+    indices = np.unique([match.trainIdx for match in tentative])
+    reverse = matcher.match(frame_descriptors[indices], reference_descriptors)
+    reverse_indices = {int(indices[m.queryIdx]): m.trainIdx for m in reverse}
+    return [m for m in tentative if reverse_indices.get(m.trainIdx) == m.queryIdx]
+
+
 class ReferencePoseRecovery:
     def __init__(self, reference_bgr, roi_locator=None, feature_mask=None):
         self.roi_locator = roi_locator
@@ -145,12 +164,7 @@ class ReferencePoseRecovery:
         if descriptors is None or len(points) < 16:
             self.evidence['reason'] = 'insufficient_texture'
             return None
-        matcher = cv2.BFMatcher(cv2.NORM_L2)
-        pairs = matcher.knnMatch(self.descriptors, descriptors, k=2)
-        reverse = matcher.match(descriptors, self.descriptors)
-        reverse_indices = {m.queryIdx: m.trainIdx for m in reverse}
-        matches = [a for pair in pairs if len(pair) == 2 for a, b in [pair]
-                   if a.distance < .72 * b.distance and reverse_indices.get(a.trainIdx) == a.queryIdx]
+        matches = _mutual_ratio_matches(self.descriptors, descriptors)
         self.evidence['matches'] = len(matches)
         if len(matches) < 16:
             self.evidence['reason'] = 'insufficient_matches'

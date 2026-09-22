@@ -8,6 +8,7 @@ import pytest
 from app.vision.yolo_pose import BoardPoseObservation, refine_board_corners_from_pcb
 from app.vision.yolo_profile_detector import HybridBoardDetector
 from app.vision.motion_tracking import MotionTrack, PlanarFlow
+from app.vision.interface import DetectionResult, PinDetection
 
 
 def observation(quad, box=None):
@@ -56,14 +57,44 @@ def test_saved_wire_expansion_is_rejected_without_changing_legacy(case, quad, bo
 
 
 @pytest.mark.parametrize('fallback_status', ['locked','stale','searching'])
-def test_bad_primary_only_yields_to_fresh_feature_lock(fallback_status):
-    rejected = SimpleNamespace(tracking='searching', pose_stability_state='pcb_boundary_unverified')
-    fallback = SimpleNamespace(tracking=fallback_status)
+@pytest.mark.parametrize('frame_current', [True, False])
+def test_bad_primary_only_yields_to_fresh_feature_lock(fallback_status, frame_current):
+    rejected = DetectionResult('raspberry-pi-5', 1, 100., 'searching', 0,
+                               pose_stability_state='pcb_boundary_unverified',
+                               reference_evidence={'accepted':False, 'reason':'insufficient_matches'})
+    fallback = DetectionResult('raspberry-pi-5', 1 if frame_current else 0, 100., fallback_status, .8,
+                               pins=[PinDetection('J8:1', 100., 100., .8)],
+                               outline_px=[(100,100),(300,100),(300,230),(100,230)])
     primary = SimpleNamespace(available=True, detect=lambda *a: rejected, _searching=lambda *a, **kw: rejected)
     detector = HybridBoardDetector(primary, SimpleNamespace(detect=lambda *a: fallback))
     detector._board_id = 'raspberry-pi-5'
     result = detector.detect(None, 1, 100)
-    assert result is (fallback if fallback_status == 'locked' else rejected)
+    accepted = fallback_status == 'locked' and frame_current
+    assert result.tracking == ('locked' if accepted else 'searching')
+    assert bool(result.pins) == accepted
+    assert result.frame_id == 1
+    if not accepted:
+        assert result.reference_evidence == rejected.reference_evidence
+
+
+@pytest.mark.parametrize('missing', ['timestamp', 'pins', 'outline'])
+def test_boundary_fallback_must_have_current_complete_geometry(missing):
+    rejected = DetectionResult('raspberry-pi-5', 1, 100., 'searching', 0,
+                               pose_stability_state='pcb_boundary_unverified')
+    fallback = DetectionResult('raspberry-pi-5', 1, 100., 'locked', .8,
+                               pins=[PinDetection('J8:1', 100., 100., .8)],
+                               outline_px=[(100,100),(300,100),(300,230),(100,230)])
+    if missing == 'timestamp':
+        fallback.ts_ms = 50.
+    elif missing == 'pins':
+        fallback.pins = []
+    else:
+        fallback.outline_px = None
+    primary = SimpleNamespace(available=True, detect=lambda *a: rejected, _searching=lambda *a, **kw: rejected)
+    detector = HybridBoardDetector(primary, SimpleNamespace(detect=lambda *a: fallback))
+    detector._board_id = 'raspberry-pi-5'
+    result = detector.detect(None, 1, 100.)
+    assert result.tracking == 'searching' and not result.pins
 
 
 def test_failed_seed_replaces_old_reason_and_later_good_seed_recovers():
@@ -86,7 +117,7 @@ def test_invalid_and_textureless_seed_reasons_are_distinct():
     assert flow.failure_reason == 'seed_insufficient_texture'
 
 
-def test_fresh_bad_boundary_clears_existing_pin_template():
+def test_fresh_bad_boundary_does_not_renew_existing_flow_lease():
     gray = np.random.default_rng(4).integers(0,255,(400,640),dtype=np.uint8)
     track = MotionTrack()
     message = {'board_id':'raspberry-pi-5','tracking':'locked','frame_id':1,'ts_ms':100,
@@ -95,4 +126,8 @@ def test_fresh_bad_boundary_clears_existing_pin_template():
     assert track.message is not None
     message.update(frame_id=2,ts_ms=200,tracking='searching',pose_quality={'stability':'pcb_boundary_unverified'})
     track.observe(message,gray,1)
-    assert track.message is None and track.failure_reason == 'pcb_boundary_unverified'
+    # Current-frame optical flow may still support an existing pose, but the
+    # rejected model is not a new semantic confirmation. See motion tests for
+    # removal/covering and expiry: neither an old lock nor a bad quad can persist.
+    assert track.message is not None and track.confirmed_ts == 100
+    assert track.confirmation_debug['accepted'] is False

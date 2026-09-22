@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from app.vision.reference_recovery import ReferencePoseRecovery
+from app.vision.reference_recovery import ReferencePoseRecovery, _mutual_ratio_matches
 
 
 def texture():
@@ -69,3 +69,26 @@ def test_evidence_does_not_leak_between_frames():
     assert recovery.locate(np.zeros((480, 640, 3), np.uint8)) is None
     assert recovery.evidence['accepted'] is False
     assert 'inliers' not in recovery.evidence
+
+
+@pytest.mark.parametrize('seed', [2, 17, 42])
+@pytest.mark.parametrize('kind', ['matches', 'duplicates', 'unrelated', 'single_neighbor'])
+def test_subset_reverse_matching_is_identical_to_full_brute_force(seed, kind):
+    rng = np.random.default_rng(seed)
+    reference = rng.integers(0, 180, (120, 128)).astype(np.float32)
+    frame = rng.integers(0, 180, (160, 128)).astype(np.float32)
+    if kind in ('matches', 'duplicates'):
+        frame[::4] = reference[::3] + rng.integers(-3, 4, (40, 128))
+    if kind == 'duplicates':
+        frame[1::4] = frame[::4]
+        reference[1::3] = reference[::3]
+    if kind == 'single_neighbor':
+        frame = frame[:1]
+    matcher = cv2.BFMatcher(cv2.NORM_L2)
+    pairs = matcher.knnMatch(reference, frame, k=2)
+    reverse = {m.queryIdx: m.trainIdx for m in matcher.match(frame, reference)}
+    expected = [a for pair in pairs if len(pair) == 2 for a, b in [pair]
+                if a.distance < .72*b.distance and reverse.get(a.trainIdx) == a.queryIdx]
+    actual = _mutual_ratio_matches(reference, frame)
+    signature = lambda matches: [(m.queryIdx, m.trainIdx, m.distance) for m in matches]
+    assert signature(actual) == signature(expected)

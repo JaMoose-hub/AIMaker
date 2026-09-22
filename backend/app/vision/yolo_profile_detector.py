@@ -619,6 +619,7 @@ class YoloProfileDetector:
         self._use_camera_calibration = bool(use_camera_calibration)
         self._horizontal_fov_deg = horizontal_fov_deg if use_camera_calibration else None
         self._reference_recovery = None
+        self._boundary_reference_recovery = None
         self._scene_reference_enabled = bool(scene_reference_search)
         self._scene_reference = None
         self._image_motion_gate = None
@@ -671,6 +672,9 @@ class YoloProfileDetector:
         return bool(self._locator.available)
 
     def load(self, profile, profile_dir: Path) -> None:
+        if self._boundary_reference_recovery is not None:
+            self._boundary_reference_recovery.close()
+            self._boundary_reference_recovery = None
         self._profile = profile
         self._profile_dir = Path(profile_dir)
         self._camera = None
@@ -739,6 +743,8 @@ class YoloProfileDetector:
             self._scene_reference.reset()
         if self._reference_recovery is not None:
             self._reference_recovery.reset_tracking()
+        if self._boundary_reference_recovery is not None:
+            self._boundary_reference_recovery.reset_tracking()
         self._motion_outline = None
         self._pose_filter.reset()
         self._reset_temporal()
@@ -840,6 +846,33 @@ class YoloProfileDetector:
         self._reference_evidence = dict(self._scene_reference.evidence)
         return recovered
 
+    def _recover_boundary_reference(self, frame, observation, boundary_evidence):
+        """Use the current model ROI, never its rejected corners, for SIFT.
+
+        A colored lead can invalidate the PCB contour even when the model has
+        found the correct board. The existing ROI recovery used to run only on
+        missing/inconsistent model corners, leaving this failure path stranded
+        unless the optional whole-scene search was enabled. Keep the strict
+        contour rejection and require independent, distributed correspondences
+        on this exact frame instead. No extra YOLO forward or stale pose here.
+        """
+        if (self._profile.board.id != 'raspberry-pi-5'
+                or getattr(self, '_yolo_only', False)
+                or self._reference_board_bgr is None):
+            return None
+        matcher = self._reference_recovery
+        if matcher is None:
+            if self._boundary_reference_recovery is None:
+                from app.vision.reference_recovery import ReferencePoseRecovery
+                self._boundary_reference_recovery = ReferencePoseRecovery(self._reference_board_bgr)
+            matcher = self._boundary_reference_recovery
+        recovered = matcher.locate(frame, region=observation)
+        self._reference_evidence = {
+            **matcher.evidence, 'scope': 'rejected_boundary_roi',
+            'boundary': dict(boundary_evidence),
+        }
+        return recovered
+
     def set_motion_handoff(self, enabled: bool) -> None:
         """Webcam-only opt-in; the Eye early-return path never reads this gate."""
         from app.vision.image_motion_gate import ImageMotionGate
@@ -894,7 +927,9 @@ class YoloProfileDetector:
             # A concrete bad contour is different from no available refinement.
             # Clear contaminated holds; the hybrid caller can try its existing
             # independent feature locator instead of freezing a giant Pi box.
-            recovered = self._recover_scene_reference(frame_bgr, frame_id, ts_ms)
+            recovered = self._recover_boundary_reference(frame_bgr, observation, boundary_evidence)
+            if recovered is None:
+                recovered = self._recover_scene_reference(frame_bgr, frame_id, ts_ms)
             if recovered is None:
                 self._pose_filter.reset()
                 self._reset_temporal()
@@ -1420,6 +1455,9 @@ class YoloProfileDetector:
 
     def close(self) -> None:
         self._locator.close()
+        if self._boundary_reference_recovery is not None:
+            self._boundary_reference_recovery.close()
+            self._boundary_reference_recovery = None
         if self._reference_recovery is not None:
             self._reference_recovery.close()
             self._reference_recovery = None
@@ -1457,6 +1495,7 @@ class HybridBoardDetector:
         if self._board_id == "arduino-uno-q":
             return self.fallback.detect(frame_bgr, frame_id, ts_ms)
         body = None
+        rejected_reference_evidence = None
         if self.primary.available:
             result = self.primary.detect(frame_bgr, frame_id, ts_ms)
             body = result.body
@@ -1477,14 +1516,21 @@ class HybridBoardDetector:
                 return result
             rejected = result.pose_stability_state in ('corner_box_inconsistent', 'pcb_boundary_unverified')
             rejected_reason = result.pose_stability_state
+            rejected_reference_evidence = result.reference_evidence
         else:
             rejected = False
         result = self.fallback.detect(frame_bgr, frame_id, ts_ms)
-        if rejected and result.tracking != 'locked':
+        fresh_feature_lock = (
+            result.tracking == 'locked' and result.frame_id == frame_id
+            and result.ts_ms == ts_ms and bool(result.pins)
+            and result.outline_px is not None
+        ) if rejected else False
+        if rejected and not fresh_feature_lock:
             # A real fresh feature lock may corroborate identity, but an old
             # fallback hold must not keep the rejected YOLO identity alive.
             return replace(self.primary._searching(
-                frame_id, ts_ms, stability=rejected_reason), body=body)
+                frame_id, ts_ms, stability=rejected_reason), body=body,
+                reference_evidence=rejected_reference_evidence)
         result.pose_mode = "feature_fallback"
         result.pose_landmarks_visible = 0
         return replace(result, body=body)
