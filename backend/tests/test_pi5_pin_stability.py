@@ -22,9 +22,11 @@ def pins(row_sep=16.0, dx=0.0, dy=0.0):
 
 def test_outer_body_width_never_doubles_j8_row_spacing():
     frame = np.full((220, 460, 3), 180, np.uint8)
-    polygon = np.array([[51, 77], [56, 72], [406, 72], [411, 77],
-                        [411, 140], [406, 145], [56, 145], [51, 140]])
+    polygon = np.array([[51, 97], [56, 92], [406, 92], [411, 97],
+                        [411, 119], [406, 124], [56, 124], [51, 119]])
     cv2.fillConvexPoly(frame, polygon, (30, 30, 30))
+    # A connected chip widens the contour but not the full-length housing.
+    cv2.rectangle(frame, (90, 60), (185, 94), (30, 30, 30), -1)
     prior = pins()
     result = _correct_pi5_j8_from_image(
         frame, SimpleNamespace(board=SimpleNamespace(id="raspberry-pi-5")), prior, (460, 220))

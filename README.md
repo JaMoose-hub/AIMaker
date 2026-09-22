@@ -35,7 +35,7 @@ uv run --no-default-groups --group dev uvicorn app.main:app --host 127.0.0.1 --p
 **已有本機設定時不要重新複製範例覆蓋它。** NVIDIA CUDA 安裝與設定見
 [CUDA 推論](docs/cuda-inference.md)。
 
-Pi 5 的兩個模型、HC-SR04 與 MRD-TF240 模型共約 **43.5 MiB**，已隨 repository
+Pi 5 的三個模型（含 guided 試版）、HC-SR04 與 MRD-TF240 模型共約 **54.3 MiB**，已隨 repository
 提供，不需要下載訓練資料或使用 Git LFS；詳見 [模型清單](models/README.md)。
 Codex 功能需在自己的電腦安裝 Codex CLI 並登入自己的 ChatGPT 帳號；bridge 不附金鑰。
 Pi 部署也必須設定自己的主機與帳密。上傳範圍與敏感資料檢查見

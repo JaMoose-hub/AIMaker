@@ -64,11 +64,12 @@ backup_*/
 *.engine
 *.onnx
 
-# Allow only the current Pi 5, HC-SR04 and MRD-TF240 runtime exports.
-# Pi uses both its handheld detector and reference-recovery detector.
+# Allow only the published Pi 5, HC-SR04 and MRD-TF240 runtime exports.
+# Pi includes the guided trial, its handheld baseline and reference recovery.
 /models/*
 !/models/README.md
 !/models/manifest.json
+!/models/board-pose-pi5-guided-20260922.onnx
 !/models/board-pose-pi5-handheld-v2.onnx
 !/models/board-pose-pi5.onnx
 !/models/hc-sr04-corner-pose-v3-robust.onnx

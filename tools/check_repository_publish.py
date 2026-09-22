@@ -13,6 +13,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_FILES = {
+    "board-pose-pi5-guided-20260922.onnx",
     "board-pose-pi5-handheld-v2.onnx",
     "board-pose-pi5.onnx",
     "hc-sr04-corner-pose-v3-robust.onnx",
@@ -85,7 +86,7 @@ def check_index() -> list[str]:
         manifest = json.loads(git("show", ":models/manifest.json"))
         entries = manifest["models"]
         if len(entries) != len(MODEL_FILES) or {m["file"] for m in entries} != MODEL_FILES:
-            errors.append("Manifest must list exactly the four approved model exports.")
+            errors.append(f"Manifest must list exactly the {len(MODEL_FILES)} approved model exports.")
         for model in entries:
             name = "models/" + model["file"]
             if name not in MODEL_PATHS or name not in staged:
@@ -105,5 +106,5 @@ if __name__ == "__main__":
     if problems:
         print("\n".join(problems), file=sys.stderr)
         sys.exit(1)
-    print("Publication scope OK: no ignored/private paths, four verified models, files under 50 MiB.")
+    print(f"Publication scope OK: no ignored/private paths, {len(MODEL_FILES)} verified models, files under 50 MiB.")
     print("Also run Gitleaks on the staged content; this check is not a secret scanner.")

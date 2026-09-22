@@ -10,7 +10,8 @@ GitHub：<https://github.com/JaMoose-hub/AIMaker>。這是公開 repository，
 - 板卡／零件 profiles，以及定位功能依賴的參考圖與特徵資料。
 - 使用說明、訓練工具與設定範本；不包含訓練資料本體。
 - `backend/config.example.yaml`：無密碼、一般 webcam／CPU 的起始設定。
-- `models/manifest.json` 明確列出的四個 ONNX：Pi 5 手持及重新定位、HC-SR04、MRD-TF240。
+- `models/manifest.json` 明確列出的五個 ONNX：Pi 5 guided 試版、手持基準及重新定位、HC-SR04、MRD-TF240。
+- guided 試版可選用；公開設定範本仍預設手持基準。切換與驗證限制見 [模型說明](../models/README.md)。
 
 ## 不提交
 
