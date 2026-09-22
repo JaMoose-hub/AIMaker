@@ -8,8 +8,6 @@ import type {
   ControllerSelectRequest,
   ControllerSelectResponse,
   GuidanceAdvanceMode,
-  QueryRequest,
-  QueryResponse,
   SelectCameraRequest,
   SelectCameraResponse,
   VerificationUpdateMessage,
@@ -56,19 +54,6 @@ export function fetchBoardProfile(boardId: string): Promise<BoardProfile> {
   return getJson<BoardProfile>(`/api/boards/${encodeURIComponent(boardId)}`);
 }
 
-export async function postQuery(text: string, locale: string): Promise<QueryResponse> {
-  const body: QueryRequest = { text, locale };
-  const response = await fetch("/api/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    throw new Error(`POST /api/query failed with status ${response.status}`);
-  }
-  return (await response.json()) as QueryResponse;
-}
-
 /**
  * POST /api/calibrate (api-contract.md §6). The backend replies HTTP 200 for
  * both success and expected failures (`{ok: false, error, message}`); only a
@@ -91,8 +76,10 @@ export async function postCalibrate(cornersPx: [number, number][]): Promise<Cali
  * GET /api/cameras (api-contract.md §7) — scans available device-camera
  * indices and returns a thumbnail snapshot of each.
  */
-export function fetchCameras(): Promise<CamerasResponse> {
-  return getJson<CamerasResponse>("/api/cameras");
+export async function fetchCameras(signal?: AbortSignal): Promise<CamerasResponse> {
+  const response = await fetch('/api/cameras', { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('camera_inventory_unavailable');
+  return response.json() as Promise<CamerasResponse>;
 }
 
 /**
@@ -100,15 +87,17 @@ export function fetchCameras(): Promise<CamerasResponse> {
  * capture thread to a different device index. HTTP 200 for both success and
  * expected failure, mirroring postCalibrate's convention.
  */
-export async function postSelectCamera(index: number): Promise<SelectCameraResponse> {
-  const body: SelectCameraRequest = { index };
+export async function postSelectCamera(index: number, deviceId?: string): Promise<SelectCameraResponse> {
+  const body: SelectCameraRequest = { index, ...(deviceId ? { device_id: deviceId } : {}) };
   const response = await fetch("/api/cameras/select", {
     method: "POST",
+    signal: AbortSignal.timeout(90000),
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST /api/cameras/select failed with status ${response.status}`);
+    if (response.status === 409) return {ok:false, error_code:'camera_adjustment_busy', params:{}};
+    throw new Error('camera_selection_unknown');
   }
   return (await response.json()) as SelectCameraResponse;
 }

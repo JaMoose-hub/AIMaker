@@ -6,7 +6,9 @@ stop the remote program; the service is deliberately not enabled at boot.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+import json
+import uuid
 import shlex
 import threading
 import time
@@ -40,6 +42,9 @@ class PiStatus:
     error: str | None = None
     connection_error: str | None = None
     logs: list[str] = field(default_factory=list)
+    invocation_id: str = ""
+    version: dict | None = None
+    telemetry: dict | None = None
 
 
 def program_status(properties: str) -> dict:
@@ -178,7 +183,7 @@ class PiDeployer:
             self._set(busy=False)
         return {"ok": failure is None, "error": failure, "status": self.snapshot()}
 
-    def deploy(self, code: str, *, imports=(), devices=()) -> dict:
+    def deploy(self, code: str, *, imports=(), devices=(), metadata=None) -> dict:
         with self._state_lock:
             if self._closed or not self._state.connected:
                 return {"ok": False, "error": "Connect to the Pi first", "status": self.snapshot()}
@@ -188,7 +193,7 @@ class PiDeployer:
             self._state.deployment = "preparing"
             self._state.error = None
             self._state.connection_error = None
-            self._worker = threading.Thread(target=self._deploy, args=(code, tuple(imports), tuple(devices)), name="pi-deploy", daemon=True)
+            self._worker = threading.Thread(target=self._deploy, args=(code, tuple(imports), tuple(devices), metadata), name="pi-deploy", daemon=True)
             self._worker.start()
         return {"ok": True, "status": self.snapshot()}
 
@@ -197,7 +202,50 @@ class PiDeployer:
             with sftp.file(path, "wb") as target:
                 target.write(contents.encode("utf-8"))
 
-    def _deploy(self, code: str, imports=(), devices=()):
+    def check_environment(self, imports=(), devices=(), code=None):
+        """Read-only preflight shared by queued tests/deployments."""
+        if code is not None:
+            compile(code, "queued-project.py", "exec")
+        if set(imports) - {"gpiozero", "lgpio", "spidev", "PIL", "luma.lcd"} or set(devices) - {"/dev/spidev0.0"}:
+            raise ValueError("Unknown catalog runtime requirement")
+        root = PurePosixPath(self.config.remote_dir)
+        if not root.is_absolute() or root.name != "Pi_deployer":
+            raise ValueError("Invalid deployment directory")
+        with self._io_lock:
+            self._open()
+            if not self._home:
+                with self._sftp() as sftp:
+                    self._home = sftp.normalize(".")
+            self._run("command -v flock >/dev/null && command -v systemd-run >/dev/null && systemctl --user show-environment >/dev/null")
+            check = "import importlib,os,glob; " + "; ".join(f"importlib.import_module({name!r})" for name in sorted(set(imports) | {"gpiozero", "lgpio"}))
+            check += "; assert any(os.access(p,os.R_OK|os.W_OK) for p in glob.glob('/dev/gpiochip*')), 'gpio_device_permission'"
+            check += f"; assert all(os.path.exists(p) for p in {list(devices)!r}), 'spi_missing'"
+            check += f"; assert all(os.access(p,os.R_OK|os.W_OK) for p in {list(devices)!r}), 'spi_device_permission'"
+            self._run(f"{shlex.quote(str(root / '.venv/bin/python'))} -c {shlex.quote(check)}")
+            self._refresh()
+
+    def assert_no_component_service(self):
+        active = self._run("systemctl --user list-units --all --no-legend --plain --state=active,activating,deactivating 'boardvision-test-*.service'")
+        if active.strip():
+            raise RemoteCommandError("A Board Vision component test is still active; reconnect and stop that test first")
+
+    def stop_program(self, expected_owner):
+        with self._io_lock:
+            self._open()
+            self._refresh()
+            state = self.snapshot()
+            owner = "program:" + (state.get("invocation_id") or str(state["pid"]))
+            if state["program"] not in {"running", "starting", "stopping"}:
+                return state["program"] != "unknown"
+            if owner != expected_owner:
+                return False
+            self._run(f"systemctl --user stop {SERVICE}")
+            self._refresh()
+            if self.snapshot()["program"] in {"running", "starting", "stopping", "unknown"}:
+                raise RuntimeError("Remote stop has not been confirmed")
+            return True
+
+    def _deploy(self, code: str, imports=(), devices=(), metadata=None):
         with self._io_lock:
             try:
                 self._open()
@@ -207,7 +255,9 @@ class PiDeployer:
                 pending, main = str(root / "main.pending.py"), str(root / "main.py")
                 python = str(root / ".venv/bin/python")
                 units = str(PurePosixPath(self._home) / ".config/systemd/user")
-                self._run(f"mkdir -p {shlex.quote(str(root))} {shlex.quote(units)}")
+                self.assert_no_component_service()
+                self._run(f"mkdir -p {shlex.quote(str(root / 'component-tests'))} {shlex.quote(units)}")
+                self._run("test -x /usr/bin/flock")
                 self._set(deployment="uploading")
                 self._write(pending, code.replace("\r\n", "\n"))
                 self._set(deployment="checking")
@@ -239,9 +289,19 @@ class PiDeployer:
                     except RemoteCommandError as error:
                         raise RemoteCommandError("SPI0 is missing or inaccessible. Enable SPI in raspi-config, reboot if required, "
                             "and check that this user belongs to the spi group: " + device) from error
+                from app.debug_support import digest, observed_source
+                run_id = uuid.uuid4().hex
+                version_dir = str(root / "deployments" / run_id)
+                observed, structured = observed_source(code)
+                version = dict(run_id=run_id, code_hash=digest(code), created_at=time.time(), context=metadata)
+                self._run(f"mkdir -p {shlex.quote(version_dir)}")
+                self._write(version_dir + "/snapshot.py", code)
+                self._write(version_dir + "/observed.py", observed)
+                self._write(version_dir + "/runner.py", (Path(__file__).parent / "runtime/project_runner.py").read_text(encoding="utf-8"))
+                self._write(version_dir + "/run-config.json", json.dumps(dict(run_id=run_id, code_hash=digest(code), source="observed.py", source_hash=digest(observed), structured=structured, duration=None)))
                 unit = (
                     "[Unit]\nDescription=BoardVision Pi program\nStartLimitIntervalSec=0\n\n[Service]\nType=simple\n"
-                    f'WorkingDirectory={root}\nExecStart="{python}" -u "{main}"\n'
+                    f'WorkingDirectory={root}\nExecStart=/usr/bin/flock --nonblock --no-fork "{root}/component-tests/hardware.lock" "{python}" -u "{version_dir}/runner.py" "{version_dir}"\n'
                     "Environment=PYTHONUNBUFFERED=1\nEnvironment=GPIOZERO_PIN_FACTORY=lgpio\n"
                     "Restart=no\nKillMode=control-group\nTimeoutStopSec=5\n"
                     f"StandardOutput=append:{root}/run.log\nStandardError=append:{root}/run.log\n"
@@ -254,6 +314,7 @@ class PiDeployer:
                 self._set(deployment="starting")
                 self._run(f"systemctl --user stop {SERVICE}")
                 self._run(f"mv -- {shlex.quote(pending)} {shlex.quote(main)}")
+                self._write(str(root / "deployment.json"), json.dumps(version))
                 self._write(str(root / "run.log"), "")
                 self._set(logs=[], exit_code=None)
                 self._run(f"systemctl --user start {SERVICE}")
@@ -267,9 +328,14 @@ class PiDeployer:
     def _refresh(self):
         raw = self._run(
             f"systemctl --user show {SERVICE} --no-pager "
-            "--property=LoadState,ActiveState,SubState,MainPID,ExecMainCode,ExecMainStatus"
+            "--property=LoadState,ActiveState,SubState,MainPID,ExecMainCode,ExecMainStatus,InvocationID"
         )
+        if "ActiveState=" not in raw:
+            raise RemoteCommandError("Cannot confirm remote program state")
         info = program_status(raw)
+        info["invocation_id"] = next((line.split("=", 1)[1] for line in raw.splitlines() if line.startswith("InvocationID=")), "")
+        if info["invocation_id"] != self.snapshot().get("invocation_id"):
+            info.update(version=None, telemetry=None)
         logs = []
         with self._sftp() as sftp:
             try:
@@ -298,6 +364,29 @@ class PiDeployer:
             finally:
                 self._io_lock.release()
         return self.snapshot()
+
+    def version_evidence(self):
+        """Read exact invocation metadata; never call old main.py the current draft."""
+        import re
+        with self._io_lock:
+            self._open()
+            self._refresh()
+            state = self.snapshot()
+            try:
+                with self._sftp() as sftp:
+                    with sftp.file(self.config.remote_dir + "/deployment.json", "rb") as f:
+                        version = json.loads(f.read(16000).decode())
+                    rid = version.get("run_id", "")
+                    if not re.fullmatch(r"[0-9a-f]{32}", rid):
+                        raise ValueError("invalid_run_id")
+                    with sftp.file(self.config.remote_dir + f"/deployments/{rid}/runtime.json", "rb") as f:
+                        telemetry = json.loads(f.read(30000).decode())
+                valid = (telemetry.get("run_id") == rid and telemetry.get("code_hash") == version.get("code_hash")
+                         and bool(state.get("invocation_id")) and telemetry.get("invocation_id") == state["invocation_id"])
+                self._set(version=version if valid else None, telemetry=telemetry if valid else None)
+            except (FileNotFoundError, ValueError, KeyError):
+                self._set(version=None, telemetry=None)
+            return self.snapshot()
 
     def close(self):
         self._closed = True

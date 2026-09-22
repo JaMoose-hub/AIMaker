@@ -158,7 +158,7 @@ export function VideoView({
     && !isOpticalHudMode(displayMode));
   const realtime = useRealtimeTracking(realtimeActive && !glassesLeaving && (!glassesMode || glassesReady),
     config?.board_id ?? null,
-    glassesMode ? glassesStatus?.runtime_revision ?? -1 : original.hello?.runtime_revision ?? config?.runtime_revision ?? 1,
+    glassesMode ? glassesStatus?.runtime_revision ?? -1 : original.runtime?.runtime_revision ?? original.hello?.runtime_revision ?? config?.runtime_revision ?? 1,
     glassesMode ? glassesStatus?.requested.fps ?? 30 : 30, glassesMode ? "eye" : "standard");
   useEffect(() => { onGlassesDisplayFps(glassesMode && glassesReady ? realtimeActive ? realtime.fps : null : 0); }, [glassesMode, glassesReady, realtimeActive, realtime.fps, onGlassesDisplayFps]);
   const motionNotices = realtimeActive ? trackingNotices(realtime.frame) : [];

@@ -20,8 +20,9 @@ interface Props {
   onTargetChange: (target: ActiveGuideTarget | null) => void;
   onVisibleChange: (visible: boolean) => void;
   onDeploy: () => void;
+  onDebug?: (componentId?: string, runId?: string, symptom?: string) => void;
 }
-export function ProjectGuidePanel({ design, session, visible, disabled, pinsById, onChange, onTargetChange, onVisibleChange, onDeploy }: Props) {
+export function ProjectGuidePanel({ design, session, visible, disabled, pinsById, onChange, onTargetChange, onVisibleChange, onDeploy, onDebug }: Props) {
   const tr = useMakerText();
   const { t, tx } = useI18n();
   const tests = useComponentTests(design, session);
@@ -35,6 +36,9 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
   }), [cid, step.boardPin, step.componentPin, step.connectionKind, session.mode]);
   const active = session.phase === "active";
   const complete = componentComplete(design, session, cid);
+  // Saved results belong to history, not the start-wiring screen. Keep live
+  // test controls reachable even after an edit/restart invalidates the wiring.
+  const showTestCard = complete || Boolean(tests.status.active);
   const reviewing = session.phase === "review" || (session.phase === "prepare" && complete);
   const lastTest = tests.status.results.filter(r => r.component_id === cid).at(-1);
   const passed = lastTest?.outcome === "passed" && !lastTest.invalidated && lastTest.guide_key === componentTestKey(design, session, cid);
@@ -79,7 +83,10 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
       </button>)}</div>
     </>}
     targetId={active ? `${cid}:${step.componentPin}` : undefined} onClose={() => onVisibleChange(false)}
-    actions={<><div className="guide-navigation">{session.phase === "prepare" && !complete ? <button type="button" className="guide-primary-action" onClick={start}>{tr("開始接線 →", "Start wiring →")}</button>
+    actions={<><div className="guide-navigation">{session.inspection ? <>
+      <button onClick={() => onDebug?.(cid)}>{tr("返回除錯", "Back to debug")}</button>
+      <button onClick={() => { void tests.invalidate(cid); const confirmed = {...session.confirmed}; for (const wire of steps) delete confirmed[wire.id]; onChange({...session, inspection:false, confirmed, phase:"active"}); }}>{tr("我要修改此零件接線", "Edit this component wiring")}</button>
+    </> : session.phase === "prepare" && !complete ? <button type="button" className="guide-primary-action" onClick={start}>{tr("開始接線 →", "Start wiring →")}</button>
       : active ? <>
         <button type="button" className="guide-back-action" disabled={session.index === 0 || tests.pending} onClick={previous}>{tr("上一步", "Back")}</button>
         <button type="button" className="guide-primary-action" onClick={confirm}>{tr("我已接好，下一步 →", "Connected · Next →")}</button>
@@ -101,7 +108,6 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     <details className="wiring-summary" open={session.phase === "review" ? true : undefined}><summary>{tr("接線總覽", "Wiring summary")} · {count}/{design.wiring.length}</summary>
       <table><tbody>{design.wiring.map(w => <tr key={w.id}><td>{w.componentId} · {w.componentPin}</td><td>{w.boardLabel}</td><td>{confirmed(w) ? `${tr("人工確認", "Manual")} (${session.confirmed[w.id].mode})` : tr("未確認", "Not confirmed")}</td></tr>)}</tbody></table></details>
     </>}>
-    {tests.status.results.some(r => r.program_stopped) ? <p className="guide-caution">{tr("原作品已停止，測試結束不會自動重啟。原程式保留。", "Original project stopped; it will not restart automatically. Its code is preserved.")}</p> : null}
     {tests.status.results.some(r => r.program_stop_requested && !r.program_stopped) ? <p className="guide-caution">{tr("已送出停止原作品要求，狀態待確認；請重新連線核對。", "A stop request was sent to the original project; reconnect to confirm its state.")}</p> : null}
     {session.phase === "prepare" && !complete ? <div className="guide-prepare-message">
       <strong>{tr("準備開始接線", "Ready to start wiring")}</strong>
@@ -129,6 +135,6 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     {session.phase === "review" && session.componentIndex === design.component_ids.length - 1
       ? <p className="guide-caution">{tr("核對接線與供電規格後，接上 Pi USB-C 電源；開機後前往部署。", "After checking wiring and supply ratings, connect Pi USB-C power; deploy after boot.")}</p> : null}
     {disabled ? <p role="status">{tr("本機服務未連線；接線紀錄保留。", "Local service offline; wiring records are kept.")}</p> : null}
-    <ComponentTestCard design={design} session={session} tests={tests} onViewWiring={() => { void tests.invalidate(cid); onChange({ ...session, phase: "active", index: 0 }); }} />
+    {showTestCard ? <ComponentTestCard design={design} session={session} tests={tests} onDebug={onDebug} onViewWiring={() => onChange({ ...session, inspection: true, phase: "active", index: 0 })} /> : null}
   </CompactGuide>;
 }

@@ -67,24 +67,6 @@ export interface AccuracySummary {
 }
 
 /* ------------------------------------------------------------------ */
-/* REST: POST /api/query                                               */
-/* ------------------------------------------------------------------ */
-
-export interface QueryRequest {
-  text: string;
-  locale: string;
-}
-
-export interface QueryResponse {
-  answer: string;
-  pin_ids: string[];
-  /** bus/group id (e.g. "i2c0") or null. */
-  group: string | null;
-  /** false = query not understood; `answer` contains suggestions. */
-  matched: boolean;
-}
-
-/* ------------------------------------------------------------------ */
 /* WebSocket: /ws/detections                                           */
 /* ------------------------------------------------------------------ */
 
@@ -667,11 +649,15 @@ export type CalibrateResponse = CalibrateSuccess | CalibrateFailure;
 
 export interface CameraInfo {
   index: number;
+  device_id?: string;
+  name?: string;
+  /** Metadata proves presence, not that another app will release the stream. */
+  selectable?: boolean;
   /** False if the device failed to open / produce a frame during the scan. */
   available: boolean;
   is_current: boolean;
   /** Additive diagnostic when a device opened but returned an all-black frame. */
-  signal_status?: "black";
+  signal_status?: "black" | "live" | "not_checked";
   /** Present only when `available` (absent, not null, on unavailable entries). */
   width?: number;
   height?: number;
@@ -681,16 +667,24 @@ export interface CameraInfo {
 
 export interface CamerasResponse {
   cameras: CameraInfo[];
+  refreshable?: boolean;
 }
 
 export interface SelectCameraRequest {
   index: number;
+  device_id?: string;
 }
 
 export type SelectCameraErrorCode =
   | "invalid_index"
   | "open_failed"
   | "same_as_current"
+  | "camera_changed"
+  | "camera_inventory_unavailable"
+  | "camera_modes_unavailable"
+  | "camera_worker_busy"
+  | "camera_restore_failed"
+  | "camera_adjustment_busy"
   | "not_applicable";
 
 export interface SelectCameraSuccess {

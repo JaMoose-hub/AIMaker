@@ -29,6 +29,7 @@ from app.api import calibrate as api_calibrate
 from app.api import controllers as api_controllers
 from app.api import camera_focus as api_camera_focus
 from app.api import camera_tuning as api_camera_tuning
+from app.api import camera_modes as api_camera_modes
 from app.api import cameras as api_cameras
 from app.api import glasses as api_glasses
 from app.api import guidance as api_guidance
@@ -40,6 +41,7 @@ from app.api import cloud_wiring as api_cloud_wiring
 from app.cloud_wiring import CloudWiringService
 from app.api import wiring as api_wiring
 from app.api import pi as api_pi
+from app.api import debug as api_debug
 from app.api import design as api_design
 from app.api import tracking as api_tracking
 from app.api.static import mount_frontend
@@ -498,7 +500,9 @@ def build_app(
                 state.motion_worker.stop()
             if state.body_worker is not None:
                 state.body_worker.stop()
+            await asyncio.to_thread(state.pi_execution.close)
             await asyncio.to_thread(state.component_tests.close)
+            await asyncio.to_thread(state.integration_trials.close)
             await asyncio.to_thread(state.pi_deployer.close)
             state.cloud_wiring_service.close()
             await asyncio.to_thread(state.design_service.bridge.close)
@@ -533,7 +537,14 @@ def build_app(
     app.state.pi_deployer = PiDeployer(config.pi_deploy)
     from app.component_testing import ComponentTests
     app.state.component_tests = ComponentTests(app.state.pi_deployer)
+    from app.pi_execution import PiExecution
+    from app.integration_trials import IntegrationTrials
+    app.state.integration_trials = IntegrationTrials(app.state.pi_deployer)
+    app.state.pi_execution = PiExecution(app.state.pi_deployer, app.state.component_tests, app.state.integration_trials)
     app.state.design_service = api_design.DesignService()
+    from app.debugging import DebugCases
+    app.state.debug_cases = DebugCases(app.state.pi_deployer, app.state.component_tests, app.state.integration_trials,
+                                      app.state.pi_execution, app.state.design_service.bridge)
     app.state.cloud_wiring_service = CloudWiringService()
     app.state.profile_store = store
     app.state.profile = profile
@@ -581,6 +592,7 @@ def build_app(
     app.include_router(api_glasses.router)
     app.include_router(api_camera_focus.router)
     app.include_router(api_camera_tuning.router)
+    app.include_router(api_camera_modes.router)
     app.include_router(api_guidance.router)
     app.include_router(api_video.router)
     app.include_router(api_tracking.router)
@@ -588,6 +600,7 @@ def build_app(
     app.include_router(api_vlm.router)
     app.include_router(api_wiring.router)
     app.include_router(api_pi.router)
+    app.include_router(api_debug.router)
     app.include_router(api_design.router)
     app.include_router(api_cloud_wiring.router)
     mount_frontend(app, Path(config.frontend_dist))

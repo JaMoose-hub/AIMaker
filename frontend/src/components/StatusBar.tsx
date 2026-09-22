@@ -13,7 +13,7 @@ interface StatusBarProps {
   calibrateDisabled: boolean;
   /** Opens the "切換鏡頭" camera picker panel. */
   onOpenCameraPicker: () => void;
-  /** Whether the trigger renders at all — false in synthetic-camera mode or when no device cameras were found. */
+  /** Present in device mode even when no camera is connected yet. */
   cameraPickerVisible: boolean;
   /** True while the backend is unreachable (trigger stays visible but greyed out, like calibrateDisabled). */
   cameraPickerDisabled: boolean;

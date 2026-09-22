@@ -22,6 +22,8 @@ import type {
  */
 
 export interface WsSnapshot {
+  /** Current stream context, independent of the one-time WebSocket hello. */
+  runtime: RuntimeChangedMessage | null;
   detectionReceivedAtMs: number;
   componentReceivedAtMs: Readonly<Record<string, number>>;
   detection: DetectionMessage | null;
@@ -63,6 +65,7 @@ class WsClient {
   private detectionsPerSec = 0;
 
   private snapshot: WsSnapshot = {
+    runtime: null,
     detectionReceivedAtMs: 0,
     componentReceivedAtMs: {},
     detection: null,
@@ -83,6 +86,7 @@ class WsClient {
   private reconnectTimer: number | null = null;
   private messageCount = 0;
   private runtimeRevision = 0;
+  private runtime: RuntimeChangedMessage | null = null;
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -105,6 +109,7 @@ class WsClient {
     const revision = Number(runtimeRevision) || 0;
     if (revision < this.runtimeRevision) return;
     this.runtimeRevision = revision;
+    this.runtime = { type: "runtime_changed", board_id: boardId, runtime_revision: revision };
     this.detection = null;
     this.detectionReceivedAtMs = 0;
     this.componentReceivedAtMs = {};
@@ -153,6 +158,7 @@ class WsClient {
       this.flush();
     };
     ws.onmessage = (event: MessageEvent) => {
+      if (this.ws !== ws) return;
       this.handleMessage(event);
     };
     ws.onclose = () => {
@@ -198,6 +204,8 @@ class WsClient {
     const message = parsed as { type: string };
     if (message.type === "hello") {
       const hello = message as HelloMessage;
+      // A backend restart can reset revisions; hello establishes this connection.
+      this.runtimeRevision = 0;
       this.prepareRuntime(hello.board_id, hello.runtime_revision);
       this.hello = hello;
       this.scheduleFlush();
@@ -274,6 +282,7 @@ class WsClient {
 
   private flush(): void {
     this.snapshot = {
+      runtime: this.runtime,
       detectionReceivedAtMs: this.detectionReceivedAtMs,
       componentReceivedAtMs: { ...this.componentReceivedAtMs },
       detection: this.detection,

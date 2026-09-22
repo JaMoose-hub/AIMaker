@@ -38,6 +38,17 @@ namespace BoardVisionUvc {
   public string Name; public int Min, Max, Step, Default, Caps, Value, Flags;
  }
  public static class Controls {
+  [DllImport("ole32.dll")]
+  static extern int CreateBindCtx(uint reserved, out IBindCtx context);
+  public static bool MatchesDevice(string selected, string displayName, string friendlyName) {
+   // FFmpeg's dshow alternative name replaces every ':' in GetDisplayName
+   // with '_'. Match the full identity; never fall back to a different camera.
+   if(selected.StartsWith("@device", StringComparison.OrdinalIgnoreCase))
+    return displayName!=null &&
+      (String.Equals(displayName,selected,StringComparison.OrdinalIgnoreCase) ||
+       String.Equals(displayName.Replace(':','_'),selected,StringComparison.OrdinalIgnoreCase));
+   return String.Equals(friendlyName,selected,StringComparison.OrdinalIgnoreCase);
+  }
   static void Release(object value) { if(value!=null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
   static int Id(string name) {
    switch(name) {
@@ -51,8 +62,9 @@ namespace BoardVisionUvc {
   }
   static bool Camera(string name) { return name=="exposure" || name=="focus"; }
   static object FindFilter(string selected) {
-   object system=null, found=null; IEnumMoniker enumerator=null;
+   object system=null, found=null; IEnumMoniker enumerator=null; IBindCtx context=null;
    try {
+    Marshal.ThrowExceptionForHR(CreateBindCtx(0,out context));
     system=Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("62BE5D10-60EB-11D0-BD3B-00A0C911CE86")));
     Guid category=new Guid("860BB310-5D01-11D0-BD3B-00A0C911CE86");
     if(((ICreateDevEnum)system).CreateClassEnumerator(ref category,out enumerator,0)!=0 || enumerator==null)
@@ -62,9 +74,11 @@ namespace BoardVisionUvc {
      object bag=null;
      try {
       Guid bagId=typeof(IPropertyBag).GUID; item[0].BindToStorage(null,null,ref bagId,out bag);
-      object name;
-      if(((IPropertyBag)bag).Read("FriendlyName",out name,IntPtr.Zero)==0 &&
-         String.Equals((string)name,selected,StringComparison.OrdinalIgnoreCase)) {
+      object name; string displayName=null;
+      ((IPropertyBag)bag).Read("FriendlyName",out name,IntPtr.Zero);
+      if(selected.StartsWith("@device", StringComparison.OrdinalIgnoreCase))
+       item[0].GetDisplayName(context,null,out displayName);
+      if(MatchesDevice(selected,displayName,name as string)) {
        if(found!=null) throw new InvalidOperationException("Ambiguous device name; no controls changed");
        Guid filterId=new Guid("56A86895-0AD4-11CE-B03A-0020AF0BA770");
        item[0].BindToObject(null,null,ref filterId,out found);
@@ -73,7 +87,7 @@ namespace BoardVisionUvc {
     }
     if(found==null) throw new InvalidOperationException("Device not found");
     object result=found; found=null; return result;
-   } finally { Release(found); Release(enumerator); Release(system); }
+   } finally { Release(found); Release(enumerator); Release(system); Release(context); }
   }
   public static Property[] Read(string device) {
    object filter=FindFilter(device);

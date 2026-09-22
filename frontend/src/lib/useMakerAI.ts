@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { makerRequest, validDesign, type MakerState, type ProjectDesign } from "./maker";
+import { makerRequest, validDesign, clearMakerConversation, previewDemo, type MakerState, type ProjectDesign } from "./maker";
 import { useAIOptions } from "./useAIOptions";
 import { useI18n } from "./i18n";
 
 interface AIStatus { available: boolean; logged_in: boolean; busy: boolean; error: string | null }
-interface Job { status: "generating" | "completed" | "failed"; phase?: "design" | "image"; design: ProjectDesign | null; answer?: string; error: string | null }
+interface Job { status: "generating" | "completed" | "failed"; phase?: "design" | "image"; design: ProjectDesign | null; answer?: string; explanation?: string; error: string | null }
 
 /** One owner in App: changing workflow pages never interrupts an AI job. */
 export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<MakerState>>) {
@@ -12,9 +12,11 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
   const [ai, setAI] = useState<AIStatus | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const [phase, setPhase] = useState<"design" | "image">("design");
+  const [phase, setPhase] = useState<"design" | "image" | "demo">("design");
   const [loginURL, setLoginURL] = useState("");
   const sending = useRef(false);
+  const demoController = useRef<AbortController | null>(null);
+  useEffect(() => () => demoController.current?.abort(), []);
   const aiOptions = useAIOptions(state, locale, Boolean(ai?.logged_in));
   const busy = pending || Boolean(state.aiJobId);
   useEffect(() => {
@@ -43,7 +45,7 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
         if (job.status === "failed") throw new Error(job.error ?? "AI generation failed");
         if (job.status === "completed") {
           if (!job.answer && !validDesign(job.design)) throw new Error("Invalid project data / 作品資料格式不符");
-          const text = job.answer || `${job.design!.title}\n${job.design!.summary}${job.design?.image_error ? `\n圖片生成失敗：${job.design.image_error}` : ""}`;
+          const text = job.answer || `${job.explanation || job.design!.title}\n${job.design!.summary}${job.design?.image_error ? `\n圖片生成失敗：${job.design.image_error}` : ""}`;
           setState(s => s.aiJobId !== jobId ? s : ({ ...s, aiJobId: null,
             candidate: job.answer ? s.candidate : job.design,
             conversation: [...s.conversation, { role: "assistant" as const, text }].slice(-20) }));
@@ -81,5 +83,21 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
       setState(s => ({ ...s, aiJobId: job.job_id }));
     } catch (e) { setError(String(e)); } finally { sending.current = false; setPending(false); }
   }
-  return { ai, aiOptions, busy, phase, error, loginURL, generate, login, retryImage };
+  async function loadDemo() {
+    if (busy || sending.current) return;
+    sending.current = true; setPending(true); setPhase("demo"); setError("");
+    const controller = new AbortController();
+    demoController.current = controller;
+    try {
+      const demo = await makerRequest<ProjectDesign>("design/demo", undefined, controller.signal);
+      if (!validDesign(demo) || demo.source !== "demo") throw new Error("Invalid demo / 示範作品格式不符");
+      if (!controller.signal.aborted) setState(s => previewDemo(s, demo));
+    } catch (e) { if (!controller.signal.aborted) setError(String(e)); }
+    finally { sending.current = false; if (!controller.signal.aborted) setPending(false); }
+  }
+  function clearConversation() {
+    if (busy || sending.current) return;
+    setState(clearMakerConversation);
+  }
+  return { ai, aiOptions, busy, phase, error, loginURL, generate, login, retryImage, loadDemo, clearConversation };
 }

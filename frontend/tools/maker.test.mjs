@@ -7,6 +7,69 @@ const catalog = JSON.parse(readFileSync(new URL("../../profiles/component-catalo
 const source = readFileSync(new URL("../src/lib/maker.ts", import.meta.url), "utf8").replace(/import catalog from [^;]+;/, `const catalog = ${JSON.stringify(catalog)};`);
 const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } });
 const m = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+// Exercise real component event handlers with deterministic hooks and no cloud or storage.
+const moduleUrl = js => `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;
+const hooksUrl = moduleUrl(`export let value=null; export const reset=()=>{value=null};
+  export const useState=()=>[value,v=>{value=v}]; export const useEffect=()=>{};
+  export const useRef=()=>({current:null});`);
+const hooks = await import(hooksUrl);
+let assistantJS = ts.transpileModule(readFileSync(new URL('../src/components/MakerAssistant.tsx',import.meta.url),'utf8'), {
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022,jsx:ts.JsxEmit.ReactJSX},
+}).outputText;
+for(const [name,url] of Object.entries({react:hooksUrl,'react/jsx-runtime':import.meta.resolve('react/jsx-runtime'),
+  '../lib/maker':moduleUrl(`export const makerCatalog=${JSON.stringify(catalog)}`),
+  '../lib/useMaker':moduleUrl('export const useMakerText=()=>(zh,en)=>zh'),
+  '../lib/i18n':moduleUrl('export const useI18n=()=>({tx:v=>typeof v=== "string"?v:v["zh-TW"]})'),
+})) assistantJS=assistantJS.replaceAll(JSON.stringify(name),JSON.stringify(url));
+const {MakerAssistant}=await import(moduleUrl(assistantJS));
+function nodes(tree){return Array.isArray(tree)?tree.flatMap(nodes):tree&&typeof tree==='object'?[tree,...nodes(tree.props?.children)]:[];}
+function textOf(tree){return Array.isArray(tree)?tree.map(textOf).join(''):tree&&typeof tree==='object'?textOf(tree.props?.children):typeof tree==='string'?tree:'';}
+function assistantFixture(state, busy=false){
+  hooks.reset();
+  const calls=[];
+  const props={state,setState(){throw Error('Unexpected state mutation');},onReview(){},assistant:{busy,ai:{logged_in:true},
+    aiOptions:{estimate:{},selectionValid:true},generate(){calls.push('generate');},loadDemo(){calls.push('demo');},clearConversation(){calls.push('clear');}}};
+  const render=()=>MakerAssistant(props);
+  const button=name=>nodes(render()).find(n=>n.type==='button'&&textOf(n)===name);
+  return {render,button,calls};
+}
+
+test('one composer replaces intent and appearance switches, clearing requires confirmation',()=>{
+  const f=assistantFixture({...m.initialMaker(),conversation:[{role:'user',text:'keep me'}]});
+  assert.equal(nodes(f.render()).filter(n=>n.type==='textarea').length,1);
+  assert.equal(nodes(f.render()).filter(n=>n.type==='select').length,0);
+  assert.doesNotMatch(textOf(f.render()),/設計／修改作品|詢問 AI|生成方式/);
+  f.button('清除對話').props.onClick();
+  assert.match(textOf(f.render()),/作品、接線進度、程式與未送出的文字都會保留/);
+  assert.deepEqual(f.calls,[]);
+  f.button('取消').props.onClick();
+  assert.equal(f.button('確認清除'),undefined);
+  f.button('清除對話').props.onClick();
+  f.button('確認清除').props.onClick();
+  assert.deepEqual(f.calls,['clear']);
+});
+
+test('Demo asks before replacing a preview and never submits a cloud request',()=>{
+  const f=assistantFixture({...m.initialMaker(),candidate:design});
+  f.button('載入 Demo 示範').props.onClick();
+  assert.match(textOf(f.render()),/已確認作品與程式不會改變/);
+  assert.deepEqual(f.calls,[]);
+  f.button('取消').props.onClick();
+  assert.deepEqual(f.calls,[]);
+  f.button('載入 Demo 示範').props.onClick();
+  f.button('載入示範預覽').props.onClick();
+  assert.deepEqual(f.calls,['demo']);
+  const empty=assistantFixture(m.initialMaker());
+  empty.button('載入 Demo 示範').props.onClick();
+  assert.deepEqual(empty.calls,['demo']);
+});
+
+test('busy conversations cannot be cleared or replaced and empty history cannot be cleared',()=>{
+  const f=assistantFixture({...m.initialMaker(),conversation:[{role:'user',text:'pending'}]},true);
+  assert.equal(f.button('清除對話').props.disabled,true);
+  assert.equal(f.button('載入 Demo 示範').props.disabled,true);
+  assert.equal(assistantFixture(m.initialMaker()).button('清除對話').props.disabled,true);
+});
 const design = {
   id: "test", revision: 1, source: "demo", catalog_version: catalog.version, title: "test", summary: "test",
   component_ids: ["hc-sr04"], wiring: catalog.modules[0].steps.map(s => ({ ...s, id: `hc-sr04:${s.id}`, componentId: "hc-sr04" })),
@@ -101,7 +164,7 @@ test("all stages send cloud context, while unapproved revisions never replace wi
   for (const stage of ["design", "blueprint", "guide", "deploy"]) {
     const request = m.designRequest({ ...state, stage }, "zh-TW", "model");
     assert.equal(request.workflow.stage, stage);
-    assert.equal(request.current.title, "new concept");
+    assert.equal(request.current.title, stage === "design" ? "new concept" : "test");
     assert.equal(request.conversation[0].text, "keep same modules");
     assert.equal(request.workflow.code_draft, stage === "deploy" ? "manual draft" : "");
   }
@@ -171,7 +234,8 @@ test("fixed and free modes persist without replacing approved or working version
     assert.equal(request.design_mode, mode);
     assert.deepEqual(request.component_ids, state.selected);
     assert.equal(request.current.revision, 2);
-    assert.deepEqual(request.conversation, mode === 'free' ? [] : state.conversation);
+    assert.equal(request.intent, 'auto');
+    assert.deepEqual(request.conversation, state.conversation);
     const ask = m.designRequest({ ...restored, aiIntent: 'ask' }, 'zh-TW', null);
     assert.deepEqual(ask.conversation, state.conversation);
     assert.equal(ask.generate_image, false);
@@ -179,4 +243,37 @@ test("fixed and free modes persist without replacing approved or working version
   const legacy = { ...state }; delete legacy.designMode;
   assert.equal(m.restoreMaker(JSON.stringify(legacy)).designMode, 'free');
   assert.equal(m.restoreMaker(JSON.stringify({...state, designMode: 'invalid'})).designMode, 'free');
+});
+
+test("one conversation ignores legacy UI intent and keeps context for questions and revisions", () => {
+  for (const aiIntent of ['ask','design','auto']) {
+    const state=m.restoreMaker(JSON.stringify({...m.initialMaker(),aiIntent,design,conversation:[{role:'user',text:'keep this'}]}));
+    assert.equal(state.aiIntent,'auto');
+    const req=m.designRequest(state,'zh-TW',null);
+    assert.equal(req.intent,'auto');assert.equal(req.generate_image,true);
+    assert.equal(req.conversation[0].text,'keep this');
+  }
+});
+
+test("clear conversation only clears messages and never abandons a pending AI job",()=>{
+  const state={...m.initialMaker(),design,candidate:{...design,revision:2},code:'manual',prompt:'unsent text',
+    debug:{caseId:'case'},conversation:[{role:'user',text:'old'}]};
+  const result=m.clearMakerConversation(state);
+  assert.deepEqual(result,{...state,conversation:[]});
+  assert.equal(result.design,state.design);assert.equal(result.guide,state.guide);
+  assert.deepEqual(m.restoreMaker(JSON.stringify(result)).conversation,[]);
+  const busy={...state,aiJobId:'pending'};
+  assert.equal(m.clearMakerConversation(busy),busy);
+});
+
+test("demo is a preview; approved code and wire progress change only after confirmation",()=>{
+  const state={...m.initialMaker(),design,code:'manual',stage:'guide',conversation:[{role:'user',text:'keep'}]};
+  const demo={...design,id:'demo',code:'fixed-demo'};
+  const next=m.previewDemo(state,demo);
+  assert.equal(next.candidate,demo);assert.equal(next.stage,'design');
+  assert.equal(next.design,state.design);assert.equal(next.guide,state.guide);
+  assert.equal(next.code,'manual');assert.equal(next.conversation,state.conversation);
+  assert.equal(m.confirmConcept(next),next,'manual code still needs separate consent');
+  assert.equal(m.previewDemo(state,{...demo,source:'ai'}),state);
+  const busy={...state,aiJobId:'pending'};assert.equal(m.previewDemo(busy,demo),busy);
 });

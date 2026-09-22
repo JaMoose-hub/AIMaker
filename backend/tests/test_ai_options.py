@@ -125,7 +125,8 @@ def test_catalog_failure_empty_and_busy_are_not_fake_model_lists():
     assert c.post("/api/ai/estimate", json=BODY).status_code == 503
 
 
-def test_bridge_passes_explicit_model_effort_standard_tier_to_real_rpc_shape():
+@pytest.mark.parametrize("restricted_tools", [False, True])
+def test_bridge_passes_explicit_model_effort_standard_tier_to_real_rpc_shape(restricted_tools):
     b = CodexBridge()
     b._start = Mock()
     b._workspace = SimpleNamespace(name="test-workspace")
@@ -143,11 +144,17 @@ def test_bridge_passes_explicit_model_effort_standard_tier_to_real_rpc_shape():
             return {"turn": {"id": "turn"}}
         raise AssertionError(method)
     b._rpc = rpc
-    assert b.generate("prompt", {}, model=BODY["model"], effort="high")["title"]
+    assert b.generate("prompt", {}, model=BODY["model"], effort="high", restricted_tools=restricted_tools)["title"]
     start = next(params for method, params in calls if method == "thread/start")
     turn = next(params for method, params in calls if method == "turn/start")
     assert start["model"] == BODY["model"] and start["serviceTier"] == "default"
     assert turn["effort"] == "high" and start["sandbox"] == "read-only"
+    if restricted_tools:
+        assert start["config"]["features.shell_tool"] is False
+        assert start["config"]["features.plugins"] is False
+        assert start["config"]["features.apps"] is False
+        assert start["config"]["web_search"] == "disabled"
+        assert "Do not use tools, SSH" in start["developerInstructions"]
 
 
 @pytest.mark.parametrize("rerouted", [False, True])

@@ -4,14 +4,14 @@ import { GlassesControls } from "./components/GlassesControls";
 import { useGlassesStream } from "./lib/useGlassesStream";
 import { CapabilityCard } from "./components/CapabilityCard";
 import { PiDeployPanel } from "./components/PiDeployPanel";
+import { DebugPage } from "./components/DebugPage";
+import { PiConnectionControl } from "./components/PiConnectionControl";
 import { WiringGuidePanel } from "./components/WiringGuidePanel";
-import { QueryBox } from "./components/QueryBox";
 import { RuntimeToolbar } from "./components/RuntimeToolbar";
 import { StatusBar } from "./components/StatusBar";
 import { VideoView, type LegendInfo } from "./components/VideoView";
 import {
   fetchBoardProfile,
-  fetchCameras,
   fetchConfig,
   fetchControllers,
   postSelectController,
@@ -36,7 +36,6 @@ import type {
   ControllerSummary,
   Locale,
   Pin,
-  QueryResponse,
 } from "./lib/types";
 import type { ActiveGuideTarget } from "./lib/componentWiringGuides";
 import { wsClient } from "./lib/wsClient";
@@ -66,7 +65,7 @@ function initialGuideVisibility(): boolean {
 }
 
 export default function App() {
-  const { locale, t, tx, setLocale, applyDefaultLocale } = useI18n();
+  const { t, tx, setLocale, applyDefaultLocale } = useI18n();
   const { state: maker, setState: setMaker, saved: makerSaved } = useMaker();
   const makerAI = useMakerAI(maker, setMaker);
   const tr = useMakerText();
@@ -83,7 +82,6 @@ export default function App() {
   const [controllerError, setControllerError] = useState<string | null>(null);
   const [backendDown, setBackendDown] = useState(false);
   const [filter, setFilter] = useState<FilterId>("all");
-  const [queryResult, setQueryResult] = useState<QueryResponse | null>(null);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [guideTarget, setGuideTarget] = useState<ActiveGuideTarget | null>(null);
   const guidePinId = guideTarget?.boardPinId ?? null;
@@ -97,10 +95,6 @@ export default function App() {
   const [opticalHudCalibration, setOpticalHudCalibration] =
     useState<OpticalHudCalibration | null>(null);
   const [fullscreenFallback, setFullscreenFallback] = useState(false);
-  // Decided once per successful bootstrap: hides the "切換鏡頭" trigger
-  // entirely in synthetic-camera mode or when the scan found no devices,
-  // rather than opening it into an empty, confusing panel.
-  const [camerasAvailable, setCamerasAvailable] = useState(false);
   const displayModeActive = isDisplayOnlyMode(displayMode);
   const opticalHudActive = isOpticalHudMode(displayMode);
   const displayModeDisabled = backendDown || config === null;
@@ -115,6 +109,16 @@ export default function App() {
     setMaker(s => ({ ...s, stage, standalone: false }));
     if (stage === "guide") setGuideVisible(true);
   };
+  const openDebug = (componentId?: string, runId?: string, symptom?: string) => {
+    setGuideTarget(null);
+    setMaker(s => ({...s,stage:"debug",standalone:false,debug:{...s.debug,componentId:componentId??s.debug?.componentId,selectedComponentId:componentId,runId,symptom,deployment:undefined,source:s.stage==="deploy"?"deploy":"guide"}}));
+  };
+  const inspectWiring = (cid:string, pin?:string) => {
+    setGuideVisible(true);
+    setMaker(s => ({...s,stage:"guide",guide:{...s.guide,inspection:true,mode:"camera",phase:"active",
+      componentIndex:Math.max(0,s.design?.component_ids.findIndex(id=>id===cid)??0),
+      index:Math.max(0,s.design?.wiring.filter(w=>w.componentId===cid).findIndex(w=>w.componentPin===pin)??0)}}));
+  };
   const adoptDesign = (replaceManual = false) => {
     setGuideTarget(null);
     setMaker(s => confirmConcept(s, replaceManual));
@@ -123,7 +127,6 @@ export default function App() {
   const handleLocaleChange = useCallback(
     (next: Locale) => {
       setLocale(next);
-      setQueryResult(null);
     },
     [setLocale],
   );
@@ -297,22 +300,6 @@ export default function App() {
         setControllers(loadedControllers.controllers);
         setBackendDown(false);
         applyDefaultLocale(loadedConfig.default_locale);
-        // One-shot scan, not retried on its own: synthetic mode never has
-        // device cameras, and a scan failure just means the trigger stays
-        // hidden (not a reason to keep retrying against a live capture setup).
-        if (loadedConfig.camera_source === "device") {
-          fetchCameras()
-            .then((resp) => {
-              if (cancelled) return;
-            setCamerasAvailable(resp.cameras.some((camera) => camera.available));
-            })
-            .catch(() => {
-              if (cancelled) return;
-              setCamerasAvailable(false);
-            });
-        } else {
-          setCamerasAvailable(false);
-        }
       } catch {
         if (cancelled) return;
         setBackendDown(true);
@@ -327,10 +314,6 @@ export default function App() {
       if (timer !== null) window.clearTimeout(timer);
     };
   }, [applyDefaultLocale]);
-
-  useEffect(() => {
-    setQueryResult(null);
-  }, [locale]);
 
   // Native fullscreen exits still restore HUD presentations. Eye deliberately
   // uses CSS fullscreen, independently of browser/host fullscreen changes.
@@ -418,37 +401,20 @@ export default function App() {
     [profile, filter],
   );
 
-  const querySet = useMemo(
-    () =>
-      queryResult && queryResult.matched && queryResult.pin_ids.length > 0
-        ? new Set(queryResult.pin_ids)
-        : null,
-    [queryResult],
-  );
-
   const guideSet = useMemo(() => (guidePinId ? new Set([guidePinId]) : null), [guidePinId]);
 
-  // A guided wiring step must leave exactly one target bright. Query results
-  // otherwise take precedence over the capability filter.
-  const highlightIds = guideSet ?? querySet ?? filterSet;
+  // A guided wiring step must leave exactly one target bright.
+  const highlightIds = guideSet ?? filterSet;
 
   const legend: LegendInfo | null =
     guidePinLabel
       ? { colorVar: "--ok", label: t("photoGuide.videoTarget", { pin: guidePinLabel }), count: 1 }
-      : filter !== "all" && filterSet && !querySet
+      : filter !== "all" && filterSet
         ? { colorVar: FILTER_COLOR_VAR[filter], label: t(`filter.${filter}`), count: filterSet.size }
         : null;
 
   const handleSelectPin = useCallback((pinId: string | null) => {
     setSelectedPinId(pinId);
-  }, []);
-
-  const handleQueryResult = useCallback((result: QueryResponse) => {
-    setQueryResult(result);
-  }, []);
-
-  const handleQueryClear = useCallback(() => {
-    setQueryResult(null);
   }, []);
 
   const handleOpenCalibrate = useCallback(() => {
@@ -493,7 +459,6 @@ export default function App() {
       wsClient.prepareRuntime(result.board_id, result.runtime_revision);
       setGuideTarget(null);
       setSelectedPinId(null);
-      setQueryResult(null);
       setFilter("all");
       const [nextConfig, nextProfile, nextControllers] = await Promise.all([
         fetchConfig(),
@@ -526,10 +491,11 @@ export default function App() {
           </small> : null}
           <div className={`workspace-toolbar${makerEnabled ? " maker-workflow-toolbar" : ""}`}>
             {makerEnabled ? <nav className="maker-nav" aria-label={tr("作品工作流程", "Maker workflow")}>
-              {(["design", "blueprint", "guide", "deploy"] as const).map((stage, i) => <button key={stage} className={makerStage === stage ? "active" : ""}
-                disabled={stage === "blueprint" && !maker.design} aria-current={makerStage === stage ? "step" : undefined} onClick={() => navigateMaker(stage)}><span>{String(i + 1).padStart(2, "0")}</span>{stage === "design" ? tr("設計作品", "Design") : stage === "blueprint" ? "Blueprint" : stage === "guide" ? tr("Pin 接線引導", "Pin wiring") : tr("部署與測試", "Deploy & test")}</button>)}
+              {(["design", "blueprint", "guide", "debug", "deploy"] as const).map((stage, i) => <button key={stage} className={makerStage === stage ? "active" : ""}
+                disabled={stage === "blueprint" && !maker.design} aria-current={makerStage === stage ? "step" : undefined} onClick={() => navigateMaker(stage)}><span>{String(i + 1).padStart(2, "0")}</span>{stage === "design" ? tr("設計作品", "Design") : stage === "blueprint" ? "Blueprint" : stage === "guide" ? tr("Pin 接線引導", "Pin wiring") : stage === "debug" ? tr("測試與除錯", "Test & debug") : tr("部署與執行", "Deploy & run")}</button>)}
             </nav> : null}
             {makerEnabled ? <MakerModelMenu state={maker} setState={setMaker} assistant={makerAI} /> : null}
+            {makerEnabled ? <PiConnectionControl /> : null}
             <RuntimeToolbar
               controllers={controllers}
               activeBoardId={config?.board_id ?? null}
@@ -587,7 +553,7 @@ export default function App() {
           {project && makerStage === "guide" ? <ProjectGuidePanel design={project} session={maker.guide} visible={guideVisible} disabled={backendDown}
             pinsById={pinsById}
             onChange={guide => setMaker(s => ({ ...s, guide }))}
-            onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDeploy={() => navigateMaker("deploy")} /> : null}
+            onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={openDebug} onDeploy={() => navigateMaker("deploy")} /> : null}
           {!project && config && profile ? (
             <WiringGuidePanel
               key={`${config.board_id}:${config.runtime_revision}`}
@@ -636,15 +602,17 @@ export default function App() {
             </>
           )}
         </div>
+        {makerEnabled && makerStage === "debug" ? <DebugPage state={maker} onCase={caseId=>setMaker(s=>({...s,debug:{...s.debug,caseId}}))}
+          onCode={(code,expected)=>setMaker(s=>s.code===expected?({...s,code}):s)} onWiring={inspectWiring} onDeploy={()=>navigateMaker("deploy")}
+          onSelect={selectedComponentId=>setMaker(s=>({...s,debug:{...s.debug,selectedComponentId}}))} /> : null}
         {makerEnabled && makerStage === "deploy" ? <div className="maker-deploy-main"><PiDeployPanel project={project ?? undefined} draft={project ? maker.code : undefined}
-          onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
-        <div hidden={makerStage !== "guide"}><QueryBox result={queryResult} onResult={handleQueryResult} onClear={handleQueryClear} /></div>
-        <div hidden={makerEnabled && (makerStage === "design" || makerStage === "blueprint")}><StatusBar
+          onDebug={deployment=>{setGuideTarget(null);setMaker(s=>({...s,stage:"debug",debug:{...s.debug,source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined}}));}} onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
+        <div hidden={makerEnabled && (makerStage === "design" || makerStage === "blueprint" || makerStage === "debug")}><StatusBar
           webcamTuningVisible={displayMode === "standard" && config?.camera_source === "device"}
           onOpenCalibrate={handleOpenCalibrate}
           calibrateDisabled={!profile || backendDown}
           onOpenCameraPicker={handleOpenCameraPicker}
-          cameraPickerVisible={camerasAvailable}
+          cameraPickerVisible={config?.camera_source === "device"}
           cameraPickerDisabled={backendDown}
           onEnterSmartGlassesDemo={enterSmartGlassesDemo}
           smartGlassesDemoDisabled={displayModeDisabled || glasses.pending || glasses.status?.state === "restoring"}

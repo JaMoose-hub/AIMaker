@@ -457,6 +457,27 @@ Capability Graph）維護動作，對應「校正板型」面板：前端把 das
 
 ## 7. `GET /api/cameras`、`POST /api/cameras/select` — 攝影機列舉與即時切換
 
+### Windows 裝置身分切換（2026-09-22 更新）
+
+Windows 實體 OpenCV／FFmpeg 來源現在優先使用 DirectShow 裝置中繼資料，不為列舉而開啟攝影機。
+清單包含 `index`、`device_id`、`name`、`selectable`、`available`、`is_current`，並回傳
+`refreshable:true` 允許前端每兩秒重新整理。`selectable` 只表示能嘗試開啟，不表示已取得影像；
+`available` 與縮圖只依目前來源兩秒內的新畫面。尚未選用的鏡頭不因缺縮圖而禁止選擇。
+
+選擇請求傳 `{ "index": 1, "device_id": "<清單中的裝置身分>" }`，後端重新列舉後依
+`device_id` 找裝置，不依可能改變的編號猜測。缺少或過期身分回 `camera_changed`；
+健康的目前鏡頭回 `same_as_current`，沒有新畫面時允許重新連接。
+
+依新鏡頭支援的 MJPEG 模式選解析度／FPS，暫停擷取與推論後更換來源，清除舊畫面和追蹤狀態，
+確認三張時間遞增、非黑畫面才回 `ok:true`。不覆寫設定檔、不沿用前顆鏡頭的 UVC 控制或校正。
+失敗會嘗試還原原來源：`restored:true` 也必須有新的有效畫面；原鏡頭已拔掉時不能假稱恢復成功。
+不支援的格式回 `camera_modes_unavailable`，不猜測格式或反覆開啟驅動。
+智慧調整、解析度與鏡頭切換共用互斥鎖，衝突回 HTTP 409；裝置列舉失敗回 HTTP 503。
+
+### 舊版／其他來源的編號切換
+
+以下保留非 Windows 或注入式來源的既有契約；Windows 實體攝影機以上方裝置身分契約為準。
+
 背景：這台機器上有多個攝影機裝置（例如編號 0 是筆電內建、朝向使用者臉部的前置攝影機；編號 1
 才是實際朝向桌面 Arduino 板子的外接/俯視攝影機）。Windows 上 OpenCV 無法可靠取得裝置的人類可讀
 名稱，唯一能分辨的方式是實際抓一張畫面來看。這兩個端點讓使用者在 app 內直接試看、切換，不需要

@@ -1,7 +1,7 @@
 import catalog from "../../../profiles/component-catalog.json";
 import type { ComponentGuideStep, GuidedComponentId } from "./componentWiringGuides";
 
-export type MakerStage = "design" | "blueprint" | "guide" | "deploy";
+export type MakerStage = "design" | "blueprint" | "guide" | "debug" | "deploy";
 export type GuideMode = "camera" | "2d";
 export type DesignMode = "fixed" | "free";
 export interface ProjectWire extends ComponentGuideStep { componentId: GuidedComponentId }
@@ -31,23 +31,26 @@ export interface ProjectGuideState {
   componentIndex: number; index: number; phase: "prepare" | "active" | "review";
   mode: GuideMode; checks: string[]; confirmed: Record<string, Confirmation>; restored: boolean;
   run?: number;
+  inspection?: boolean;
 }
 export interface MakerState {
   aiModel: string; aiEffort: string; aiExpectedOutputTokens: number | null;
-  aiIntent: "design" | "ask"; aiJobId: string | null;
+  aiIntent: "auto" | "design" | "ask"; aiJobId: string | null;
   designMode: DesignMode;
   standalone: boolean;
   stage: MakerStage; prompt: string; selected: GuidedComponentId[];
   design: ProjectDesign | null; candidate: ProjectDesign | null; code: string;
   guide: ProjectGuideState; conversation: { role: "user" | "assistant"; text: string }[];
   hardware: Record<string, string>;
+  debug?: { caseId?: string; componentId?: string; selectedComponentId?: string; runId?: string; source?: "guide" | "deploy"; symptom?: string;
+    deployment?: {invocation_id?:string;code_hash?:string;run_id?:string;exit_code:number|null;logs?:string[];captured_at?:number} };
 }
 export const makerCatalog = catalog;
 export const emptyGuide = (): ProjectGuideState => ({ componentIndex: 0, index: 0, phase: "prepare", mode: "camera", checks: [], confirmed: {}, restored: false });
 export const defaultPrompt = "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與警告狀態，距離小於 20 公分時顯示警告。";
-export const initialMaker = (): MakerState => ({ standalone: false, stage: "design", prompt: defaultPrompt,
+export const initialMaker = (): MakerState => ({ standalone: false, stage: "design", prompt: "",
   aiModel: "", aiEffort: "low", aiExpectedOutputTokens: null,
-  aiIntent: "design", aiJobId: null, designMode: "free",
+  aiIntent: "auto", aiJobId: null, designMode: "free",
   selected: ["hc-sr04", "mrd-tf240-8p-cs"], design: null, candidate: null,
   code: "", guide: emptyGuide(), conversation: [], hardware: {} });
 export const wireSignature = (wire: ProjectWire): string => [wire.componentId, wire.componentPin, wire.boardPin, wire.connectionKind].join("|");
@@ -95,13 +98,24 @@ export function applyDesign(state: MakerState, design: ProjectDesign, stage: Mak
 export function designRequest(state: MakerState, locale: string, model: string | null) {
   const fresh = state.aiIntent === "design" && state.designMode === "free";
   return { prompt: state.prompt, component_ids: state.selected,
-    current: state.aiIntent === "ask" && state.stage !== "design" ? state.design : state.candidate ?? state.design,
+    current: state.aiIntent !== "design" && state.stage !== "design" ? state.design : state.candidate ?? state.design,
     locale, model, effort: state.aiEffort, expected_output_tokens: state.aiExpectedOutputTokens,
-    intent: state.aiIntent, design_mode: state.designMode, generate_image: state.aiIntent === "design",
+    intent: state.aiIntent, design_mode: state.designMode, generate_image: state.aiIntent !== "ask",
     conversation: fresh ? [] : state.conversation.slice(-20).map(m => ({ ...m, text: m.text.slice(0, 4000) })),
     workflow: { stage: state.stage, active_wire: state.design && state.guide.phase === "active" ? currentWire(state.design, state.guide)?.id ?? null : null,
       manual_confirmations: Object.keys(state.guide.confirmed).length,
-      code_draft: state.stage === "deploy" ? state.code.slice(0, 16000) : "" } };
+      code_draft: state.stage === "deploy" || state.stage === "debug" ? state.code.slice(0, 16000) : "" } };
+}
+
+/** Conversation is independent of the approved project, draft, and live tests. */
+export function clearMakerConversation(state: MakerState): MakerState {
+  return state.aiJobId ? state : {...state, conversation: []};
+}
+
+/** Demo is a local preview, never a deployment or implicit project replacement. */
+export function previewDemo(state: MakerState, demo: ProjectDesign): MakerState {
+  if (state.aiJobId || !validDesign(demo) || demo.source !== "demo") return state;
+  return {...state, candidate: demo, stage: "design", standalone: false};
 }
 
 export function validDesign(value: unknown): value is ProjectDesign {
@@ -153,10 +167,10 @@ export function restoreMaker(raw: string | null): MakerState {
       aiModel: typeof stored.aiModel === "string" && stored.aiModel.length <= 150 ? stored.aiModel : "",
       aiEffort: ["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(stored.aiEffort) ? stored.aiEffort : "low",
       aiExpectedOutputTokens: Number.isInteger(stored.aiExpectedOutputTokens) && stored.aiExpectedOutputTokens! >= 256 && stored.aiExpectedOutputTokens! <= 128000 ? stored.aiExpectedOutputTokens : null,
-      aiIntent: stored.aiIntent === "ask" ? "ask" : "design",
+      aiIntent: "auto",
       designMode: stored.designMode === "fixed" ? "fixed" : "free",
       aiJobId: typeof stored.aiJobId === "string" && /^[\w-]{1,80}$/.test(stored.aiJobId) ? stored.aiJobId : null,
-      stage: ["design", "blueprint", "guide", "deploy"].includes(stored.stage) && (design || stored.stage === "design" || stored.standalone) ? stored.stage : "design",
+      stage: ["design", "blueprint", "guide", "debug", "deploy"].includes(stored.stage) && (design || stored.stage === "design" || stored.stage === "debug" || stored.standalone) ? stored.stage : "design",
       hardware: {},
       conversation: Array.isArray(stored.conversation) ? stored.conversation.filter(m => m && ["user", "assistant"].includes(m.role) && typeof m.text === "string").slice(-20) : [],
       selected: Array.isArray(stored.selected) ? [...new Set(stored.selected.filter(id => catalog.modules.some(m => m.id === id)))] : base.selected,

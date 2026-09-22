@@ -1,4 +1,5 @@
 import { makerRequest, wireSignature, type MakerState, type ProjectDesign, type ProjectGuideState } from "./maker";
+import type { PiExecutionStatus } from "./piApi";
 
 export interface ComponentTestRun {
   id: string; project_id: string; revision: number; component_id: string; guide_key: string;
@@ -15,6 +16,7 @@ export interface ComponentTestRun {
 export interface ComponentTestStatus {
   connected: boolean; test_busy: boolean; active: ComponentTestRun | null; results: ComponentTestRun[];
   ok?: boolean; error?: string;
+  execution?: PiExecutionStatus;
 }
 export function componentComplete(design: ProjectDesign, session: ProjectGuideState, cid: string) {
   const wires = design.wiring.filter(w => w.componentId === cid);
@@ -52,6 +54,10 @@ export function changedTestBindings(previous: ReturnType<typeof testBindings>, n
 export async function invalidateEditedBindings(bindings: ReturnType<typeof testBindings>) {
   for (const projectId of new Set(bindings.map(b => b.project_id))) {
     const status = await makerRequest<ComponentTestStatus>(`pi/component-tests?project_id=${encodeURIComponent(projectId)}`);
+    const queued = status.execution?.jobs.filter(job => job.kind === "test"
+      && ["queued", "preflight", "awaiting_confirmation", "blocked"].includes(job.state)
+      && bindings.some(b => b.project_id === job.project_id && b.component_id === job.component_id && b.guide_key === job.guide_key)) ?? [];
+    for (const job of queued) await makerRequest(`pi/execution/${job.id}/action`, {action:"cancel"});
     const outdated = status.results.filter(run => !run.invalidated && bindings.some(b => b.project_id === run.project_id
       && b.component_id === run.component_id && b.guide_key === run.guide_key));
     for (const run of outdated) await makerRequest(`pi/component-tests/${run.id}/action`, {action:"invalidate",guide_key:run.guide_key});
@@ -75,6 +81,7 @@ export function missingDependencyMessage(detail: string, phase?: string): [strin
 }
 
 export const testReasons: Record<string, [string, string]> = {
+  executor_restart_required: ["請重新啟動 Board Vision 後端，啟用共用執行佇列後再測試。", "Restart the Board Vision backend to enable the shared execution queue before testing."],
   connection_lost: ["無法取得 Pi 目前狀態。請檢查電源／網路；尚未確認停止前不會啟動第二份測試。", "Pi status is unknown. Check power/network; another test cannot start until stop is confirmed."],
   missing_dependency: ["Pi 測試環境未準備好。請展開環境設定，先完成套件與虛擬環境準備，不必重接線。", "Pi test dependencies are missing. Expand setup instructions; do not rewire yet."],
   spi_missing: ["找不到 SPI0。請在 Pi 的 raspi-config 啟用 SPI，再依提示重新開機。", "SPI0 is missing. Enable SPI in raspi-config and reboot if prompted."],

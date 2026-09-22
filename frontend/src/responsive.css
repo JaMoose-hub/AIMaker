@@ -1,0 +1,270 @@
+/* Shared five-stage workspace layout. Loaded after component styles.
+   Resizing is CSS-only: no remounts, draft resets or hardware actions.
+   Do not apply these rules to the independent glasses/HUD presentation. */
+.app.maker-layout:not(.display-mode-active) {
+  height: 100dvh;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.maker-layout:not(.display-mode-active) .main > .header,
+.maker-layout .main > div:has(> .statusbar) { flex: none; }
+.maker-layout :is(.brand, .brand-text, .runtime-select, .maker-nav, .maker-design-container,
+  .maker-preview, .pi-deploy-panel, .debug-page, .component-test-card) { min-width: 0; }
+.maker-layout :is(.maker-preview, .maker-assistant, .pi-deploy-panel, .component-test-card) {
+  overflow-wrap: anywhere;
+}
+.maker-layout :is(.maker-preview-heading, .maker-assistant-heading, .maker-compose-footer,
+  .pi-panel-heading, .pi-editor-heading, .pi-editor-foot, .pi-console-heading, .pi-queue-job > div) {
+  flex-wrap: wrap;
+}
+.maker-layout:not(.display-mode-active) :is(button, select, textarea, pre, fieldset) { max-width: 100%; }
+.maker-layout :is(.maker-studio, .debug-page, .pi-deploy-panel) button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.maker-layout .pi-deploy-panel pre {
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.maker-layout .pi-deploy-panel > button:not([class]) {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  cursor: pointer;
+}
+.maker-layout .pi-deploy-panel > button:focus-visible { outline: 2px solid var(--accent); }
+.maker-layout:not(.display-mode-active) .calibrate-panel-card {
+  max-height: calc(100% - 24px);
+  margin: 12px;
+  overflow: auto;
+}
+.maker-layout .camera-panel-header { flex-wrap: wrap; }
+.maker-layout .debug-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.maker-layout .debug-heading > div { min-width: 0; }
+.maker-layout .debug-page button { margin: 4px 0; }
+.maker-layout .debug-page section > button + button { margin-inline-start: 8px; }
+.maker-layout .debug-page .test-actions button { margin: 0; }
+.maker-layout .debug-page :is(section, article, details, fieldset) { min-width: 0; }
+
+/* Desktop panes fill the space below the actual toolbar height, rather than
+   assuming it always occupies 165px (it wraps, and translated labels grow). */
+@media (min-width: 961px) and (min-height: 601px) {
+  .maker-layout .maker-studio.maker-resizable {
+    align-items: stretch;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .maker-layout .maker-studio.maker-resizable > :is(.maker-assistant, .maker-preview, .maker-splitter) {
+    position: static;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+  .maker-layout .maker-studio.maker-resizable > .maker-splitter { overflow: hidden; }
+  .maker-layout .maker-blueprint-sidebar > [role="tabpanel"]:not([hidden]) {
+    overflow: visible;
+    flex: none;
+  }
+  .maker-layout .maker-blueprint-sidebar .blueprint-tabs {
+    position: sticky;
+    top: -16px;
+    z-index: 1;
+  }
+}
+@media (min-width: 961px) {
+  .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) > .video-shell {
+    grid-row: 2;
+  }
+  .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d) > .compact-guide {
+    grid-row: 1 / 3;
+  }
+}
+
+/* Keep the guide toggle outside the live camera rectangle; it must never
+   cover a mirror/calibration control. The video/overlay coordinate tree stays intact. */
+.maker-layout:not(.display-mode-active) .video-guide-stage > .guide-visibility-toggle {
+  position: static;
+  transform: none;
+  align-self: flex-start;
+  justify-self: start;
+  grid-column: 1;
+  grid-row: 1;
+  width: fit-content;
+  flex: none;
+}
+.maker-layout:not(.display-mode-active) .video-guide-stage:not(:has(> .compact-guide:not([hidden]))) { gap: 10px; }
+.maker-layout:not(.display-mode-active) .video-guide-stage.maker-2d { overflow: auto; gap: 12px; }
+.maker-layout:not(.display-mode-active) .maker-2d-main { min-height: 360px; padding: 16px; flex: none; }
+.maker-layout:not(.display-mode-active) .maker-2d > .compact-guide { height: auto; max-height: none; flex: none; }
+
+/* Toolbar: keep every stage visible; connection remains next to model controls. */
+.maker-workflow-toolbar .maker-nav { flex-wrap: nowrap; }
+.maker-workflow-toolbar .runtime-select select { width: 100%; }
+.pi-global-label { color: var(--text-faint); }
+.maker-model-popover { left: 0; right: auto; }
+.pi-execution-popover { overflow-wrap: anywhere; }
+.pi-global-error { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1500px) {
+  .maker-workflow-toolbar .maker-nav {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    overflow: visible;
+  }
+  .maker-workflow-toolbar .maker-nav button {
+    min-width: 0;
+    min-height: 44px;
+    white-space: normal;
+  }
+}
+
+/* Tablet / phone and short landscape: let the document scroll. Avoid trapping
+   entire pages in short nested viewports or clipping content with body overflow. */
+@media (max-width: 960px), (max-height: 600px) {
+  body:has(.maker-layout:not(.display-mode-active)) { overflow: auto; }
+  .app.maker-layout:not(.display-mode-active) { height: auto; min-height: 100dvh; }
+  .maker-layout:not(.display-mode-active) .main > :is(.maker-design-container, .maker-deploy-main, .debug-page) {
+    flex: none;
+    overflow: visible;
+  }
+  .maker-layout .maker-studio.maker-resizable > :is(.maker-assistant, .maker-preview) {
+    position: static;
+    height: auto;
+    max-height: none;
+  }
+  .maker-layout .maker-blueprint-sidebar > [role="tabpanel"]:not([hidden]) { overflow: visible; flex: none; }
+  .maker-layout .maker-blueprint-page .maker-circuit { min-height: 0; display: block; }
+  .maker-layout .maker-blueprint-page .maker-circuit > .maker-expand { margin: 0 0 8px auto; }
+  .maker-layout .maker-blueprint-page .maker-circuit > :is(.circuit-module-tabs, .circuit-inspector, .circuit-zoom, .circuit-legend, small, .maker-warning) { margin-top: 8px; }
+  .maker-layout .maker-blueprint-page .maker-circuit > .circuit-zoom > .circuit-viewport {
+    height: clamp(240px, 48dvh, 440px);
+    flex: none;
+  }
+  .maker-layout .maker-assistant .maker-conversation { flex: none; height: clamp(180px, 36dvh, 340px); min-height: 0; }
+  .maker-layout:not(.display-mode-active) .video-guide-stage { flex: none; }
+  .maker-layout:not(.display-mode-active) .video-shell { min-height: 300px; }
+  .maker-layout:not(.display-mode-active) .video-guide-stage > .photo-guide.component-guide.compact-guide {
+    height: auto;
+    max-height: none;
+  }
+  .maker-layout .compact-guide > .guide-panel-body { overflow: visible; max-height: none; flex: none; }
+  .maker-layout :is(.maker-diagram-dialog, .maker-product) { max-height: calc(100dvh - 24px); overflow: auto; }
+}
+@media (max-width: 960px) {
+  .maker-layout .maker-studio.maker-resizable { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .maker-layout .maker-splitter { display: none; }
+  .maker-layout .maker-workflow-toolbar { position: relative; gap: 10px; }
+  .maker-workflow-toolbar > .maker-model-menu { position: static; flex: 1 1 200px; min-width: 0; }
+  .maker-workflow-toolbar > .pi-global-control { position: static; flex: 1 1 220px; width: auto; }
+  .maker-workflow-toolbar .runtime-toolbar { flex: 1 1 100%; margin: 0; }
+  .maker-workflow-toolbar .runtime-select { flex: 1; }
+  .maker-workflow-toolbar .runtime-select select { min-width: 0; }
+  .maker-model-popover, .pi-execution-popover {
+    left: 0;
+    right: auto;
+    top: calc(100% + 8px);
+    width: min(420px, 100%);
+    max-height: min(60dvh, 540px);
+    overscroll-behavior: contain;
+  }
+  .maker-layout .pi-global-connect { flex: 1; width: auto; }
+  .maker-layout .pi-global-row { height: auto; }
+  .maker-layout .pi-global-error { position: static; display: block; white-space: normal; }
+  .maker-layout:not(.display-mode-active) :is(button, summary, .runtime-select select, .maker-model-value) { min-height: 44px; }
+  .maker-layout .maker-nav button span { padding-right: 5px; }
+  .maker-layout:not(.display-mode-active) .video-shell { flex: none; height: clamp(300px, 55vw, 520px); }
+  .maker-layout .status-actions { flex-wrap: wrap; overflow: visible; }
+  .maker-layout .status-actions .camera-auto-tune { flex-wrap: wrap; min-width: 0; flex: 1 1 100%; }
+  .maker-layout .status-actions .camera-auto-message { white-space: normal; overflow-wrap: anywhere; }
+  .maker-layout .pi-row-count { grid-template-columns: repeat(20, minmax(14px, 1fr)); overflow-x: auto; padding: 3px; }
+  .maker-layout .pi-deploy-panel .guide-module-review > strong { font-size: clamp(20px, 4vw, 28px); }
+}
+@media (min-width: 961px) and (max-height: 600px) {
+  .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) {
+    display: flex;
+    flex-direction: column;
+  }
+  .maker-layout:not(.display-mode-active) .video-shell { flex: none; height: 420px; }
+}
+@media (max-width: 600px) {
+  .app.maker-layout:not(.display-mode-active) {
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    gap: 10px;
+  }
+  .maker-layout:not(.display-mode-active) .main { gap: 10px; }
+  .maker-layout .maker-header { gap: 8px; }
+  .maker-layout .brand-subtitle { font-size: 10px; }
+  .maker-layout .maker-save-status { margin-left: 0; text-align: left; }
+  .maker-layout .maker-workflow-toolbar .maker-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+  .maker-layout .maker-nav button { padding: 7px 4px; font-size: 11px; }
+  .maker-layout .maker-workflow-toolbar > :is(.maker-model-menu, .pi-global-control) { flex: 1 1 100%; }
+  .maker-layout .maker-workflow-toolbar .runtime-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+    gap: 8px;
+  }
+  .maker-layout .runtime-select.locale-select { grid-column: 2; grid-row: 1; }
+  .maker-layout .runtime-select select { padding-inline: 7px 20px; }
+  .maker-layout .runtime-model-state { grid-column: 1 / -1; justify-self: start; min-height: 26px; }
+  .maker-layout :is(.maker-preview, .maker-assistant, .debug-page, .pi-deploy-panel) { padding: 12px; }
+  .maker-layout :is(.maker-preview-heading, .blueprint-actions) { width: 100%; }
+  .maker-layout .blueprint-actions > button { flex: 1 1 120px; }
+  .maker-layout .maker-preview-heading > button { width: 100%; }
+  .maker-layout .project-image-concept figcaption { flex-wrap: wrap; }
+  .maker-layout .maker-product { width: calc(100% - 24px); padding: 16px; }
+  .maker-layout .maker-diagram-dialog { width: calc(100% - 24px); padding: 12px; }
+  .maker-layout .debug-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .maker-layout .debug-status-grid article { padding: 12px; }
+  .maker-layout .debug-page section { padding: 12px; }
+  .maker-layout .debug-heading { gap: 8px; }
+  .maker-layout .debug-heading > div { flex-basis: 100%; }
+  .maker-layout .debug-heading > button { flex: 1 1 120px; }
+  .maker-layout .test-actions > button { flex: 1 1 100%; }
+  .maker-layout .guide-panel-header { flex-wrap: wrap; }
+  .maker-layout .guide-pin-pair { gap: 4px; grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr); }
+  .maker-layout .guide-pin-pair strong { font-size: 23px; }
+  .maker-layout .compact-guide .guide-panel-body { padding: 12px; }
+  .maker-layout .component-test-card { padding: 12px; }
+  .maker-layout .component-test-card fieldset { margin-inline: 0; padding: 8px; }
+  .maker-layout .test-code-options { gap: 6px; }
+  .maker-layout .statusbar { padding: 8px; }
+  .maker-layout .status-actions { gap: 8px; }
+  .maker-layout .status-actions > button { flex: 1 1 110px; justify-content: center; }
+  .maker-layout .mirror-controls { top: 8px; right: 8px; left: 8px; justify-content: flex-end; gap: 5px; }
+  .maker-layout .mirror-controls .realtime-toggle {
+    top: 50px;
+    left: 0;
+    right: auto;
+    min-width: 0;
+    width: calc(100% - 96px);
+    max-width: calc(100% - 96px);
+    height: 44px;
+    justify-content: center;
+    white-space: normal;
+    font-size: 10px;
+    line-height: 1.3;
+  }
+  .maker-layout .pin-calibration-controls { top: 58px; right: 8px; }
+  .maker-layout .pin-calibration-toggle { width: 88px; font-size: 10px; line-height: 1.3; }
+  .maker-layout:not(.display-mode-active) .tracking-notice { top: 110px; font-size: 10px; }
+}
+@media (max-width: 380px) {
+  .maker-layout .debug-status-grid { grid-template-columns: minmax(0, 1fr); }
+  .maker-layout .debug-page section > button { display: block; width: 100%; margin-inline: 0; }
+}

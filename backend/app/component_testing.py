@@ -90,7 +90,7 @@ class ComponentTests:
                 self.worker = threading.Thread(target=self._loop, name="pi-component-test", daemon=True)
                 self.worker.start()
 
-    def start(self, context):
+    def validate(self, context):
         cid = context["component_id"]
         if cid not in MODULES or context["catalog_version"] != CATALOG["version"]:
             raise ValueError("catalog_changed")
@@ -99,6 +99,11 @@ class ComponentTests:
             raise ValueError("wiring_changed")
         if context["profile_versions"].get(cid) != profile_versions([cid])[cid]:
             raise ValueError("profile_changed")
+        return expected
+
+    def start(self, context):
+        cid = context["component_id"]
+        expected = self.validate(context)
         with self.lock, self.pi._state_lock:
             if self.closed.is_set():
                 return dict(ok=False, error="connection_lost", **self.snapshot(context["project_id"]))
@@ -212,6 +217,7 @@ class ComponentTests:
         if run.get("pending") == "stop" or run["invalidated"]:
             self._finish(run, "inconclusive", "wiring_changed" if run["invalidated"] else "cancelled")
             return
+        self.pi.assert_no_component_service()
         directory, python = self._paths(run)
         self.pi._run(f"mkdir -p {shlex.quote(directory)}")
         runtime = Path(__file__).parent / "runtime"

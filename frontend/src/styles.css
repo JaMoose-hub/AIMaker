@@ -537,8 +537,6 @@ h3 {
 }
 
 .filter-chip:focus-visible,
-.query-send:focus-visible,
-.query-clear:focus-visible,
 .lang-toggle:focus-visible,
 .calibrate-trigger:focus-visible,
 .calibrate-btn:focus-visible,
@@ -598,7 +596,6 @@ h3 {
 }
 
 .app.display-mode-active .header,
-.app.display-mode-active .querybox,
 .app.display-mode-active .statusbar,
 .app.display-mode-active > .side,
 .app.display-mode-active .guide-visibility-toggle,
@@ -1823,111 +1820,6 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
 }
 
 /* ------------------------------------------------------------------ */
-/* Query box                                                           */
-/* ------------------------------------------------------------------ */
-
-.querybox {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.query-row {
-  display: flex;
-  gap: 8px;
-}
-
-.query-input {
-  flex: 1;
-  min-width: 0;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-elev);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 13.5px;
-  outline: none;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.query-input::placeholder {
-  color: var(--text-faint);
-}
-
-.query-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.query-send {
-  padding: 0 20px;
-  border: none;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #0b0e14;
-  font-size: 13px;
-  font-weight: 650;
-  cursor: pointer;
-  transition:
-    filter 0.15s ease,
-    opacity 0.15s ease;
-}
-
-.query-send:hover:not(:disabled) {
-  filter: brightness(1.12);
-}
-
-.query-send:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.query-result {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  background: var(--bg-elev);
-  font-size: 13px;
-  animation: fade-in 0.15s ease;
-}
-
-.query-result.nomatch {
-  border-left-color: var(--warn);
-  color: var(--text-dim);
-}
-
-.query-answer {
-  flex: 1;
-  min-width: 0;
-}
-
-.query-clear {
-  flex: none;
-  padding: 2px 11px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 12px;
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.query-clear:hover {
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-
-/* ------------------------------------------------------------------ */
 /* Status bar                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -1942,8 +1834,8 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
   display: grid;
   min-width: 0;
   align-items: center;
-  gap: 8px 14px;
-  padding: 8px 14px;
+  gap: 4px 10px;
+  padding: 5px 10px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-panel);
@@ -1951,32 +1843,49 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
   color: var(--text-dim);
 }
 
-/* Telemetry must not resize the video whenever digits or tracking state change.
-   Fixed slots remain mounted during loss of tracking; narrow views scroll them. */
+/* Slots stay mounted and keep their widths as live values change. Only a
+   container resize wraps them onto another row; the metrics never scroll. */
 .status-metrics {
-  display: grid;
-  grid-template-columns: 120px 110px 190px 110px 135px 235px 190px 230px 260px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 2px 10px;
   min-width: 0;
-  overflow-x: auto;
-  height: 38px;
+  overflow: visible;
   font-variant-numeric: tabular-nums;
 }
-.status-metrics > * { min-width: 0; }
+.status-metrics > * {
+  flex: 0 0 var(--metric-width);
+  min-width: 0;
+  max-width: 100%;
+  min-height: 28px;
+  line-height: 14px;
+}
+.status-metrics > :nth-child(1) { --metric-width: 120px; }
+.status-metrics > :nth-child(2) { --metric-width: 110px; }
+.status-metrics > :nth-child(3) { --metric-width: 190px; }
+.status-metrics > :nth-child(4) { --metric-width: 90px; }
+.status-metrics > :nth-child(5) { --metric-width: 115px; }
+.status-metrics > :nth-child(6) { --metric-width: 220px; }
+.status-metrics > :nth-child(7) { --metric-width: 165px; }
+.status-metrics > :nth-child(8) { --metric-width: 215px; }
+.status-metrics > :nth-child(9) { --metric-width: 230px; }
+.status-metrics > :nth-last-child(-n + 2) { white-space: normal; overflow-wrap: anywhere; }
 .status-metrics > .pill { justify-content: center; }
 .status-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  gap: 4px 10px;
   min-width: 0;
-  overflow-x: auto;
-  min-height: 38px;
+  overflow: visible;
+  min-height: 30px;
 }
 .status-actions > * { flex: 0 0 auto; }
 .status-actions .calibrate-trigger { margin-left: 0; }
 .status-actions .camera-auto-tune { flex-wrap: nowrap; }
 .status-actions .camera-auto-message { white-space: nowrap; max-width: none; }
+.status-actions .camera-auto-trigger { padding-block: 4px; }
 .mirror-controls .realtime-toggle { min-width: 158px; font-variant-numeric: tabular-nums; }
 
 .status-item {
@@ -2586,6 +2495,36 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
   letter-spacing: 0.02em;
 }
 
+.camera-mode-panel {
+  padding: 14px;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(39, 125, 113, 0.1);
+}
+.camera-mode-heading, .camera-mode-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.camera-mode-heading { justify-content: space-between; margin-bottom: 12px; }
+.camera-mode-heading span, .camera-mode-panel p { color: var(--text-dim); font-size: 12px; }
+.camera-mode-panel p { margin: 10px 0 0; line-height: 1.5; }
+.camera-mode-controls select {
+  flex: 1 1 210px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 9px 10px;
+  color: var(--text);
+  background: #161d28;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 14px;
+}
+.camera-mode-controls button { flex: 0 0 auto; }
+.camera-mode-actual { min-height: 18px; font-variant-numeric: tabular-nums; }
+
 .camera-close-btn {
   border: none;
   background: transparent;
@@ -2715,6 +2654,10 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
   justify-content: space-between;
   gap: 8px;
 }
+
+.camera-refresh-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:16px; }
+.camera-refresh-row p { flex:1 1 220px; color:var(--text-dim); font-size:13px; margin:0; line-height:1.6; }
+.camera-device-name { padding:12px; margin:0; font-size:14px; overflow-wrap:anywhere; }
 
 .camera-resolution {
   color: var(--text-faint);

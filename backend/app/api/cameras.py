@@ -31,13 +31,14 @@ import base64
 import logging
 import sys
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.api.errors import expected_error
 from app.api.camera_tuning import camera_mutation_guard
 from app.capture.sources import frame_has_signal, read_signal_frame
+from app.capture import devices
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ def _eye_indices(capture_api: str) -> set[int]:
 
 class SelectRequest(BaseModel):
     index: int
+    device_id: str | None = None
 
 
 def _fail(error: str) -> dict:
@@ -184,6 +186,26 @@ async def get_cameras(request: Request) -> dict:
     if config.camera.source != "device":
         return {"cameras": []}
 
+    if devices.supports_inventory(state):
+        try:
+            discovered = await asyncio.to_thread(devices.inventory, config.camera.ffmpeg_path)
+        except Exception:
+            raise HTTPException(503, detail='camera_inventory_unavailable') from None
+        current_device = devices.current_device(state.source, discovered)
+        slot = devices.fresh_slot(state)
+        entries = []
+        for device in discovered:
+            current = device == current_device
+            has_frame = current and slot is not None
+            entry = dict(index=device.index, device_id=device.id, name=device.name,
+                         available=bool(has_frame), selectable=device.selectable,
+                         is_current=current, signal_status='live' if has_frame else 'not_checked')
+            if has_frame:
+                h, w = slot.frame.shape[:2]
+                entry.update(width=int(w), height=int(h), thumbnail_b64=_encode_thumbnail(slot.frame))
+            entries.append(entry)
+        return {'cameras': entries, 'refreshable': True}
+
     current = _current_index(state)
     width, height = config.camera.width, config.camera.height
     max_index = config.camera.max_probe_index
@@ -237,18 +259,35 @@ async def get_cameras(request: Request) -> dict:
 
 
 @router.post("/cameras/select", dependencies=[Depends(camera_mutation_guard)])
-async def post_cameras_select(body: SelectRequest, request: Request) -> JSONResponse:
+def post_cameras_select(body: SelectRequest, request: Request) -> JSONResponse:
     state = request.app.state
     config = state.config
 
     if config.camera.source != "device":
         return JSONResponse(status_code=200, content=_fail("not_applicable"))
 
+    if devices.supports_inventory(state):
+        try:
+            discovered = devices.inventory(config.camera.ffmpeg_path)
+        except Exception:
+            return JSONResponse(content=_fail('camera_inventory_unavailable'))
+        # A bare index from an old page cannot select a different USB device
+        # after unplug/reorder. Refresh the page/list to obtain its identity.
+        target = next((d for d in discovered if d.id == body.device_id), None)
+        if target is None:
+            return JSONResponse(content=_fail('camera_changed'))
+        if not target.selectable:
+            return JSONResponse(content=_fail('not_applicable'))
+        if target == devices.current_device(state.source, discovered) and devices.fresh_slot(state) is not None:
+            return JSONResponse(content=_fail('same_as_current'))
+        result = devices.switch_device(state, target)
+        return JSONResponse(content=result if result['ok'] else {**_fail(result['error']), **result})
+
     max_index = config.camera.max_probe_index
     if body.index < 0 or body.index > max_index:
         return JSONResponse(status_code=200, content=_fail("invalid_index"))
 
-    if body.index in await asyncio.to_thread(_eye_indices, config.camera.capture_api):
+    if body.index in _eye_indices(config.camera.capture_api):
         return JSONResponse(status_code=200, content=_fail("not_applicable"))
 
     current = _current_index(state)
@@ -260,8 +299,7 @@ async def post_cameras_select(body: SelectRequest, request: Request) -> JSONResp
     # a frame is the only reliable signal on Windows/OpenCV (see
     # DeviceCameraSource.switch_to docstring) - a separate pre-probe here
     # would just open the same handle twice for no added certainty.
-    loop = asyncio.get_running_loop()
-    ok, width, height = await loop.run_in_executor(None, state.source.switch_to, body.index)
+    ok, width, height = state.source.switch_to(body.index)
     if not ok:
         return JSONResponse(status_code=200, content=_fail("open_failed"))
 

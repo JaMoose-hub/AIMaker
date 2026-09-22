@@ -36,6 +36,12 @@ export function designFor(ids = ['hc-sr04']) {
     code: '', tests: [], features: [], instructions: [], unresolved: [], bom: []};
 }
 
+export async function renderTestCard(props) {
+  const textUrl=dataUrl(`export const useMakerText = () => (zh,en) => zh;`);
+  const {ComponentTestCard}=await import(compile('components/ComponentTestCard.tsx', {'../lib/useMaker':textUrl,'../lib/componentTests':testsUrl}));
+  return renderToStaticMarkup(createElement(ComponentTestCard,{onViewWiring(){},...props}));
+}
+
 export async function renderGuide({design = designFor(), session = maker.initialMaker().guide,
   locale = 'zh-TW', check = {}, poseReady = true, cloudAI = {}, visible = true, tests = {}, capture = null, pinsById = new Map(board.pins.map(p => [p.id, p]))} = {}) {
   const textUrl = dataUrl(`export const useMakerText = () => (zh, en) => ${JSON.stringify(locale)} === 'zh-TW' ? zh : en;`);

@@ -1,6 +1,6 @@
 /* Maker workflow extends the existing dark UI. Camera geometry is unchanged. */
 .maker-layout .main { min-height: 0; }
-.maker-stage-design, .maker-stage-blueprint, .maker-stage-deploy, .maker-wiring-full-width { grid-template-columns: minmax(0, 1fr) !important; }
+.maker-stage-design, .maker-stage-blueprint, .maker-stage-debug, .maker-stage-deploy, .maker-wiring-full-width { grid-template-columns: minmax(0, 1fr) !important; }
 .maker-stage-design > .side, .maker-stage-blueprint > .side { display: none; }
 .workspace-toolbar { margin-left: auto; min-width: 0; }
 .maker-header { gap: 12px; }
@@ -9,6 +9,22 @@
 .maker-workflow-toolbar .maker-nav { flex: 1 1 340px; gap: 6px; padding: 0; }
 .maker-workflow-toolbar .maker-nav button { padding: 10px 12px; font-size: 12px; white-space: nowrap; }
 .maker-workflow-toolbar .runtime-toolbar { order: 0; width: auto; max-width: 100%; flex-wrap: wrap; margin-left: auto; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.pi-global-control { position: relative; flex: 0 0 220px; width: 220px; min-width: 0; align-self: center; }
+.pi-global-label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.pi-global-row { display: flex; gap: 6px; height: 34px; align-items: stretch; }
+.pi-global-connect, .pi-execution-menu > summary { box-sizing: border-box; height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); color: var(--text); font-size: 12px; white-space: nowrap; cursor: pointer; padding: 7px 9px; }
+.pi-global-connect { width: 98px; flex-shrink: 0; }
+.pi-global-connect.connected { border-color: #3b9278; }
+.pi-global-connect.connected > span { color: #4ad8b3; }
+.pi-execution-menu { flex: 1; min-width: 0; }
+.pi-execution-menu > summary { list-style: none; text-align: center; }
+.pi-execution-menu > summary > span { display: inline-block; min-width: 2ch; font-variant-numeric: tabular-nums; }
+.pi-execution-popover { position: absolute; z-index: 70; top: calc(100% + 8px); right: 0; width: min(380px, calc(100vw - 32px)); max-height: 65vh; overflow: auto; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: #111c24; box-shadow: 0 16px 40px #0009; font-size: 13px; }
+.pi-queue-job { padding: 12px 0; border-top: 1px solid var(--border); }
+.pi-queue-job > div { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.pi-queue-job > p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.pi-queue-job > button { margin: 3px; padding: 8px; }
+.pi-global-error { position: absolute; top: 100%; left: 0; font-size: 10px; color: #ffb56b; white-space: nowrap; }
 .maker-model-menu { position: relative; flex: 0 1 200px; min-width: 180px; z-index: 250; }
 .maker-model-menu > summary { list-style: none; display: grid; gap: 2px; cursor: pointer; }
 .maker-model-menu > summary::-webkit-details-marker { display: none; }
@@ -282,3 +298,10 @@
 .component-test-card pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; font-size:11px; }
 .component-test-card details > summary { cursor:pointer; color:#a4bdc9; }
 .component-test-card button:focus-visible { outline:2px solid #79bcdb; outline-offset:3px; }
+.maker-chat-tools { display:flex; flex-wrap:wrap; gap:8px; }
+.maker-chat-tools button,.maker-chat-confirm button { padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elev); color:var(--text); cursor:pointer; font:inherit; font-size:12px; }
+.maker-chat-tools button:disabled,.maker-chat-confirm button:disabled { opacity:.45; cursor:default; }
+.maker-chat-tools button:focus-visible,.maker-chat-confirm button:focus-visible { outline:2px solid #74cfb8; outline-offset:3px; }
+.maker-chat-confirm { padding:12px; border:1px solid #63766c; border-radius:10px; background:#172b27; }
+.maker-chat-confirm p { margin:0 0 10px; line-height:1.6; font-size:13px; }
+.maker-chat-confirm button { margin:0 8px 4px 0; }

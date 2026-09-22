@@ -29,7 +29,7 @@ export function useAIOptions(state: MakerState, locale: string, loggedIn: boolea
 
   const selectedModel = options?.models.find(m => m.id === (state.aiModel || options.default_model));
   const selectionValid = Boolean(selectedModel?.efforts.includes(state.aiEffort));
-  const requestKey = JSON.stringify(designRequest(state, locale, selectedModel?.id ?? (state.aiModel || null)));
+  const requestKey = JSON.stringify(designRequest({...state, aiIntent: "auto"}, locale, selectedModel?.id ?? (state.aiModel || null)));
   const canEstimate = loggedIn && selectionValid && Boolean(state.prompt.trim()) && state.selected.length > 0;
   useEffect(() => {
     if (!canEstimate) return;

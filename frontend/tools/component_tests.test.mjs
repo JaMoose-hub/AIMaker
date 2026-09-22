@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {componentTests as logic, designFor, maker, renderGuide} from './project_guide_fixture.mjs';
+import {componentTests as logic, designFor, maker, renderGuide, renderTestCard} from './project_guide_fixture.mjs';
 
 function complete(design) {
   let session = maker.startProjectGuide(maker.emptyGuide());
@@ -16,6 +16,99 @@ function runFor(design, session, overrides={}) {
     options:['1234','2468','4567','7890'],...overrides};
 }
 const state = run => ({status:{connected:true,test_busy:run.reserved,active:run.reserved?run:null,results:[run]}});
+
+test('split test controls never duplicate result facts or hide the stop action',async()=>{
+  const design=designFor(),session=complete(design);
+  const tests=state(runFor(design,session,{reserved:true,outcome:'running',phase:'sampling_near',samples:{near:{count:8,median_cm:12.3}}}));
+  const left=await renderTestCard({design,session,tests,view:'controls'});
+  const right=await renderTestCard({design,session,tests,view:'results'});
+  assert.match(left,/停止本次測試/);
+  assert.doesNotMatch(left,/test-facts|最後回報時間|診斷與環境設定/);
+  assert.match(right,/12.3 cm/);
+  assert.match(right,/診斷與環境設定/);
+  assert.doesNotMatch(right,/停止本次測試|準備好了，取樣|test-actions/);
+});
+
+test('right pane never presents another components live samples as the selected result',async()=>{
+  const design=designFor(['hc-sr04','mrd-tf240-8p-cs']),finished=complete(design),session={...finished,componentIndex:1};
+  const tests=state(runFor(design,finished,{reserved:true,outcome:'running',samples:{near:{count:99,median_cm:88.8}}}));
+  const right=await renderTestCard({design,session,tests,view:'results'});
+  assert.match(right,/MRD-TFT240/);
+  assert.doesNotMatch(right,/88.8|99 筆/);
+  assert.match(right,/未測試/);
+  const left=await renderTestCard({design,session,tests,view:'controls'});
+  assert.match(left,/停止本次測試/);
+  tests.status.results.push(runFor(design,session,{component_id:'mrd-tf240-8p-cs',outcome:'passed',invalidated:true}));
+  const invalid=await renderTestCard({design,session,tests,view:'results'});
+  assert.match(invalid,/無法判定/);
+  assert.doesNotMatch(invalid,/功能通過/);
+});
+
+test('stopped-project history does not add a banner to the wiring guide or mutate records',async()=>{
+  const design=designFor(),finished=complete(design);
+  const tests=state(runFor(design,finished,{program_stopped:true}));
+  const before=structuredClone(tests);
+  for(const locale of ['zh-TW','en']) {
+    for(const session of [maker.emptyGuide(),maker.startProjectGuide(maker.emptyGuide()),finished]) {
+      const html=await renderGuide({design,session,locale,tests});
+      assert.ok(!html.includes('原作品已停止'));
+      assert.ok(!html.includes('Original project stopped'));
+      assert.ok(html.includes('guide-navigation'));
+    }
+  }
+  assert.deepEqual(tests,before);
+});
+
+test('unconfirmed stop requests still retain the reconnect warning',async()=>{
+  const design=designFor(),session=maker.emptyGuide();
+  const tests=state(runFor(design,session,{program_stop_requested:true,program_stopped:false}));
+  const html=await renderGuide({design,session,tests});
+  assert.ok(html.includes('狀態待確認；請重新連線核對'));
+});
+
+test('saved results stay hidden before wiring, during partial wiring and in paused overview',async()=>{
+  for(const cid of ['hc-sr04','mrd-tf240-8p-cs']) {
+    const design=designFor([cid]),finished=complete(design);
+    for(const outcome of ['passed','failed','inconclusive']) {
+      const run=runFor(design,finished,{outcome,invalidated:true});
+      const tests=state(run),before=structuredClone(tests);
+      const started=maker.startProjectGuide(maker.emptyGuide());
+      const partial=maker.confirmProjectWire(design,started);
+      for(const session of [maker.emptyGuide(),{...maker.emptyGuide(),restored:true},
+        maker.restartProjectGuide(finished),started,partial,{...partial,phase:'review'}]) {
+        const html=await renderGuide({design,session,tests});
+        assert.ok(!html.includes('component-test-card'),`${cid}: ${outcome}/${session.phase}`);
+        assert.ok(!html.includes('最後回報')&&!html.includes('上次測試紀錄'));
+        if(session.phase==='prepare') assert.ok(html.includes('開始接線 →'));
+      }
+      assert.deepEqual(tests,before,'hiding UI must not delete historical test state');
+      assert.ok((await renderGuide({design,session:finished,tests})).includes('component-test-card'));
+    }
+  }
+});
+
+test('a live or disconnected test retains stop controls even before wiring or after restart',async()=>{
+  const design=designFor(['hc-sr04','mrd-tf240-8p-cs']),finished=complete(design);
+  for(const overrides of [{}, {reason:'connection_lost'}, {project_id:'other',component_id:'mrd-tf240-8p-cs'}]) {
+    const tests=state(runFor(design,finished,{reserved:true,outcome:'running',...overrides}));
+    for(const session of [maker.emptyGuide(),maker.restartProjectGuide(finished)]) {
+      const html=await renderGuide({design,session,tests});
+      assert.ok(html.includes('component-test-card') && html.includes('停止本次測試'));
+      assert.ok(!html.includes('>重新測試 HC-SR04+') && !html.includes('>測試 HC-SR04+'));
+    }
+  }
+});
+
+test('queued preflight failure replaces old pass and names missing driver',async()=>{
+  const design=designFor(['mrd-tf240-8p-cs']),session=complete(design);
+  const old=runFor(design,session,{outcome:'passed'}), tests=state(old);
+  tests.status.execution={jobs:[{id:'queued-failure',kind:'test',project_id:design.id,component_id:old.component_id,
+    guide_key:old.guide_key,created_at:2000,state:'failed',reason:'missing_dependency',error:"ModuleNotFoundError: No module named 'luma'"}]};
+  const html=await renderGuide({design,session,tests});
+  assert.ok(html.includes('無法判定') && html.includes('luma.lcd 2.13.0'));
+  assert.ok(html.includes('本次未能啟動測試'));
+  assert.ok(!html.includes('class="test-outcome passed"'));
+});
 
 test('each module requires every real manual confirmation, not review phase or camera',async()=>{
   for(const cid of ['hc-sr04','mrd-tf240-8p-cs']) {
@@ -174,6 +267,58 @@ test('heartbeat loss and foreign active test retain stop control without retest'
     assert.ok(html.includes('停止本次測試'));
     assert.ok(!html.includes('>重新測試 HC-SR04+'));
   }
+});
+
+test('finished records never display an accumulating heartbeat age and retain measurements',async()=>{
+  const design=designFor(),session=complete(design);
+  const realNow=Date.now;
+  try {
+    for(const outcome of ['passed','failed','inconclusive']) {
+      const run=runFor(design,session,{outcome,samples:{near:{count:76,median_cm:9},far:{count:57,median_cm:25.2}}});
+      const tests=state(run),before=structuredClone(tests);
+      for(const locale of ['zh-TW','en']) {
+        Date.now=()=>2000000;
+        const first=await renderGuide({design,session,locale,tests});
+        Date.now=()=>90000000;
+        const later=await renderGuide({design,session,locale,tests});
+        assert.equal(later,first,'finished record must not change as wall time advances');
+        assert.ok(!first.includes('最後回報')&&!first.includes('Last report time')&&!first.includes('Last heartbeat'));
+        assert.ok(first.includes('76')&&first.includes('57')&&first.includes('25.2'));
+        assert.ok(first.includes(locale==='zh-TW'?'上次測試紀錄':'Last test record'));
+      }
+      assert.deepEqual(tests,before);
+    }
+  } finally { Date.now=realNow; }
+});
+
+test('active tests show a fixed report timestamp, including stalled and disconnected tests',async()=>{
+  const design=designFor(),session=complete(design),realNow=Date.now;
+  try {
+    for(const reason of [null,'no_progress','connection_lost']) {
+      const run=runFor(design,session,{reserved:true,outcome:'running',phase:'sampling_near',reason});
+      const tests=state(run);
+      for(const locale of ['zh-TW','en']) {
+        Date.now=()=>2000000;
+        const first=await renderGuide({design,session,locale,tests});
+        Date.now=()=>90000000;
+        const later=await renderGuide({design,session,locale,tests});
+        assert.equal(later,first,'heartbeat display must not be an elapsed counter');
+        assert.ok(first.includes(new Date(run.heartbeat_at*1000).toLocaleString()));
+        assert.ok(first.includes(locale==='zh-TW'?'最後回報時間':'Last report time'));
+        assert.ok(first.includes(locale==='zh-TW'?'停止本次測試':'Stop this test'));
+      }
+    }
+  } finally { Date.now=realNow; }
+});
+
+test('new tests wait for their first report instead of reusing an older test timestamp',async()=>{
+  const design=designFor(),session=complete(design);
+  const run=runFor(design,session,{id:'new-run',reserved:true,outcome:'running',phase:'preflight',heartbeat_at:null});
+  const tests=state(run);
+  tests.status.results.unshift(runFor(design,session));
+  const html=await renderGuide({design,session,tests});
+  assert.ok(html.includes('等待首次回報'));
+  assert.ok(!html.includes(new Date(1000000).toLocaleString()));
 });
 
 test('saved pass is labelled history and changed wiring is not passed',async()=>{

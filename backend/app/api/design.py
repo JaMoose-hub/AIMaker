@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from app.codex_bridge import CodexBridge
-from app.designs import CATALOG, AssistantReply, DesignProposal, GenerateRequest, compile_design, demo_design, proposal_schema
+from app.designs import CATALOG, AssistantReply, ConversationReply, DesignProposal, GenerateRequest, compile_design, demo_design, proposal_schema
 from app.design_prompt import build_design_prompt
 from app.ai_costs import estimate_cost, resolve_selection
 from app.project_images import ProjectImageStore, build_image_prompt
@@ -36,7 +36,7 @@ class DesignService:
             self.jobs[job_id] = {"id": job_id, "status": "generating", "phase": "design", "design": None, "error": None,
                                  "model": body.model, "effort": body.effort, "estimate": estimate,
                                  "design_mode": body.design_mode,
-                                 "persisted": body.generate_image and body.intent == "design"}
+                                 "persisted": body.generate_image and body.intent in {"design", "auto"}}
             try:
                 if self.jobs[job_id]["persisted"]:
                     self.images.save_job(self.jobs[job_id])
@@ -53,6 +53,7 @@ class DesignService:
             model, effort = resolve_selection(self.bridge.models(), body.model, body.effort)
             result = estimate_cost(build_design_prompt(body), proposal_schema(body.intent), model, effort, body.expected_output_tokens)
             result["image_generation"] = {"requested": body.generate_image and body.intent == "design",
+                                          "conditional": body.generate_image and body.intent == "auto",
                                           "included_in_estimate": False, "billing_mode": "chatgpt",
                                           "estimated_cost": None}
             return result
@@ -65,6 +66,21 @@ class DesignService:
         try:
             prompt = build_design_prompt(body)
             raw = self.bridge.generate(prompt, proposal_schema(body.intent), model=body.model, effort=body.effort)
+            if body.intent == "auto":
+                reply = ConversationReply.model_validate(raw)
+                with self.lock:
+                    self.jobs[job_id]["resolved_action"] = reply.action
+                if reply.action == "answer":
+                    with self.lock:
+                        self.jobs[job_id].update(status="completed", answer=reply.answer)
+                        if self.jobs[job_id].get("persisted"):
+                            self.images.save_job(self.jobs[job_id])
+                        self.busy = False
+                    return
+                body = body.model_copy(update={"intent": "design", "design_mode": "free" if reply.action == "redesign" else "fixed"})
+                raw = reply.proposal.model_dump()
+                with self.lock:
+                    self.jobs[job_id].update(design_mode=body.design_mode, explanation=reply.answer)
             if body.intent == "ask":
                 answer = AssistantReply.model_validate(raw).answer
                 with self.lock:

@@ -63,7 +63,10 @@ export function useComponentTests(design: ProjectDesign, session: ProjectGuideSt
         return send(`pi/component-tests/${run.id}/action`, { action: "invalidate", guide_key: "" });
       return Promise.resolve();
     },
-    start: (cid: string) => send("pi/component-tests", componentTestRequest(design, session, cid)),
+    start: (cid: string) => {
+      if (!status.execution) { setError("executor_restart_required"); return Promise.resolve(); }
+      return send("pi/component-tests", {...componentTestRequest(design, session, cid), request_id:crypto.randomUUID()});
+    },
     action: (run: ComponentTestRun, action: string, extra: Record<string, unknown> = {}) => send(`pi/component-tests/${run.id}/action`,
       { action, guide_key: componentTestKey(design, session, run.component_id), ...extra }),
   };

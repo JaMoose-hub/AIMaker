@@ -624,6 +624,30 @@ class FfmpegMjpegCameraSource:
         self._live_control_overrides = control_store.load(self.control_identity) if self._native_uvc_controls else {}
 
     @property
+    def device_name(self) -> str:
+        return self._device_name
+
+    @property
+    def ffmpeg_path(self) -> str:
+        return self._ffmpeg_path
+
+    @property
+    def capture_mode(self) -> dict:
+        return dict(width=self._width, height=self._height, fps=self._fps)
+
+    def configure_mode(self, *, width: int, height: int, fps: float) -> None:
+        """Change transport mode only, after CaptureService has fully stopped."""
+        from . import control_store
+        with self._lifecycle_lock:
+            if not self._closed or self._process is not None:
+                raise RuntimeError('Stop capture before changing resolution')
+            if width <= 0 or height <= 0 or not 0 < fps <= 120:
+                raise ValueError('Invalid camera mode')
+            self._width, self._height, self._fps = int(width), int(height), float(fps)
+            self.control_identity = control_store.identity(self._device_name, width, height, fps)
+            # Retain current controls; never import another camera/mode's settings.
+
+    @property
     def current_index(self) -> int:
         return self._index
 
@@ -957,6 +981,21 @@ class FfmpegMjpegCameraSource:
     @property
     def supports_live_controls(self) -> bool:
         return self._native_uvc_controls
+
+    def discover_live_controls(self) -> bool:
+        """Read capabilities for this device without applying/loading settings.
+
+        Called once after an explicit camera switch, not by the status poll.
+        A failed property query must not take down a working video stream.
+        """
+        from .windows_uvc import read_controls, supports_tuning
+        with self._lifecycle_lock:
+            try:
+                self._native_uvc_controls = supports_tuning(read_controls(self._device_name))
+            except Exception:
+                self._native_uvc_controls = False
+                log.warning('Camera control discovery failed; stream left running', exc_info=True)
+            return self._native_uvc_controls
 
     def read_live_controls(self) -> dict:
         from .windows_uvc import read_controls

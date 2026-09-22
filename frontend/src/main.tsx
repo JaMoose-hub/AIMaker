@@ -2,7 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { LocaleProvider } from "./lib/i18n";
+import { PiConnectionProvider } from "./lib/PiConnection";
 import "./styles.css";
+import "./debug.css";
+import "./responsive.css";
 import { migrateStoredMaker } from "./lib/makerMigration";
 
 const root = document.getElementById("root")!;
@@ -23,7 +26,7 @@ async function start() {
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <LocaleProvider>
-      <App />
+      <PiConnectionProvider><App /></PiConnectionProvider>
     </LocaleProvider>
   </React.StrictMode>,
 );

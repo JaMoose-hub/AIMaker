@@ -83,7 +83,7 @@ class ConversationMessage(BaseModel):
 
 
 class WorkflowContext(BaseModel):
-    stage: Literal["design", "blueprint", "guide", "deploy"] = "design"
+    stage: Literal["design", "blueprint", "guide", "debug", "deploy"] = "design"
     active_wire: str | None = Field(default=None, max_length=150)
     manual_confirmations: int = Field(default=0, ge=0, le=100)
     code_draft: str = Field(default="", max_length=16000)
@@ -94,6 +94,20 @@ class AssistantReply(BaseModel):
     answer: str = Field(min_length=1, max_length=4000)
 
 
+class ConversationReply(BaseModel):
+    """One conversation, with explicit non-executing proposal boundaries."""
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["answer", "revise", "redesign"]
+    answer: str = Field(min_length=1, max_length=4000)
+    proposal: DesignProposal | None
+
+    @model_validator(mode="after")
+    def consistent_action(self):
+        if (self.action == "answer") != (self.proposal is None):
+            raise ValueError("Answers must not include proposals; design actions require a proposal")
+        return self
+
+
 class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     component_ids: list[ComponentId] = Field(min_length=1, max_length=2)
@@ -102,7 +116,7 @@ class GenerateRequest(BaseModel):
     model: str | None = Field(default=None, min_length=1, max_length=150)
     effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     expected_output_tokens: int | None = Field(default=None, ge=256, le=128000)
-    intent: Literal["design", "ask"] = "design"
+    intent: Literal["design", "ask", "auto"] = "design"
     design_mode: Literal["fixed", "free"] = "free"
     conversation: list[ConversationMessage] = Field(default_factory=list, max_length=20)
     workflow: WorkflowContext = Field(default_factory=WorkflowContext)
@@ -110,7 +124,7 @@ class GenerateRequest(BaseModel):
 
 
 def proposal_schema(intent="design"):
-    schema = (AssistantReply if intent == "ask" else DesignProposal).model_json_schema()
+    schema = (ConversationReply if intent == "auto" else AssistantReply if intent == "ask" else DesignProposal).model_json_schema()
     def strict(node):
         if isinstance(node, dict):
             node.pop("default", None)

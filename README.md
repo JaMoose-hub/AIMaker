@@ -12,6 +12,12 @@
 HC-SR04+ 採近遠兩段新回波；MRD-TFT240 採 RGB 與當次測試碼的人工目視確認。
 測試可略過但不記錄成通過，原作品停止前須確認且不會自動恢復。
 使用方式、環境準備與未完成的現場驗收見 [零件功能測試](docs/component-functional-tests.md)。
+Pi 連線位於頂部；零件測試與作品部署採[共用執行佇列](docs/pi-execution-queue.md)，先確認停止目前程式，再依序交接，一次只執行一個。
+
+工作流程現為 **01 設計 → 02 Blueprint → 03 Pin 接線引導 → 04 測試與除錯 → 05 部署與執行**。
+03 保留零件小測試；04 提供唯讀診斷、定向重測、確認式 Agent 邏輯修復／草稿還原，以及獨立的 60 秒試跑。
+不自動停止作品、安裝套件或呼叫雲端；所有硬體操作共用上述佇列。
+使用方式、隔離驗證與待做的實體驗收見 [測試與除錯](docs/test-debug-stage.md)。
 
 ## 從 GitHub 下載後首次啟動
 
@@ -57,8 +63,10 @@ Pi 5＋HC-SR04＋TFT 已加入可切換的 [即時追蹤試版](docs/realtime-tr
 再沿用原本的藍色板框及 GPIO／Pin 投影。模型框只限定搜尋範圍，不直接生成腳位；
 已撤掉額外的綠色本體框。固定接線擺位的實測與限制見[9/13 工作單](docs/exhibition-session-2026-09-13.md)。
 
-Pi 5 現在提供 **AI 作品工作台：生成作品組裝圖片 → Blueprint → 原有鏡頭 Pin 引導／零件功能測試 → 部署與測試**。Blueprint 專注接線圖、材料導購與製作步驟；作品接線引導使用全寬鏡頭，不放對話側欄，每個零件接完後可執行功能測試。需要 AI 修改時返回設計頁，保留原有 AI 設計功能。電子模組固定；可加入輪子、銅柱、壓克力板等被動配件，圖片與改圖沿用 Codex 管理的 ChatGPT 登入。
+Pi 5 現在提供 **AI 作品工作台：生成作品組裝圖片 → Blueprint → 鏡頭 Pin 引導／零件功能測試 → 測試與除錯 → 部署與執行**。Blueprint 專注接線圖、材料導購與製作步驟；作品接線引導使用全寬鏡頭，不放對話側欄，每個零件接完後可執行功能測試。需要 AI 修改設計時返回設計頁，程式問題則到 04，保留原有 AI 設計功能。電子模組固定；可加入輪子、銅柱、壓克力板等被動配件，圖片與改圖沿用 Codex 管理的 ChatGPT 登入。
 使用方式、Codex 登入、支援邊界與驗收紀錄見 [AI Maker 工作台](docs/ai-maker.md)。
+設計頁現在使用單一對話框：直接提問或要求修改，AI 區分回答、局部修改與全新造型，變更都先預覽再確認。
+「載入 Demo 示範」不呼叫 AI；「清除對話」只清聊天紀錄，保留作品、接線、程式與未送出文字。詳見[統一對話與 Demo](docs/unified-maker-chat.md)。
 原有 [雲端接線照片檢查](docs/cloud-wiring-check.md) 文件保留供架構參考；目前接線引導不再提供「AI 檢查本步」，改用上述零件功能測試。
 
 ```powershell
@@ -193,7 +201,7 @@ npm run build                                       # TS 嚴格模式檢查 + �
                                       WS /ws/detections (座標JSON, ≤30Hz)
                                                                     │
    React SPA: <img>底層 + SVG overlay疊加 ←──letterbox轉換──────────┘
-              CapabilityCard · FilterBar · QueryBox · StatusBar (zh-TW/en)
+              CapabilityCard · FilterBar · StatusBar (zh-TW/en)
 ```
 
 - 關鍵設計：**6-DoF 姿態 + 3D 腳位地圖（z=8.5mm 排針座高）**，不是 2D 投影 —

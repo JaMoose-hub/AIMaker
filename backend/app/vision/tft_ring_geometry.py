@@ -1,7 +1,8 @@
 """Webcam TFT acquisition from four visible PCB mounting rings.
 
-The existing model supplies identity and semantic orientation, not exact hole
-centres. Search its bounded ROI jointly so a shifted model corner need not
+The existing model supplies identity and an initial semantic orientation, not exact hole
+centres. The asymmetric active LCD inset can correct an upside-down corner order.
+Search its bounded ROI jointly so a shifted model corner need not
 already be within the historical per-corner 96px search. No hidden hole is
 inferred and no previous frame is returned as a current observation.
 """
@@ -25,6 +26,7 @@ class TftRingAcquirer:
 
     def reset(self):
         self._last = None
+        self._orientation_anchor = None
         self.evidence = {}
 
     def locate(self, frame, observation, frame_id, ts_ms):
@@ -33,8 +35,19 @@ class TftRingAcquirer:
             _, old_id, old_ts, shape = previous
             if frame.shape != shape or frame_id <= old_id or not 0 < ts_ms-old_ts <= 600:
                 previous = self._last = None
+                self._orientation_anchor = None
         evidence = {}
-        refined = refine_tft_rings(frame, observation, evidence) if observation is not None else None
+        refined = None
+        if (previous is not None and self._orientation_anchor is not None
+                and 0 < ts_ms-self._orientation_anchor[1] <= 600):
+            # A current model with reversed corner IDs can otherwise pick a
+            # nearby wire highlight as the fourth hole. First measure new
+            # rings around the recently verified pose; this never reuses pixels.
+            evidence['search'] = 'recent_header_verified_rings'
+            refined = refine_tft_rings(frame, previous[0], evidence)
+        if refined is None and observation is not None:
+            evidence = {}
+            refined = refine_tft_rings(frame, observation, evidence)
         if refined is None and previous is not None:
             evidence = {'search': 'recent_measured_rings', 'model_attempt': evidence}
             refined = refine_tft_rings(frame, previous[0], evidence)
@@ -46,10 +59,104 @@ class TftRingAcquirer:
                 evidence = panel_evidence
             else:
                 evidence['panel_attempt'] = panel_evidence
-        self.evidence = evidence
         if refined is not None:
+            orientation = {}
+            refined = orient_tft_from_panel_inset(frame, refined, orientation)
+            if orientation['verified']:
+                self._orientation_anchor = (refined.corners_px.copy(), ts_ms)
+            elif self._orientation_anchor is not None:
+                anchor, anchor_ts = self._orientation_anchor
+                if not 0 < ts_ms-anchor_ts <= 600:
+                    self._orientation_anchor = None
+                else:
+                    # A brief missing LCD edge must not let a new model vote
+                    # reverse the recently verified header. Match only current
+                    # measured geometry nearby; never extend the evidence age.
+                    short = min(np.linalg.norm(anchor-np.roll(anchor, -1, axis=0), axis=1))
+                    shifts = (0, 2)
+                    errors = [float(np.max(np.linalg.norm(np.roll(refined.corners_px, shift, axis=0)-anchor, axis=1))) for shift in shifts]
+                    index = int(np.argmin(errors))
+                    if errors[index] <= .18*short:
+                        refined = _reorder_tft(refined, shifts[index])
+                        orientation.update(source='recent_lcd_inset', carried=True,
+                            corrected=bool(shifts[index]), reason='current_mounts_match_recent_header',
+                            age_ms=round(float(ts_ms-anchor_ts), 1))
+            evidence['orientation'] = orientation
             self._last = (refined, frame_id, ts_ms, frame.shape)
+        self.evidence = evidence
         return refined
+
+
+def _reorder_tft(observation, shift):
+    ordered = np.roll(observation.corners_px, shift, axis=0)
+    confidences = np.asarray(observation.keypoint_confidences).copy()
+    confidences[:4] = np.roll(confidences[:4], shift)
+    landmarks = None if observation.landmarks_px is None else np.asarray(observation.landmarks_px).copy()
+    if landmarks is not None:
+        landmarks[:4] = ordered
+    return replace(observation, corners_px=ordered.astype(float), keypoint_confidences=confidences, landmarks_px=landmarks)
+
+
+def orient_tft_from_panel_inset(frame, observation, evidence):
+    """Resolve only the 180-degree ambiguity using a current full-width LCD.
+
+    MRD_TFT240's active display is closer to the header-end mounting holes;
+    the opposite end has the wider flex-cable/bezel strip. Four symmetric
+    mounting rings alone cannot establish which end has the header. Require
+    all four active-panel edges and a clear inset difference, not wire color,
+    screen brightness, screen-space top/bottom, or a cached pose. Ambiguous
+    images keep the incoming semantics; this is not an electrical check.
+    """
+    evidence.update(source='current_lcd_inset', verified=False, corrected=False)
+    corners = np.asarray(observation.corners_px, np.float32)
+    if (corners.shape != (4, 2) or not np.isfinite(corners).all()
+            or not cv2.isContourConvex(corners)
+            or np.any(corners < 0)
+            or np.any(corners >= [frame.shape[1], frame.shape[0]])):
+        evidence['reason'] = 'invalid_or_clipped_mounts'
+        return observation
+    lengths = np.linalg.norm(corners - np.roll(corners, -1, axis=0), axis=1)
+    if min(lengths) < 60 or not .35 <= (lengths[0]+lengths[2]) / (lengths[1]+lengths[3]) <= 1.2:
+        evidence['reason'] = 'insufficient_mount_geometry'
+        return observation
+    target = np.float32([[32, 32], [271, 32], [271, 431], [32, 431]])
+    patch = cv2.warpPerspective(frame, cv2.getPerspectiveTransform(corners, target), (304, 464))
+    gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+    edges = cv2.morphologyEx(cv2.Canny(gray, 35, 100), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    candidates = []
+    for contour in contours:
+        if not .50 * 239 * 399 <= cv2.contourArea(contour) <= .95 * 239 * 399:
+            continue
+        quad = cv2.approxPolyDP(contour, .02 * cv2.arcLength(contour, True), True).reshape(-1, 2)
+        if len(quad) != 4 or not cv2.isContourConvex(quad):
+            continue
+        q = (quad - [32, 32]) / [239, 399]
+        lo, hi = q.min(0), q.max(0)
+        # Reject the outer PCB/glass, small UI rectangles and perspective
+        # disagreement. Both full-width sides must lie at the LCD's rails.
+        if not (-.08 <= lo[0] <= .08 and .92 <= hi[0] <= 1.08
+                and .025 <= lo[1] <= .24 and .76 <= hi[1] <= .975
+                and .65 <= hi[1]-lo[1] <= .88):
+            continue
+        vectors = np.abs(q - np.roll(q, -1, axis=0))
+        if np.any(vectors.min(1) > .035):
+            continue
+        top, bottom = float(q[np.argsort(q[:, 1])[:2], 1].mean()), float(1-q[np.argsort(q[:, 1])[2:], 1].mean())
+        if not .04 <= abs(top-bottom) <= .16:
+            continue
+        candidates.append((top, bottom))
+    if not candidates or len({top > bottom for top, bottom in candidates}) != 1:
+        evidence['reason'] = 'lcd_inset_ambiguous'
+        return observation
+    top, bottom = np.median(candidates, axis=0)
+    flip = bool(top > bottom)
+    evidence.update(verified=True, corrected=flip, reason='asymmetric_active_panel',
+                    header_edge='opposite_input' if flip else 'input',
+                    top_inset=round(float(top), 4), bottom_inset=round(float(bottom), 4))
+    if not flip:
+        return observation
+    return _reorder_tft(observation, 2)
 
 
 def _contour_rings(gray, blue, short):

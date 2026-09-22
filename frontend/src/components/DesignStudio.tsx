@@ -13,7 +13,7 @@ export function DesignStudio({ state, setState, onAdopt }: { state: MakerState; 
   return <section className="maker-preview maker-concept-page" aria-label={tr("作品設計預覽", "Project concept preview")} aria-busy={Boolean(state.aiJobId)}>
     <div className="maker-eyebrow">01 / CONCEPT STUDIO</div>
     {design ? <>
-      <div className="maker-preview-heading"><div><span className="maker-badge">{design.source === "demo" ? tr("示範資料", "DEMO") : "AI DESIGN"} · v{design.revision}{design.generation?.design_mode ? ` · ${design.generation.design_mode === "fixed" ? tr("固定版", "Fixed") : tr("自由版", "Free")}` : ""}</span><h2>{design.title}</h2></div>
+      <div className="maker-preview-heading"><div><span className="maker-badge">{design.source === "demo" ? tr("示範資料", "DEMO") : "AI DESIGN"} · v{design.revision}{design.generation?.design_mode ? ` · ${design.generation.design_mode === "fixed" ? tr("局部修改", "Revision") : tr("全新造型", "New design")}` : ""}</span><h2>{design.title}</h2></div>
         <button className="maker-primary" disabled={cannotConfirm} onClick={() => needsDraftConsent(state) ? setConsentFor(revisionKey) : onAdopt()}>{state.candidate ? tr("確認作品 → Blueprint", "Confirm concept → Blueprint") : tr("查看 Blueprint →", "View Blueprint →")}</button></div>
       {confirming ? <div className="maker-draft-consent" role="alert"><p>{tr("你有手動修改的程式草稿。套用此版本會以新版程式取代它。", "Your code draft has manual edits. Applying this revision will replace it with the new code.")}</p>
         <button onClick={() => setConsentFor("")}>{tr("取消，保留草稿", "Cancel, keep draft")}</button>
