@@ -463,26 +463,39 @@ def test_bridge_image_input_schema_model_and_disabled_tools(tmp_path):
     bridge._load_models = Mock(return_value={"default_model": "test-vision", "models": [
         {"id": "test-vision", "efforts": ["low"], "default_effort": "low", "input_modalities": ["text", "image"]}]})
     calls = []
+    reply_text = json.dumps(opinion())
     def rpc(method, params, **kwargs):
         calls.append((method, copy.deepcopy(params)))
         if method == "account/read": return {"account": {"type": "chatgpt"}}
         if method == "thread/start": return {"thread": {"id": "t"}, "model": "test-vision"}
         if method == "turn/start":
             bridge._events.extend([
-                {"method": "item/completed", "params": {"threadId": "t", "item": {"type": "agentMessage", "text": json.dumps(opinion())}}},
+                {"method": "item/completed", "params": {"threadId": "t", "item": {"type": "agentMessage", "text": reply_text}}},
                 {"method": "turn/completed", "params": {"threadId": "t", "turn": {"status": "completed"}}}])
             return {"turn": {"id": "turn"}}
+        if method == "turn/interrupt": return {}
         raise AssertionError(method)
     bridge._rpc = rpc
     image_path = tmp_path / "camera.jpg"
     image_path.write_bytes(b"test fixture")
-    result = bridge.generate("Inspect camera", CloudWiringOpinion.model_json_schema(), image_paths=[image_path], fail_if_busy=True)
+    metadata = {}
+    before = time.time()
+    result = bridge.generate("Inspect camera", CloudWiringOpinion.model_json_schema(), image_paths=[image_path], fail_if_busy=True,
+                             response_metadata=metadata)
     assert result["authority"] == "visual_advisory"
+    assert metadata["model"] == "test-vision" and metadata["effort"] == "low"
+    assert before <= metadata["completed_at"] <= time.time() and metadata["elapsed_ms"] >= 0
+    assert set(metadata) == {"model", "effort", "completed_at", "elapsed_ms"}
     start = next(p for m, p in calls if m == "thread/start")
     turn = next(p for m, p in calls if m == "turn/start")
     assert start["config"]["features.image_generation"] is False and start["config"]["features.shell_tool"] is False
     assert turn["input"][1] == {"type": "localImage", "path": str(image_path.resolve()), "detail": "original"}
     assert turn["outputSchema"]["properties"]["authority"]["const"] == "visual_advisory"
+    reply_text = "not JSON"
+    failed_metadata = {}
+    with pytest.raises(ValueError):
+        bridge.generate("Inspect", {}, image_paths=[image_path], response_metadata=failed_metadata)
+    assert failed_metadata == {}
     bridge._load_models.return_value["models"][0]["input_modalities"] = ["text"]
     with pytest.raises(ValueError, match="圖片"):
         bridge.generate("Inspect", {}, image_paths=[image_path])

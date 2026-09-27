@@ -1,0 +1,15 @@
+# Annotation inbox for real, powered TFT frames with Dupont wires.
+# No validation split on purpose: review labels and build a session-separated
+# evaluation set before merging these images into a training dataset.
+path: ../datasets/mrd-tf240-8p-lit-wired-20260925
+train: images/train
+
+kpt_shape: [4, 3]
+names:
+  0: mrd-tf240-8p-cs
+kpt_names:
+  0:
+    - mount_TL
+    - mount_TR
+    - mount_BR
+    - mount_BL

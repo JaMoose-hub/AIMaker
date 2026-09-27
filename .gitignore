@@ -44,6 +44,8 @@ Thumbs.db
 runs/
 datasets/
 calibration/
+# Local annotation-session preferences (contains workstation-specific paths).
+/training/mrd-tf240-8p-lit-wired-label-studio.json
 /current_*
 /.tmp-*
 /*.jpg

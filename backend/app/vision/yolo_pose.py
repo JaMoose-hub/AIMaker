@@ -638,6 +638,7 @@ def create_yolo_pose_locator(
     directml_device_id: int = 0,
     cuda_device_id: int = 0,
     eye_variant: bool = False,
+    eye_model_variant: bool = False,
     **kwargs,
 ) -> BoardPoseLocator:
     """Create the requested runtime, falling back to OpenCV when necessary."""
@@ -646,7 +647,8 @@ def create_yolo_pose_locator(
         options = dict(runtime_backend=runtime_backend, directml_device_id=directml_device_id,
                        cuda_device_id=cuda_device_id, **kwargs)
         original = create_yolo_pose_locator(model_path, **options)
-        return EyeModelLocator(original, create_yolo_pose_locator, model_path, options)
+        return EyeModelLocator(original, create_yolo_pose_locator, model_path, options,
+                               use_eye_variant=eye_model_variant)
     backend = str(runtime_backend).strip().lower()
     if backend == 'cuda':
         from app.vision.cuda_pose import CudaYoloPoseLocator

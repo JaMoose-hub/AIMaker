@@ -14,6 +14,8 @@ test('one-button states distinguish image improvement, no change, and failed res
   for (const state of ['improved','restored','cancelled']) assert.equal(tuningMessage({...base,state}, null), state);
   assert.equal(tuningMessage({...base, reason:'restore_failed'}, null), 'restore_failed');
   assert.equal(tuningMessage({...base, state:'unchanged', reason:'no_improvement'}, null), 'no_improvement');
+  assert.equal(tuningMessage({...base, state:'error', reason:'target_not_visible'}, null), 'target_not_visible');
+  assert.equal(tuningMessage(base, 'restart_required'), 'restart_required');
   assert.equal(tuningMessage({...base, busy:true}, null), 'adjusting');
   assert.equal(tuningMessage({...base, available:false}, null), 'unsupported');
   assert.equal(tuningMessage(base, '<script>untrusted error</script>'), 'control_failed');
@@ -23,7 +25,8 @@ test('all user-facing states have both languages', () => {
   for(const locale of ['zh-TW','en']) {
     const strings = JSON.parse(readFileSync(new URL(`../src/locales/${locale}.json`,import.meta.url),'utf8'));
     for(const name of ['ready','loading','improved','restored','cancelled','unsupported','busy','no_restore',
-      'needs_light','no_improvement','moving','no_frames','camera_changed','timeout','control_failed','restore_failed','network']) {
+      'needs_light','no_improvement','moving','no_frames','camera_changed','timeout','control_failed','restore_failed',
+      'network','target_not_visible','restart_required']) {
       assert.ok(strings[`cameraTune.${name}`],`${locale}: ${name}`);
     }
   }
@@ -36,10 +39,14 @@ test('request helper uses explicit actions and reports rejection instead of succ
   globalThis.fetch=async(url,options)=>{calls.push({url,...options});return {ok:true,json:async()=>base};};
   try {
     await requestCameraTuning('POST');
+    await requestCameraTuning('POST',false,'raspberry-pi-5');
     await requestCameraTuning('POST',true);
     await requestCameraTuning('DELETE');
     assert.deepEqual(calls.map(c=>[c.url,c.method]),[
-      ['/api/camera/auto-tune','POST'],['/api/camera/auto-tune/restore','POST'],['/api/camera/auto-tune','DELETE']]);
+      ['/api/camera/auto-tune','POST'],['/api/camera/auto-tune','POST'],
+      ['/api/camera/auto-tune/restore','POST'],['/api/camera/auto-tune','DELETE']]);
+    assert.deepEqual(JSON.parse(calls[1].body),{target_id:'raspberry-pi-5'});
+    assert.equal(calls[0].body,undefined);
     assert.ok(calls.every(c=>c.signal instanceof AbortSignal));
     globalThis.fetch=async()=>({ok:true,json:async()=>({ok:false,reason:'busy'})});
     await assert.rejects(requestCameraTuning('POST'),/busy/);

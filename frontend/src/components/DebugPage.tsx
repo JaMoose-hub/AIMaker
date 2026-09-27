@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useDebug, codeHash, type DebugCase } from "../lib/debug";
+import { useDebug, codeHash, type DebugCase, type DebugContext } from "../lib/debug";
+import { sameDebugTestKeys } from "../lib/debugSessions";
 import { componentComplete, componentTestKey, testReasons } from "../lib/componentTests";
 import { useComponentTests } from "../lib/useComponentTests";
 import { usePiConnection } from "../lib/PiConnection";
 import { useMakerText } from "../lib/useMaker";
 import type { MakerState, ProjectDesign, ProjectGuideState } from "../lib/maker";
 import { ComponentTestCard } from "./ComponentTestCard";
+
+type CheckFeedback = {phase:"running"|"success"|"failure"; caseId?:string; previousFinishedAt?:number; error?:string};
 
 function TargetedTest({design, guide, cid, focusRequest, onWiring, before, after, report, programSelected = false}: {
   design:ProjectDesign;guide:ProjectGuideState;cid:string;focusRequest:number;onWiring:(cid:string,pin?:string)=>void;
@@ -14,7 +17,7 @@ function TargetedTest({design, guide, cid, focusRequest, onWiring, before, after
   const tr = useMakerText();
   const card = useRef<HTMLElement>(null);
   const session = {...guide, componentIndex:Math.max(0,design.component_ids.findIndex(id=>id===cid))};
-  // One polling/action owner for both panes. Choosing a component never starts a run.
+  // One polling/action owner. Results and their actions stay together.
   const tests = useComponentTests(design, session);
   useEffect(()=>{
     if (!focusRequest || !card.current) return;
@@ -23,52 +26,75 @@ function TargetedTest({design, guide, cid, focusRequest, onWiring, before, after
   const name = cid==="hc-sr04"?"HC-SR04+":"MRD-TFT240";
   const showTest = !programSelected || Boolean(tests.status?.active);
   const complete = componentComplete(design, session, cid);
-  return <div className="debug-workspace">
+  return <div className="debug-workspace debug-workspace-unified">
     <div className="debug-controls">
       {before}
       {showTest ? <section ref={card} id="debug-targeted-retest" className="debug-retest-target" tabIndex={-1} aria-labelledby="debug-retest-heading">
         <h3 id="debug-retest-heading">{tr("測試零件", "Test component")} · {name}</h3>
-        {tests.status?.active || complete ? <ComponentTestCard key={cid+"-controls"} view="controls" design={design} session={session} tests={tests} onViewWiring={()=>onWiring(cid)} /> :
+        {tests.status?.active || complete ? <ComponentTestCard key={cid} design={design} session={session} tests={tests} onViewWiring={()=>onWiring(cid)} /> :
           <><p className="debug-next-step">{tr("這個零件還有接線未確認。先查看接線步驟，逐腳確認完成後，就能在這裡測試。", "Confirm the remaining wiring steps before testing this component.")}</p><button onClick={()=>onWiring(cid)}>{tr("查看相關接線", "Review related wiring")}</button></>}
         <details><summary>{tr("找特定腳位", "Find a specific pin")}</summary>{design.wiring.filter(w=>w.componentId===cid).map(w=><button key={w.id} onClick={()=>onWiring(cid,w.componentPin)}>{w.componentPin}</button>)}</details>
       </section> : null}
       {after}
     </div>
     <aside className="debug-results" aria-label={tr("輸出結果與報告", "Results and reports")}>
-      <h3>{tr("輸出結果", "Results")} · {programSelected ? tr("作品程式", "Project program") : name}</h3>
-      {!programSelected ? <>
-        <ComponentTestCard key={cid+"-results"} view="results" design={design} session={session} tests={tests} onViewWiring={()=>onWiring(cid)} />
-        {!tests.status?.active && !tests.status?.results?.some(run=>run.component_id===cid) && !complete ? <p className="debug-empty">{tr("還沒有這個零件的測試結果。完成左側接線確認後，就能開始測試。", "No test results for this component yet. Confirm its wiring on the left to start.")}</p> : null}
-      </> : <p className="workflow-muted">{tr("這裡顯示作品層級的分析與報告，不代表個別零件已通過測試。", "Project-level analysis and reports do not confirm that individual components passed.")}</p>}
+      <h3>{tr("程式與檢查紀錄", "Code and check records")}</h3>
+      {programSelected ? <p className="workflow-muted">{tr("這裡顯示作品層級的分析與報告，不代表個別零件已通過測試。", "Project-level analysis and reports do not confirm that individual components passed.")}</p> : null}
       {report}
     </aside>
   </div>;
 }
 
-export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect}: {
+export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect, assistant}: {
   state:MakerState; onCase:(id:string)=>void; onCode:(code:string,expected:string)=>void;
   onWiring:(cid:string,pin?:string)=>void; onDeploy:()=>void; onSelect:(cid:string)=>void;
+  assistant?:(tools:{context:DebugContext;codeHash:string;repairCaseId:string|null;repairAppliedHash:string|null;repairCandidateReady:boolean;onRetest:(cid:string)=>void;onTrial:()=>void;onReviewRepair:()=>void;onManual:()=>void})=>ReactNode;
 }) {
   const tr = useMakerText();
   const pi = usePiConnection();
   const debug = useDebug(state.debug?.caseId, state.design?.id);
-  const [hash,setHash] = useState("");
+  const [hashedCode,setHashedCode] = useState<{code:string;hash:string}|null>(null);
+  const hash = hashedCode?.code === state.code ? hashedCode.hash : "";
   const [programSelected,setProgramSelected] = useState(false);
   const [copied,setCopied] = useState(false);
   const [visualRun,setVisualRun] = useState("");
   const [retestFocusRequest,setRetestFocusRequest] = useState(0);
   const [confirmAction,setConfirmAction] = useState<"apply"|"restore"|null>(null);
+  const [repairAccepted,setRepairAccepted] = useState<{caseId:string;candidateId:string;codeHash:string}|null>(null);
+  const [checkFeedback,setCheckFeedback] = useState<CheckFeedback|null>(null);
   const agentDetails = useRef<HTMLDetailsElement>(null);
   const reportDetails = useRef<HTMLDetailsElement>(null);
+  const overviewDetails = useRef<HTMLDetailsElement>(null);
+  const problemCard = useRef<HTMLElement>(null);
   const trialCard = useRef<HTMLElement>(null);
   const trialDetails = useRef<HTMLDetailsElement>(null);
+  const manualDetails = useRef<HTMLDetailsElement>(null);
   const record = debug.record;
+  useEffect(()=>{
+    if(checkFeedback?.phase!=="running"||!checkFeedback.caseId||record?.id!==checkFeedback.caseId)return;
+    if(record.status==="ready"&&record.finished_at&&record.finished_at!==checkFeedback.previousFinishedAt){
+      setCheckFeedback({...checkFeedback,phase:"success"});
+    }else if(record.status==="interrupted"||record.status==="failed"){
+      setCheckFeedback({...checkFeedback,phase:"failure",error:record.error??record.status});
+    }
+  },[checkFeedback,record]);
+  function showCheckResult() {
+    const target=problemCard.current??overviewDetails.current;
+    if(!target)return;
+    if(target===overviewDetails.current)overviewDetails.current!.open=true;
+    const focusTarget=target===overviewDetails.current?target.querySelector("summary")??target:target;
+    focusTarget.setAttribute("tabindex","-1");
+    (focusTarget as HTMLElement).focus({preventScroll:true});
+    focusTarget.scrollIntoView({behavior:"smooth",block:"start"});
+  }
   const context = useMemo(()=>({project:state.design,code:state.code,
     test_keys:Object.fromEntries(state.design?.component_ids.map(cid=>[cid,componentTestKey(state.design!,state.guide,cid)])??[]),
+    guide_confirmations:state.guide.confirmed,guide_run:state.guide.run??0,
     entry:state.debug??{}}), [state.design,state.code,state.guide,state.debug]);
-  useEffect(()=>{let active=true;setHash("");void codeHash(state.code).then(value=>{if(active)setHash(value);});return()=>{active=false;};},[state.code]);
-  const stale = Boolean(record && (record.current_target===false || record.binding.code_hash!==hash || record.binding.project_id!==(state.design?.id??null) || JSON.stringify(record.binding.test_keys??{})!==JSON.stringify(context.test_keys)));
+  useEffect(()=>{let active=true;const code=state.code;void codeHash(code).then(value=>{if(active)setHashedCode({code,hash:value});});return()=>{active=false;};},[state.code]);
+  const stale = Boolean(record && (record.current_target===false || record.binding.code_hash!==hash || record.binding.project_id!==(state.design?.id??null) || !sameDebugTestKeys(record.binding.test_keys,context.test_keys)));
   const working = debug.pending || record?.status === "diagnosing" || record?.status === "analysing";
+  const hardwareReady = Boolean(state.design && state.design.component_ids.every(id => componentComplete(state.design!, state.guide, id)));
   const cid = state.design?.component_ids.find(id=>id===(state.debug?.selectedComponentId??state.debug?.componentId)) ?? state.design?.component_ids[0];
   const issues = record?.issues ?? [];
   // Connection actions live in the top toolbar. Keep their evidence in the
@@ -76,7 +102,7 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect}:
   const recommendations = stale ? [] : issues.filter(item=>item.next_action!=="reconnect" && item.reason!=="connection_lost" && (!item.component_id || (!programSelected && item.component_id===cid)));
   const issue = recommendations[0];
   const trial = debug.trials.active ?? debug.trials.results.at(-1);
-  const trialCurrent = trial?.binding.code_hash===hash && trial.project_id===state.design?.id && JSON.stringify(trial.binding.test_keys??{})===JSON.stringify(context.test_keys);
+  const trialCurrent = trial?.binding.code_hash===hash && trial.project_id===state.design?.id && sameDebugTestKeys(trial.binding.test_keys,context.test_keys);
   const trialQueued = pi.status?.execution?.jobs.some(j=>j.kind==="trial" && !["failed","cancelled","finished"].includes(j.state));
   const reasons:Record<string,[string,string]> = {
     syntax_error:["程式有一段寫法需要修正，可以請 AI 幫你找出來。","Part of the code needs correcting. AI can help you find it."],
@@ -117,14 +143,14 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect}:
     : record.status==="ready" ? tr("目前沒有找到阻礙執行的問題", "No blocking issue found")
     : tr("還需要一些資訊", "We need a little more information");
   const nextStep = record?.status==="diagnosing" ? tr("稍等一下，檢查完成後會告訴你下一步。", "Please wait. We'll suggest the next step when the check finishes.")
-    : !record||stale ? tr("按上方「幫我檢查」，先看看連線、零件紀錄與程式。", "Use Check for me above to review the connection, test records and code.")
+    : !record||stale ? tr("按「檢查 Pi 與程式紀錄」，查看連線、零件紀錄與程式。", "Use Check Pi and code records to review the connection, test records and code.")
     : issue?.next_action==="prepare_environment" ? tr("先展開「詳細檢查報告」查看缺少的套件或設定；請勿為此改接線。", "Open the detailed report for missing software or settings. Do not rewire for this issue.")
     : issue?.next_action==="execution_manager"||issue?.next_action==="stop_or_retry" ? tr("查看上方「執行管理」，先確認目前正在執行什麼，再決定是否停止或重測。", "Check Execution at the top to see what is running before deciding to stop or retry.")
     : issue?.next_action==="review_version" ? tr("Pi 上的程式可能不是這份草稿。先在報告核對版本，再決定是否重新部署。", "The Pi program may differ from this draft. Review its version in the report before redeploying.")
     : issue?.next_action==="analyse" ? tr("可以請 AI 幫你理解程式問題；看過建議並確認後才會修改。", "Ask AI to explain the code issue. Nothing is changed until you review and confirm.")
     : issue?.next_action==="trial" ? tr("做一次 60 秒試跑，移動前方物體並觀察實體畫面；先不要把沒有紀錄當作接錯線。", "Try a 60-second run, move the target and observe the display. Missing records do not mean the wiring is wrong.")
     : issue?.component_id==="hc-sr04" ? tr("在 HC-SR04+ 前放一本書或平整物體，再測一次；仍無讀值時才回頭核對接線。", "Place a book or flat object in front of HC-SR04+ and retest. Review wiring if readings are still absent.")
-    : issue?.component_id ? tr("按下重測，看看螢幕是否出現顏色和數字，再依你看到的狀況繼續。", "Retest, look for colors and a code on the screen, then choose what you see.")
+    : issue?.component_id ? tr("在上方零件測試卡查看結果；需要再測時，直接使用同一張卡的測試按鈕。", "Review the result in the component test card above; use its test button if another run is needed.")
     : issue ? tr("可以請 AI 幫你理解程式問題；看過建議並確認後才會修改。", "Ask AI to explain the code issue. Nothing is changed until you review and confirm.")
     : tr("可以做一次 60 秒試跑，親眼確認零件反應；也可以先前往部署。", "Try a 60-second run to observe the hardware, or continue to deployment.");
   function openRetest(componentId:string) {
@@ -139,18 +165,39 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect}:
     target.querySelector("summary")?.focus({preventScroll:true});
     target.scrollIntoView({behavior:"auto",block:"start"});
   }
-  async function diagnose() { const next=await debug.action<DebugCase>("debug/cases",{context,case_id:state.debug?.caseId});if(next)onCase(next.id); }
+  async function diagnose() {
+    setCheckFeedback({phase:"running"});
+    const next=await debug.action<DebugCase>("debug/cases",{context,case_id:state.debug?.caseId},cause=>{
+      setCheckFeedback({phase:"failure",error:cause.message});
+    });
+    if(next){
+      onCase(next.id);
+      setCheckFeedback({phase:"running",caseId:next.id,
+        previousFinishedAt:next.id===record?.id?record?.finished_at:undefined});
+    }
+  }
+  const checkFeedbackText=checkFeedback?.phase==="running"
+    ? tr("正在檢查連線、程式與既有測試紀錄…","Checking the connection, code and existing test records…")
+    : checkFeedback?.phase==="success"
+    ? tr("檢查完成，結果已更新。","Check complete. Results are updated.")
+    : checkFeedback?.phase==="failure"
+    ? checkFeedback.error==="Invalid API response"
+      ? tr("檢查失敗：後端回傳了無法讀取的資料（Invalid API response）。請重新啟動 Board Vision 後端後再試。","Check failed: the backend returned an invalid API response. Restart the Board Vision backend and try again.")
+      : /^HTTP (404|405)$/.test(checkFeedback.error??"")
+      ? tr(`檢查失敗：除錯 API 不可用（${checkFeedback.error}）。請重新啟動 Board Vision 後端。`,`Check failed: the debug API is unavailable (${checkFeedback.error}). Restart the Board Vision backend.`)
+      : `${tr("檢查失敗","Check failed")}：${checkFeedback.error??tr("未知錯誤","Unknown error")}`
+    : null;
   async function agent() {if(record)await debug.action(`debug/cases/${record.id}/actions`,{action:"analyse",context,model:state.aiModel||null,effort:state.aiEffort});}
   async function apply() {
-    if(!record?.candidate)return;
+    if(!record?.candidate||!hardwareReady)return;
     setConfirmAction(null);
     const result=await debug.action<{code:string}>(`debug/cases/${record.id}/actions`,{action:"apply",context,candidate_id:record.candidate.id,confirmed:true});
-    if(result)onCode(result.code,context.code);
+    if(result){setRepairAccepted({caseId:record.id,candidateId:record.candidate.id,codeHash:record.candidate.code_hash});onCode(result.code,context.code);}
   }
   async function restore() {
     if(!record)return;
     setConfirmAction(null);
-    const result=await debug.action<{code:string}>(`debug/cases/${record.id}/actions`,{action:"restore",context,confirmed:true});if(result)onCode(result.code,context.code);
+    const result=await debug.action<{code:string}>(`debug/cases/${record.id}/actions`,{action:"restore",context,confirmed:true});if(result){setRepairAccepted(null);onCode(result.code,context.code);}
   }
   const focusedReport = record ? {...record, selected_component:programSelected?"program":cid, issues:issues.filter(item=>!item.component_id || (!programSelected && item.component_id===cid)), evidence:{...record.evidence, tests:record.evidence?.tests?.filter(run=>!programSelected && run.component_id===cid)}} : null;
   async function copy() {try{await navigator.clipboard.writeText(JSON.stringify({diagnosis:focusedReport,trials:debug.trials},null,2));setCopied(true);}catch{setCopied(false);}}
@@ -170,18 +217,17 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect}:
         <details><summary>{tr("本次試跑證據與日誌","Trial evidence and logs")}</summary><pre>{JSON.stringify(trial,null,2)}</pre></details>
       </section>:null}
 </>;
-  const reports = <>{trialOutput}    {showProblem?<section className="debug-problem"><span className="workflow-eyebrow">{tr("建議先做這件事","Your next step")}</span><h3>{problemTitle}</h3>
+  const reports = <>{trialOutput}    {showProblem?<section ref={problemCard} tabIndex={-1} className="debug-problem"><span className="workflow-eyebrow">{tr("建議先做這件事","Your next step")}</span><h3>{problemTitle}</h3>
       <p>{record?.status==="diagnosing"?tr("正在讀取狀態，先不用改接線。","Reading the current status. No need to rewire."):issue?message(issue.reason):!stale&&record?.status==="ready"?tr("軟體檢查沒有發現阻塞，但實體反應仍需要你確認。","Software checks found no blocker. You still need to observe the hardware."):tr("我們會把需要注意的地方整理在這裡，一次處理一件事。","We'll collect what needs attention here, one step at a time.")}</p>
       <p className="debug-next-step">{nextStep}</p>
       <div className="debug-actions">
-      {connected&&issue?.component_id&&state.design?.component_ids.some(id=>id===issue.component_id)?<button className="guide-primary-action" aria-controls="debug-targeted-retest" onClick={()=>openRetest(issue.component_id!)}>{tr("重測", "Retest")} {moduleName(issue.component_id)}</button>:null}
       {connected&&issue?.next_action==="analyse"?<button className="workflow-secondary" onClick={()=>revealDetails(agentDetails.current)}>{tr("看看 AI 可以怎麼幫忙","See how AI can help")}</button>:null}
       {connected&&["prepare_environment","review_version"].includes(issue?.next_action??"")?<button className="workflow-secondary" onClick={()=>revealDetails(reportDetails.current)}>{tr("查看需要處理的項目","See what needs attention")}</button>:null}
       {connected&&issue?.next_action==="trial"?<button className="workflow-secondary" onClick={()=>revealDetails(trialDetails.current)}>{tr("前往 60 秒試跑","Go to the 60-second trial")}</button>:null}
       </div>
       {recommendations.length>1?<details><summary>{tr("其他待確認項目","Other things to check")} ({recommendations.length-1})</summary>{recommendations.slice(1).map((item,i)=><p key={i}>{item.component_id?moduleName(item.component_id):"Pi"} · {message(item.reason)}</p>)}</details>:null}
     </section>:null}
-    <details className="debug-overview"><summary>{tr("查看上次檢查的結果", "Review the last check")}</summary>
+    <details ref={overviewDetails} className="debug-overview"><summary>{tr("查看上次檢查的結果", "Review the last check")}</summary>
     <div className="debug-status-grid">
       <article><span className="workflow-eyebrow">01</span><h3>{tr("Pi 連線","Pi connection")}</h3><strong className={`workflow-state ${connected?"good":"neutral"}`}>{connected?tr("已連線","Connected"):tr("還沒連上","Not connected")}</strong><small>{record?.evidence?.environment_ready?tr("環境：上次檢查已準備好","Setup was ready at last check"):tr("環境準備尚待確認","Setup still needs checking")}</small></article>
       {["hc-sr04","mrd-tf240-8p-cs"].map((id,index)=>{const run=record?.evidence?.tests?.filter(r=>r.component_id===id).at(-1);const matches=run&&!run.invalidated&&run.guide_key===context.test_keys[id]&&record?.current_target!==false;return <article key={id}><span className="workflow-eyebrow">0{index+2}</span><h3>{moduleName(id)}</h3><strong className="workflow-state neutral">{state.design?.component_ids.some(cid=>cid===id)?matches?outcome(run.outcome):run?tr("需要再確認","Needs another check"):tr("還沒測試","Not tested yet"):tr("這份作品沒有使用","Not used in this project")}</strong><small>{run?`${tr("上次測試","Last tested")} ${new Date(run.created_at*1000).toLocaleString()}`:tr("測試後會保留結果","Results appear after testing")}</small></article>;})}
@@ -190,15 +236,15 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect}:
     </details>
     <details ref={agentDetails} className="debug-agent workflow-details"><summary><strong>{tr("還是沒解決？讓 AI 幫忙","Still stuck? Ask AI for help")}</strong><span>{record?.analysis?tr("已有分析建議，展開查看","Suggestions ready · open to review"):tr("解釋程式問題，修改前會先問你","Understand the code · review before changes")}</span></summary><div className="workflow-details-body"><p className="workflow-muted">{tr("AI 分析涵蓋整份作品程式；零件是否正常仍以該零件測試為準。", "AI reviews the whole project; component health still depends on its own test.")}</p>
       <p>{tr("AI 可以幫你看程式，不會直接改接線或啟動作品。按下分析才會傳送程式與檢查紀錄，密碼與金鑰會先遮蔽。", "AI can review the code, but won't rewire or start your project. Only Analyze sends code and checks; passwords and keys are redacted.")}</p>
-      {!record||stale?<p className="workflow-muted">{tr("先按「幫我檢查」，讓 AI 有足夠的資訊可以判斷。","Run Check for me first so AI has evidence to work with.")}</p>:null}
-      {!record||stale?<button className="guide-primary-action" disabled={working} onClick={()=>void diagnose()}>{tr("先幫我檢查", "Check first")}</button>:null}
+      {!record||stale?<p className="workflow-muted">{tr("先更新 Pi 與程式紀錄，讓 AI 有目前的資料可以判斷。","Update Pi and code records so AI has current evidence.")}</p>:null}
+      {!record||stale?<button className="guide-primary-action" disabled={working} onClick={()=>void diagnose()}>{tr("更新 Pi 與程式紀錄", "Update Pi and code records")}</button>:null}
       <button disabled={!state.design||!record||stale||working||(record.rounds>=2)} onClick={()=>void agent()}>{tr("請 AI 幫我分析","Ask AI to analyze")} ({record?.rounds??0}/2)</button>
       {record?.eligible===false?<p>{message("unsupported_draft")}</p>:null}
       {(record?.rounds??0)>=2?<p>{message("repair_limit_reached")}</p>:null}
       {record?.analysis?<div className="debug-ai-result"><h3>{tr("AI 已完成分析", "AI review is ready")}</h3><p>{stale?tr("這是先前的分析，重新檢查後再決定下一步。", "This is an earlier review. Check again before deciding what to do."):record.candidate?tr("有一份程式修改建議。先看修改內容，確認後才會套用。", "A code change is suggested. Review it before confirming any change."):tr("目前沒有可直接套用的修改。可依本頁建議重測，或展開完整分析。", "There is no ready-to-apply change. Follow the suggested test or open the full review.")}</p><details className="debug-analysis-details"><summary>{tr("查看完整 AI 分析（進階）", "Full AI review (advanced)")}</summary><p>{tr("檢查紀錄", "Evidence")}: {record.analysis.facts}</p><p>{tr("可能原因（尚未確認）", "Possible causes (unconfirmed)")}: {record.analysis.possible_causes}</p><p>{tr("AI 建議", "AI suggestions")}: {record.analysis.next_step}</p></details></div>:null}
-      {record?.candidate?<><details><summary>{tr("候選修改差異／離線測試","Candidate diff / offline checks")}</summary><pre>{record.candidate.diff}</pre><pre>{JSON.stringify(record.candidate.offline,null,2)}</pre></details><button disabled={working||stale||record.candidate.applied} onClick={()=>setConfirmAction("apply")}>{tr("套用修復並試跑","Apply repair and trial")}</button></>:null}
+      {record?.candidate?<><details><summary>{tr("候選修改差異／離線測試","Candidate diff / offline checks")}</summary><pre>{record.candidate.diff}</pre><pre>{JSON.stringify(record.candidate.offline,null,2)}</pre></details><button disabled={working||stale||record.candidate.applied||!hardwareReady} onClick={()=>setConfirmAction("apply")}>{tr("套用修復並試跑","Apply repair and trial")}</button></>:null}
       {record?.can_restore?<button disabled={working} onClick={()=>setConfirmAction("restore")}>{tr("還原上一版草稿","Restore previous draft")}</button>:null}
-      {confirmAction?<div className="guide-caution" role="group" aria-label={tr("確認草稿變更","Confirm draft change")}><p>{confirmAction==="apply"?tr("套用此邏輯修復並加入 60 秒試跑佇列？若需停止目前程式，還會在執行管理要求確認。","Apply this logic repair and queue a 60-second trial? Stopping the current program requires a separate handoff confirmation."):tr("還原上一版草稿？不會停止或重新啟動 Pi 程式。","Restore the previous draft? This does not stop or restart Pi programs.")}</p><button disabled={working||(confirmAction==="apply"&&stale)} onClick={()=>void(confirmAction==="apply"?apply():restore())}>{tr("確認執行","Confirm")}</button><button onClick={()=>setConfirmAction(null)}>{tr("取消","Cancel")}</button></div>:null}
+      {confirmAction?<div className="guide-caution" role="group" aria-label={tr("確認草稿變更","Confirm draft change")}><p>{confirmAction==="apply"?tr("套用此邏輯修復並加入 60 秒試跑佇列？若需停止目前程式，還會在執行管理要求確認。","Apply this logic repair and queue a 60-second trial? Stopping the current program requires a separate handoff confirmation."):tr("還原上一版草稿？不會停止或重新啟動 Pi 程式。","Restore the previous draft? This does not stop or restart Pi programs.")}</p><button disabled={working||(confirmAction==="apply"&&(stale||!hardwareReady))} onClick={()=>void(confirmAction==="apply"?apply():restore())}>{tr("確認執行","Confirm")}</button><button onClick={()=>setConfirmAction(null)}>{tr("取消","Cancel")}</button></div>:null}
     </div></details>
     <details ref={reportDetails} className="workflow-details debug-report"><summary><strong>{tr("詳細檢查報告","Detailed check report")}</strong><span>{tr("需要協助時再展開 · 紀錄、版本與修改歷程","Records, versions and changes, when you need them")}</span></summary><div className="workflow-details-body">
       {state.debug?.source?<p>{tr("問題來源","Entry")}: {state.debug.source==="guide"?"03":"05"} · {state.debug.componentId??state.debug.deployment?.run_id??"Pi"} {state.debug.runId?`· ${state.debug.runId.slice(0,8)}`:""} {state.debug.symptom?`· ${message(state.debug.symptom)}`:""}</p>:null}
@@ -210,21 +256,36 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect}:
     {debug.error||record?.error?<p className="pi-error" role="alert">{debug.error.includes("404")?tr("除錯 API 尚未載入，請重新啟動 Board Vision 後端。","Debug API is unavailable; restart the Board Vision backend."):message(debug.error||record?.error)}</p>:null}
 </>;
   const trialTools = <>    <section ref={trialCard} className="debug-trial" tabIndex={-1}><details ref={trialDetails} className="debug-tool" open={Boolean(trial?.reserved||trial?.outcome==="awaiting_confirmation"||trialQueued)||undefined}><summary><strong>{tr("零件都好了？一起試跑 60 秒", "Components ready? Try them together for 60 seconds")}</strong><span>{tr("最後再做，不必每次都測", "Optional final check")}</span></summary><p>{tr("移動前方物體，看看距離與實體螢幕是否一起變化。只試跑 60 秒，不覆蓋正式作品。", "Move the target and watch whether distance and the screen change together. This 60-second trial does not replace the deployed project.")}</p>
-      <button disabled={!state.design||debug.pending||trialQueued||Boolean(trial?.reserved)} onClick={()=>void debug.action("debug/trials",{context,request_id:crypto.randomUUID()})}>{tr("開始 60 秒試跑","Start 60-second trial")}</button>
+      <button disabled={!hardwareReady||debug.pending||trialQueued||Boolean(trial?.reserved)} onClick={()=>void debug.action("debug/trials",{context,request_id:crypto.randomUUID()})}>{tr("開始 60 秒試跑","Start 60-second trial")}</button>
       {trial?.reserved?<button disabled={debug.pending} onClick={()=>void debug.action(`debug/trials/${trial.id}/actions`,{action:"stop"})}>{tr("停止本次試跑","Stop this trial")}</button>:null}
       {trialQueued?<p>{tr("已排入共用佇列；若需交接，請在上方執行管理確認。","Queued; confirm any handoff in Execution above.")}</p>:null}
     </details></section>
 </>;
-  return <section className="debug-page" aria-label={tr("測試與除錯","Test & debug")}>
-    <header className="debug-heading workflow-heading"><div><div className="workflow-eyebrow">{tr("04 · 測試與除錯", "04 · Test & debug")}</div><h2>{tr("哪個地方沒有正常運作？", "What isn't working?")}</h2>
-      <p className="workflow-subtitle">{tr("選擇你看到的狀況，我們帶你檢查。不確定就按「幫我檢查」。", "Choose what you see and we'll guide you. Not sure? Choose Check for me.")}</p></div>
-      <div className="workflow-heading-actions"><button className="guide-primary-action" disabled={working} onClick={()=>void diagnose()}>{working?tr("正在檢查…","Checking…"):tr("幫我檢查","Check for me")}</button>
-      <button className="workflow-secondary" onClick={onDeploy}>{tr("先去啟動作品 →","Go to deployment →")}</button></div></header>
-    <div className="debug-check-note"><span>{tr("「幫我檢查」不會改程式或接線，也不會啟動測試或 AI。", "Check for me won't change code or wiring, start tests, or contact AI.")}</span>
-      <span className="debug-timestamp" role="status">{record?.status==="diagnosing"?(progress[record.progress]??tr("檢查中","Checking")):record?.finished_at?`${tr("上次檢查","Last checked")} ${new Date(record.finished_at*1000).toLocaleString()}`:tr("還沒有檢查紀錄","No checks yet")}</span></div>
-    {stale?<p className="guide-caution">{tr("這是上次的檢查紀錄。作品已更新，請按「幫我檢查」。","These are earlier results. The project changed; choose Check for me.")}</p>:null}
+  const manualTools = <>
+    <div className="debug-manual-check">
+      <button className="workflow-secondary" disabled={working} onClick={()=>void diagnose()}>{working?tr("正在檢查紀錄…","Checking records…"):tr("檢查 Pi 與程式紀錄","Check Pi and code records")}</button>
+      <p className={`workflow-subtitle${checkFeedbackText?" debug-check-feedback":""}${checkFeedback?.phase==="failure"?" is-error":""}`} role={checkFeedbackText?checkFeedback?.phase==="failure"?"alert":"status":undefined}>
+        {checkFeedbackText??tr("本機檢查連線、程式語法與既有紀錄；鏡頭 AI 分析請使用上方「幫我檢查」。", "Local checks cover connection, syntax, and saved records. Use Check for me above for AI camera analysis.")}
+        {checkFeedback?.phase==="success"?<button type="button" className="workflow-secondary" onClick={showCheckResult}>{tr("查看結果","View results")}</button>:null}
+      </p>
+    </div>
+    <div className="debug-check-note"><span className="debug-timestamp" role="status">{record?.status==="diagnosing"?(progress[record.progress]??tr("檢查中","Checking")):record?.finished_at?`${tr("上次檢查","Last checked")} ${new Date(record.finished_at*1000).toLocaleString()}`:tr("還沒有檢查紀錄","No checks yet")}</span></div>
+    {stale?<p className="guide-caution">{tr("這是上次的檢查紀錄。作品已更新，請重新檢查 Pi 與程式紀錄。","These are earlier results. The project changed; check Pi and code records again.")}</p>:null}
     {state.design&&cid ? <TargetedTest design={state.design} guide={state.guide} cid={cid} focusRequest={retestFocusRequest} onWiring={onWiring} programSelected={programSelected} before={controls} after={trialTools} report={reports}/> :
-      <div className="debug-workspace"><div className="debug-controls">{controls}<p>{tr("先建立作品，就能使用零件測試與試跑。現在仍可以檢查 Pi 連線。","Create a project to test components. You can still check the Pi connection.")}</p>{trialTools}</div><aside className="debug-results" aria-label={tr("輸出結果與報告", "Results and reports")}><h3>{tr("輸出結果", "Results")}</h3>{reports}</aside></div>}
+      <div className="debug-workspace debug-workspace-unified"><div className="debug-controls">{controls}<p>{tr("先建立作品，就能使用零件測試與試跑。現在仍可以檢查 Pi 連線。","Create a project to test components. You can still check the Pi connection.")}</p>{trialTools}</div><aside className="debug-results" aria-label={tr("輸出結果與報告", "Results and reports")}><h3>{tr("程式與檢查紀錄", "Code and check records")}</h3>{reports}</aside></div>}
     <small>{tr("改接線前斷電，接好再上電測試。功能通過不代表所有線路與電壓已驗證。","Power off before rewiring, then power on to test. Functional success does not verify all wiring or voltages.")}</small>
+  </>;
+  function openManual() {
+    if (manualDetails.current) manualDetails.current.open = true;
+  }
+  return <section className="debug-page" aria-label={tr("測試與除錯","Test & debug")}>
+    <header className={`debug-heading workflow-heading${assistant ? " debug-chat-heading" : ""}`}><div><div className="workflow-eyebrow">{tr("04 · 測試與除錯", "04 · Test & debug")}</div>{!assistant ? <><h2>{tr("哪個地方沒有正常運作？", "What isn't working?")}</h2>
+      <p className="workflow-subtitle">{tr("把零件放進鏡頭，讓 AI 看畫面並帶你查找原因。", "Show the components to the camera so AI can inspect them and guide your diagnosis.")}</p></> : null}</div>
+      <div className="workflow-heading-actions"><button className="workflow-secondary" onClick={onDeploy}>{tr("先去啟動作品 →","Go to deployment →")}</button></div></header>
+    {assistant?.({context,codeHash:hash,repairCaseId:record?.id??null,
+      repairAppliedHash:record?.candidate?.applied ? record.candidate.code_hash : repairAccepted && repairAccepted.caseId===record?.id && repairAccepted.candidateId===record?.candidate?.id ? repairAccepted.codeHash : null,
+      repairCandidateReady:Boolean(record?.candidate),
+      onRetest:id=>{openManual();openRetest(id);},onTrial:()=>{openManual();revealDetails(trialDetails.current);},onReviewRepair:()=>{openManual();revealDetails(agentDetails.current);},onManual:openManual})}
+    {assistant ? <details id="debug-manual-tools" ref={manualDetails} className="debug-manual-tools workflow-details"><summary><strong>{tr("手動測試與程式工具", "Manual tests and code tools")}</strong><span>{tr("需要自行操作零件測試、目視確認或查看程式修復時展開", "Open for manual component tests, physical confirmation, or code repairs")}</span></summary><div className="workflow-details-body">{manualTools}</div></details> : manualTools}
   </section>;
 }

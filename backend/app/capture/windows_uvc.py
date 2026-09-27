@@ -39,7 +39,10 @@ def _run(device_name: str, arguments: list[str]) -> dict:
     if os.name != 'nt':
         raise RuntimeError('DirectShow controls require Windows')
     completed = subprocess.run(
-        ['powershell.exe', '-NoProfile', '-NonInteractive', '-File',
+        # The repository-owned helper is local, but the host may default to
+        # Restricted. Allow this process to run local scripts without changing
+        # the user's system-wide PowerShell policy.
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned', '-File',
          str(Path(__file__).with_suffix('.ps1')), '-DeviceName', device_name,
          *arguments],
         capture_output=True, text=True, encoding='utf-8', errors='replace',

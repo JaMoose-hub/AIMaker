@@ -80,7 +80,12 @@ class PiExecution:
                     raise ValueError("handoff_changed")
                 job["consent"] = owner
             elif action == "cancel":
-                if job["state"] not in {"queued", "preflight", "awaiting_confirmation", "blocked"}:
+                # A handoff may already be stopping the previous program while
+                # this job has not started. Cancelling here must prevent the
+                # replacement test/deployment from launching after that stop.
+                if job["state"] not in {"queued", "preflight", "awaiting_confirmation", "blocked"} and not (
+                    job["state"] == "stopping" and job.get("run_id") is None
+                ):
                     raise ValueError("job_already_started")
                 job.update(state="cancelled", error=None)
             else:

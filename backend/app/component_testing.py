@@ -2,6 +2,7 @@
 from copy import deepcopy
 import hashlib
 import json
+import math
 from pathlib import Path, PurePosixPath
 import re
 import secrets
@@ -14,6 +15,7 @@ from app.designs import CATALOG, MODULES, profile_versions, wiring_for
 from app.pi_deploy import SERVICE, RemoteCommandError
 
 TEMPLATE_VERSION = "component-test-v3"
+CAMERA_TEMPLATE_VERSION = "component-test-v4-camera"
 TERMINAL = {"passed", "failed", "inconclusive"}
 REMOTE_LIMIT = 180
 
@@ -68,7 +70,24 @@ class ComponentTests:
         return next((r for r in reversed(self.runs) if r.get("reserved") and r["target"] == self.target), None)
 
     def _public(self, run):
-        return {k: deepcopy(v) for k, v in run.items() if k not in {"visual_code", "pins", "pending", "target"}}
+        return {k: deepcopy(v) for k, v in run.items() if k not in {"visual_code", "camera_markers", "pins", "pending", "target"}}
+
+    def compare_camera_observation(self, run_id, phase_seq, observed_text, observed_color=None):
+        """Private comparison only: never expose answers or record a human pass."""
+        with self.lock:
+            run = next((r for r in self.runs if r["id"] == run_id and r["target"] == self.target), None)
+            if (not run or not run.get("camera_assisted") or run.get("invalidated")
+                    or not run.get("reserved") or run.get("outcome") not in {"running", "awaiting_confirmation"}
+                    or run.get("pending") == "stop"):
+                raise ValueError("stale_camera_test")
+            if type(phase_seq) is not int or not 1 <= phase_seq <= 4:
+                raise ValueError("invalid_camera_phase")
+            expected = run["camera_markers"][str(phase_seq)] if phase_seq < 4 else run["visual_code"]
+            code_matched = isinstance(observed_text, str) and observed_text.strip() == expected
+            color_matched = phase_seq == 4 or observed_color == {1: "red", 2: "green", 3: "blue"}[phase_seq]
+            return dict(matched=code_matched and color_matched, code_matched=code_matched,
+                        color_matched=color_matched, run_id=run_id, phase_seq=phase_seq,
+                        verification_source="camera_advisory", human_confirmation_required=True)
 
     def snapshot(self, project_id=None):
         with self.lock:
@@ -92,6 +111,9 @@ class ComponentTests:
 
     def validate(self, context):
         cid = context["component_id"]
+        if (type(context.get("camera_assisted", False)) is not bool
+                or context.get("camera_assisted") and cid != "mrd-tf240-8p-cs"):
+            raise ValueError("invalid_camera_test_mode")
         if cid not in MODULES or context["catalog_version"] != CATALOG["version"]:
             raise ValueError("catalog_changed")
         expected = wiring_for([cid])
@@ -111,6 +133,7 @@ class ComponentTests:
                 return dict(ok=False, error="resource_busy", **self.snapshot(context["project_id"]))
             rid = uuid.uuid4().hex
             old_codes = {r.get("visual_code") for r in self.runs[-100:]}
+            old_codes.update(value for r in self.runs[-100:] for value in r.get("camera_markers", {}).values())
             code = f"{secrets.randbelow(10000):04d}"
             while code in old_codes:
                 code = f"{secrets.randbelow(10000):04d}"
@@ -119,10 +142,22 @@ class ComponentTests:
                 options.add(f"{secrets.randbelow(10000):04d}")
             options = list(options)
             secrets.SystemRandom().shuffle(options)
+            camera_assisted = context.get("camera_assisted", False)
+            camera_markers = {}
+            if camera_assisted:
+                used = old_codes | set(options)
+                for phase_seq in range(1, 4):
+                    marker = f"{secrets.randbelow(10000):04d}"
+                    while marker in used:
+                        marker = f"{secrets.randbelow(10000):04d}"
+                    used.add(marker)
+                    camera_markers[str(phase_seq)] = marker
             run = dict(id=rid, project_id=context["project_id"], revision=context["revision"],
                 component_id=cid, guide_key=context["guide_key"], target=self.target, target_id=self.target[:12],
                 wiring_hash=hashlib.sha256(json.dumps(wire_key(expected)).encode()).hexdigest(),
-                template_version=TEMPLATE_VERSION, created_at=time.time(), outcome="running", phase="preflight",
+                template_version=CAMERA_TEMPLATE_VERSION if camera_assisted else TEMPLATE_VERSION,
+                camera_assisted=camera_assisted, camera_markers=camera_markers,
+                created_at=time.time(), outcome="running", phase="preflight",
                 reason=None, detail="", logs=[], samples={}, latest=None, heartbeat_at=None, exit_code=None,
                 reserved=True, remote_launched=False, program_stopped=False, invalidated=False,
                 visual_code=code, options=options if cid != "hc-sr04" else [], pending=None,
@@ -224,7 +259,8 @@ class ComponentTests:
         for name, source in (("runner.py", "component_test.py"), ("display.py", "ili9341_display.py")):
             self.pi._write(directory + "/" + name, (runtime / source).read_text(encoding="utf-8"))
         self.pi._write(directory + "/config.json", json.dumps(dict(run_id=run["id"], component_id=run["component_id"],
-            pins=run["pins"], visual_code=run["visual_code"])))
+            pins=run["pins"], visual_code=run["visual_code"], camera_assisted=run.get("camera_assisted", False),
+            camera_markers=run.get("camera_markers", {}))))
         if run.get("pending") == "stop" or run["invalidated"]:
             self._finish(run, "inconclusive", "wiring_changed" if run["invalidated"] else "cancelled")
             return
@@ -261,6 +297,20 @@ class ComponentTests:
         if data and data.get("run_id") != run["id"]:
             data = None
         if data:
+            stage = data.get("camera_phase")
+            if run.get("camera_assisted") and isinstance(stage, dict):
+                sequence = stage.get("seq")
+                phase = ({1: "display_red", 2: "display_lime", 3: "display_blue", 4: "display_code"}.get(sequence)
+                         if type(sequence) is int else None)
+                previous = run.get("camera_phase", {})
+                if (phase and stage.get("phase") == phase and stage.get("post_display") is True
+                        and isinstance(stage.get("committed_at"), (int, float))
+                        and math.isfinite(stage["committed_at"])
+                        and sequence > previous.get("seq", 0)):
+                    # Keep the original PC receipt on repeated reads of the same phase.
+                    self._update(run, camera_phase=dict(run_id=run["id"], seq=sequence, phase=phase,
+                        committed_at=stage["committed_at"], received_monotonic_ms=time.monotonic()*1000,
+                        post_display=True))
             self._update(run, heartbeat_at=data.get("heartbeat_at"), latest=data.get("latest"),
                          latest_valid_at=data.get("latest_valid_at"),
                          samples=data.get("samples", {}), sample_count=data.get("sample_count", 0),

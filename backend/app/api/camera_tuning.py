@@ -1,9 +1,15 @@
 """Non-blocking one-button tuning. Camera writes share one exclusive lease."""
 import threading
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 router = APIRouter(prefix='/api/camera/auto-tune')
+
+
+class TuneRequest(BaseModel):
+    target_id: Literal['raspberry-pi-5'] | None = None
 
 
 def camera_mutation_guard(request: Request):
@@ -26,8 +32,8 @@ async def status(request: Request):
 
 
 @router.post('')
-async def start(request: Request):
-    return request.app.state.camera_tuner.start()
+async def start(request: Request, body: TuneRequest | None = None):
+    return request.app.state.camera_tuner.start(target_id=body.target_id if body else None)
 
 
 @router.delete('')

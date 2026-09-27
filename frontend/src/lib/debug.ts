@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { makerRequest, type ProjectDesign } from "./maker";
+import { makerRequest, type ProjectDesign, type ProjectGuideState } from "./maker";
 import type { ComponentTestRun } from "./componentTests";
 
-export interface DebugContext { project: ProjectDesign | null; code: string; test_keys: Record<string,string>; entry: object }
+export interface DebugContext { project: ProjectDesign | null; code: string; test_keys: Record<string,string>; entry: object;
+  guide_confirmations?: ProjectGuideState["confirmed"]; guide_run?: number }
 export interface DebugIssue { reason: string; next_action: string; component_id?: string; fact?: string }
 export interface DebugCase {
   id: string; status: string; progress: string; rounds: number; finished_at?: number; error?: string; eligible?: boolean;
   binding: { project_id: string|null; code_hash: string; test_keys?:Record<string,string> }; current_target?:boolean; issues?: DebugIssue[];
   evidence?: { environment_ready?: boolean; tests?: ComponentTestRun[]; pi?: {program: string; exit_code: number; version?: {code_hash:string;run_id:string}; telemetry?: object; logs?: string[]} };
   analysis?: {facts:string; possible_causes:string; next_step:string};
-  candidate?: {id:string; applied:boolean; diff:string; offline:object}; history?: object[]; can_restore?:boolean;
+  candidate?: {id:string; base_hash:string; code_hash:string; applied:boolean; diff:string; offline:object}; history?: object[]; can_restore?:boolean;
 }
 export interface TrialRun {
   id:string; project_id:string; phase:string; outcome:string; reserved:boolean; reason?:string; detail?:string;
@@ -45,11 +46,14 @@ export function useDebug(caseId: string | undefined, projectId: string | undefin
     void poll();
     return () => { mounted.current = false; controller.abort(); window.clearTimeout(timer); };
   }, [caseId, projectId]);
-  async function action<T>(path:string, body:unknown): Promise<T | undefined> {
-    if (flight.current) return;
+  async function action<T>(path:string, body:unknown, onError?:(cause:Error)=>void): Promise<T | undefined> {
+    if (flight.current) { onError?.(new Error("request_in_progress")); return; }
     flight.current = true; epoch.current++; setPending(true); setError("");
     try { return await makerRequest<T>(path, body); }
-    catch(e) { if (mounted.current) setError(e instanceof Error ? e.message : "connection_lost"); }
+    catch(e) {
+      const cause = e instanceof Error ? e : new Error("connection_lost");
+      if (mounted.current) { setError(cause.message); onError?.(cause); }
+    }
     finally { flight.current = false; if (mounted.current) setPending(false); }
   }
   return {record, trials, pending, error, action};

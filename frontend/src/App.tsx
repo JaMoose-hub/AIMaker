@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CameraPicker } from "./components/CameraPicker";
+import { CameraAutoTune } from "./components/CameraAutoTune";
 import { GlassesControls } from "./components/GlassesControls";
 import { useGlassesStream } from "./lib/useGlassesStream";
 import { CapabilityCard } from "./components/CapabilityCard";
 import { PiDeployPanel } from "./components/PiDeployPanel";
 import { DebugPage } from "./components/DebugPage";
+import { AiDebugPanel } from "./components/AiDebugPanel";
 import { PiConnectionControl } from "./components/PiConnectionControl";
 import { WiringGuidePanel } from "./components/WiringGuidePanel";
 import { RuntimeToolbar } from "./components/RuntimeToolbar";
@@ -45,6 +47,7 @@ import { MakerAssistant } from "./components/MakerAssistant";
 import { MakerModelMenu } from "./components/MakerModelMenu";
 import { MakerSplitLayout } from "./components/MakerSplitLayout";
 import { useMakerAI } from "./lib/useMakerAI";
+import { useDebugSession } from "./lib/debugSessions";
 import { ProjectGuidePanel } from "./components/ProjectGuidePanel";
 import { CircuitDiagram } from "./components/CircuitDiagram";
 import { confirmConcept, currentWire, type MakerStage } from "./lib/maker";
@@ -88,8 +91,12 @@ export default function App() {
   const [guideVisible, setGuideVisible] = useState(initialGuideVisibility);
   const [calibrateOpen, setCalibrateOpen] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
+  const [debugCameraTuningBusy, setDebugCameraTuningBusy] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("standard");
   const glasses = useGlassesStream();
+  // Subscribe only to runtime identity, not each camera/detection frame. Webcam
+  // changes also advance the runtime; the Eye status alone may remain behind.
+  const liveRuntime = useSyncExternalStore(wsClient.subscribe, () => wsClient.getSnapshot().runtime);
   const [glassesDisplayFps, setGlassesDisplayFps] = useState<number | null>(0);
   const glassesSessionRef = useRef(false);
   const [opticalHudCalibration, setOpticalHudCalibration] =
@@ -101,6 +108,13 @@ export default function App() {
   const opticalHudDisabled = displayModeDisabled || profile === null;
   const makerEnabled = config?.board_id === "raspberry-pi-5";
   const makerStage = displayModeActive ? "guide" : makerEnabled ? maker.stage : "guide";
+  const aiDebug = useDebugSession(maker.design?.id ?? null, makerEnabled && makerStage === "debug");
+  const debugCaptureSession = makerStage === "debug" && aiDebug.record?.status === "awaiting_capture" &&
+    !["awaiting_user", "context_changed", "camera_changed", "backend_restarted"].includes(aiDebug.record.phase) &&
+    aiDebug.record.current_target !== false && aiDebug.record.camera_current !== false ? aiDebug.record : null;
+  const eyeActive = Boolean(glasses.status?.active || config?.camera_source === "xreal" ||
+    ["restoring", "stopping", "switching"].includes(glasses.status?.state ?? ""));
+  const debugWebcamReady = makerStage === "debug" && config?.camera_source === "device" && !eyeActive && !backendDown;
   const project = makerEnabled && !maker.standalone ? maker.design : null;
   const fullWidthWiring = Boolean(project) && makerStage === "guide";
   const projectWire = project && maker.guide.phase === "active" ? currentWire(project, maker.guide) : undefined;
@@ -241,7 +255,7 @@ export default function App() {
 
   // Camera restarts create a new runtime revision; refresh the current pin profile.
   useEffect(() => {
-    const revision = glasses.status?.runtime_revision;
+    const revision = Math.max(glasses.status?.runtime_revision ?? 0, liveRuntime?.runtime_revision ?? 0);
     if (!revision || revision === config?.runtime_revision) return;
     let disposed = false;
     let retry = 0;
@@ -259,7 +273,7 @@ export default function App() {
     }
     void refresh();
     return () => { disposed = true; window.clearTimeout(retry); };
-  }, [glasses.status?.runtime_revision, config?.runtime_revision]);
+  }, [glasses.status?.runtime_revision, liveRuntime?.runtime_revision, config?.runtime_revision]);
 
   const enterOpticalHud = useCallback(() => {
     enterDisplayMode("optical-hud-calibration");
@@ -518,7 +532,16 @@ export default function App() {
         {makerEnabled && makerStage === "blueprint" && maker.design ? <BlueprintPage key={`${maker.design.id}:${maker.design.revision}`}
           design={maker.design} onGuide={() => navigateMaker("guide")} onEdit={() => navigateMaker("design")}
           hasCandidate={Boolean(maker.candidate)} generating={Boolean(maker.aiJobId)} /> : null}
-        <div ref={videoStageRef} className={`video-guide-stage${project && maker.guide.mode === "2d" && !displayModeActive ? " maker-2d" : ""}`} style={makerStage !== "guide" ? { display: "none" } : undefined}>
+        <div ref={videoStageRef} className={`video-guide-stage${project && makerStage === "guide" && maker.guide.mode === "2d" && !displayModeActive ? " maker-2d" : ""}`} style={makerStage !== "guide" && makerStage !== "debug" ? { display: "none" } : undefined}>
+          {makerEnabled && makerStage === "debug" ? <div className="debug-camera-toolbar">
+            <strong>{tr("Webcam 即時畫面", "Live Webcam")}</strong>
+            <span>{debugWebcamReady ? tr("相機已就緒", "Camera ready") : eyeActive ? tr("等待恢復 Webcam", "Restoring Webcam") : tr("等待 Webcam", "Waiting for Webcam")}</span>
+            {config?.camera_source === "device" ? <>
+              <button type="button" className="camera-trigger" disabled={backendDown || debugCameraTuningBusy} onClick={handleOpenCameraPicker}>{tr("選擇鏡頭", "Choose camera")}</button>
+              <CameraAutoTune disabled={backendDown} onBusyChange={setDebugCameraTuningBusy} />
+            </> : null}
+            {eyeActive ? <button type="button" className="camera-trigger" onClick={glasses.stop}>{tr("返回 Webcam", "Restore Webcam")}</button> : null}
+          </div> : null}
           <button
             type="button"
             className={`guide-visibility-toggle${guideVisible ? " active" : ""}`}
@@ -529,7 +552,7 @@ export default function App() {
             <span aria-hidden="true">↯</span>
             {t(guideVisible ? "photoGuide.hide" : "photoGuide.show")}
           </button>
-          <VideoView
+          {makerStage !== "deploy" ? <VideoView
             displayMode={displayMode}
             glassesStatus={glasses.status}
             onGlassesDisplayFps={setGlassesDisplayFps}
@@ -548,13 +571,17 @@ export default function App() {
             guideTarget={guideTarget}
             opticalHudCalibration={opticalHudCalibration}
             onOpticalHudCalibrationComplete={handleOpticalHudCalibrationComplete}
-          />
-          {project && maker.guide.mode === "2d" && !displayModeActive ? <div className="maker-2d-main"><h2>{tr("2D 人工接線引導", "2D manual wiring")}</h2><CircuitDiagram design={project} activeId={projectWire?.id} /></div> : null}
+            debugView={makerStage === "debug"}
+            debugCaptureTask={debugCaptureSession?.capture_task}
+            debugEvidence={debugCaptureSession?.evidence?.at(-1)}
+            debugFramingFeedback={debugCaptureSession?.framing_feedback}
+          /> : null}
+          {project && makerStage === "guide" && maker.guide.mode === "2d" && !displayModeActive ? <div className="maker-2d-main"><h2>{tr("2D 人工接線引導", "2D manual wiring")}</h2><CircuitDiagram design={project} activeId={projectWire?.id} /></div> : null}
           {project && makerStage === "guide" ? <ProjectGuidePanel design={project} session={maker.guide} visible={guideVisible} disabled={backendDown}
             pinsById={pinsById}
             onChange={guide => setMaker(s => ({ ...s, guide }))}
             onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={openDebug} onDeploy={() => navigateMaker("deploy")} /> : null}
-          {!project && config && profile ? (
+          {!project && makerStage === "guide" && config && profile ? (
             <WiringGuidePanel
               key={`${config.board_id}:${config.runtime_revision}`}
               boardId={config.board_id}
@@ -604,7 +631,12 @@ export default function App() {
         </div>
         {makerEnabled && makerStage === "debug" ? <DebugPage state={maker} onCase={caseId=>setMaker(s=>({...s,debug:{...s.debug,caseId}}))}
           onCode={(code,expected)=>setMaker(s=>s.code===expected?({...s,code}):s)} onWiring={inspectWiring} onDeploy={()=>navigateMaker("deploy")}
-          onSelect={selectedComponentId=>setMaker(s=>({...s,debug:{...s.debug,selectedComponentId}}))} /> : null}
+          onSelect={selectedComponentId=>setMaker(s=>({...s,debug:{...s.debug,selectedComponentId}}))}
+          assistant={({context,codeHash,repairCaseId,repairAppliedHash,repairCandidateReady,onRetest,onTrial,onReviewRepair,onManual})=><AiDebugPanel state={maker} context={context} currentCodeHash={codeHash}
+            repairCaseId={repairCaseId} repairAppliedHash={repairAppliedHash} repairCandidateReady={repairCandidateReady} session={aiDebug}
+            webcamReady={debugWebcamReady} eyeActive={eyeActive} cameraSource={config?.camera_source ?? null} cameraRuntimeRevision={config?.runtime_revision ?? null} onReturnWebcam={glasses.stop}
+            onCase={caseId=>setMaker(s=>s.debug?.caseId===caseId?s:({...s,debug:{...s.debug,caseId}}))}
+            onRetest={onRetest} onTrial={onTrial} onReviewRepair={onReviewRepair} onManual={onManual} onWiring={inspectWiring} />} /> : null}
         {makerEnabled && makerStage === "deploy" ? <div className="maker-deploy-main"><PiDeployPanel project={project ?? undefined} draft={project ? maker.code : undefined}
           onDebug={deployment=>{setGuideTarget(null);setMaker(s=>({...s,stage:"debug",debug:{...s.debug,source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined}}));}} onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
         <div hidden={makerEnabled && (makerStage === "design" || makerStage === "blueprint" || makerStage === "debug")}><StatusBar
@@ -620,6 +652,8 @@ export default function App() {
           opticalHudDisabled={opticalHudDisabled}
           accuracy={config?.accuracy ?? null}
           pinsById={pinsById}
+          boardId={config?.board_id ?? null}
+          runtimeRevision={config?.runtime_revision ?? null}
         /></div>
       </main>
       {makerStage === "guide" && !fullWidthWiring ? <aside className="side">

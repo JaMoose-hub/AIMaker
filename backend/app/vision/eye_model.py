@@ -1,4 +1,4 @@
-"""Optional Eye-trained weights, with the original webcam session preserved."""
+"""Share current webcam weights with Eye; trained variants require opt-in."""
 from __future__ import annotations
 
 import json
@@ -11,12 +11,13 @@ log = logging.getLogger(__name__)
 class EyeModelLocator:
     """Switch only while workers are stopped; keep both sessions for re-entry.
 
-    A manifest beside the original models maps their filenames to independently
-    validated Eye exports. Normal camera inference always uses the exact original
-    locator. No camera settings or original model files are written here.
+    Eye shares the original session by default, including its current weights,
+    input size and thresholds. An explicit experiment may opt into the manifest
+    beside the original models. A leftover local manifest must not silently
+    replace the user's current models when they switch camera.
     """
 
-    def __init__(self, original, factory, model_path, options):
+    def __init__(self, original, factory, model_path, options, *, use_eye_variant=False):
         self.original = original
         self._active = original
         self._factory = factory
@@ -26,6 +27,7 @@ class EyeModelLocator:
         self._attempted = False
         self._eye_enabled = False
         self._variant_error = None
+        self._use_eye_variant = bool(use_eye_variant)
 
     @property
     def available(self):
@@ -37,7 +39,7 @@ class EyeModelLocator:
 
     def set_yolo_only(self, enabled):
         self._eye_enabled = bool(enabled)
-        if enabled and not self._attempted:
+        if enabled and self._use_eye_variant and not self._attempted:
             self._attempted = True
             manifest = self._original_path.parent / 'eye' / 'manifest.json'
             if manifest.is_file():
@@ -77,6 +79,7 @@ class EyeModelLocator:
         status = locator_status(self._active, self._options.get('runtime_backend', 'opencv'))
         return {**status, 'model_path': str(self.model_path),
                 'model_variant': 'eye' if self._active is self._eye else 'original',
+                'model_policy': 'eye_variant' if self._use_eye_variant else 'shared',
                 'eye_variant_error': self._variant_error if self._eye_enabled else None}
 
     def close(self):

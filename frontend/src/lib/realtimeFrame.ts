@@ -134,7 +134,8 @@ export function trackingNotices(frame: TrackingFrame | null) {
       ? "camera.trackingPartial" : "camera.trackingConfirming" }];
     if (quality?.partial) return [{ id, key: "camera.trackingPartial" }];
     if (quality?.stability === "flow_lost" && quality.interrupted)
-      return [{ id, key: "camera.trackingObstructed" }];
+      return [{ id, key: quality.reason === "pcb_boundary_unverified"
+        ? "camera.trackingBoundaryUnverified" : "camera.trackingObstructed" }];
     return [];
   });
 }

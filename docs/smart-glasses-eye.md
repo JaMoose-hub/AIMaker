@@ -3,7 +3,7 @@
 在 Board Vision 按「智慧眼鏡」即可進入彩色串流。預設為 1920×1080、30 FPS、標準降噪。
 解析度與 FPS 由「套用」送出，會短暫重新連線；降噪可立即切換，不重新開啟相機。
 「退出」或 Esc 會關閉 Eye，恢復原相機與畫面設定。Eye 沿用接線引導目前的控制板、YOLO 架構與 profile，
-可使用 `models/eye/manifest.json` 所列的 Eye 訓練副本；一般相機保留原權重與 session。
+預設直接共用一般相機目前載入的權重、輸入尺寸、門檻與 session，不因本機留有舊 Eye manifest 而換模型。
 辨識流程為 YOLO、GPIO／Pin 平面投影、既有局部腳位影像校正與小幅顯示平滑。
 Eye 使用頁面內滿版，不要求瀏覽器原生全螢幕；切換瀏覽器全螢幕不會關掉 Eye，Esc／退出仍恢復原來源。
 
@@ -24,14 +24,13 @@ Eye 相機一次由一個程式擷取；使用整合功能時，請關閉獨立 
 ## 零件與 Pin
 
 沿用 Board Vision「Pin 接線引導」的 YOLO／ONNX、profile 與辨識門檻。
-不強制選 Pi 5，也不另外啟用原本停用的辨識器。以下為一般接線引導的原始模型；
-Eye 的獨立訓練副本只在眼鏡模式首次進入時載入，退出即切回原 session：
+不強制選 Pi 5，也不另外啟用原本停用的辨識器。以下三個目標沿用目前選定的模型；
+Pi 5 的公開預設仍是 handheld-v2，本機已選用 guided-20260922 時，Eye 也使用該新版：
 
 | 目標 | 模型 | 腳位 |
 |---|---|---|
-| Raspberry Pi 5 | `models/board-pose-pi5-handheld-v2.onnx` | GPIO / J8 |
+| Raspberry Pi 5 | 目前選定的 Pi 權重，例如 `models/board-pose-pi5-guided-20260922.onnx` | GPIO / J8 |
 | HC-SR04 | `models/hc-sr04-corner-pose-v3-robust.onnx` | 4 Pin |
-| HW-123 | `models/hw-123-pose.onnx` | 8 Pin |
 | MRD-TF240-8P-CS TFT | `models/mrd-tf240-8p-cs-pose.onnx` | 8 Pin |
 
 依使用者最新選擇，Eye 採用 **YOLO + 既有腳位影像校正**：
@@ -55,7 +54,7 @@ Pi 5／TFT 的局部搜尋使用有重疊的直向區域，HC-SR04 使用四區�
 `ObjectRecognitionOverlay`，用同一組 YOLO 的新鮮本體結果顯示名稱；尚未取得腳位時，
 顯示虛線本體框及「腳位定位中」；Eye 已知被畫面裁切時改顯示「請完整入鏡」。本體框不供腳位計算，也不表示腳位已定位。
 Webcam 不建立這層外框／名稱提示，也不以本體結果取代原本的搜尋狀態；即時追蹤開啟與關閉時都保留原來的藍框、GPIO／Pin、接線目標與鏡像／校正設定。
-Eye 的鏡頭、降噪與選用的訓練副本會影響輸入，
+Eye 的鏡頭、視角與降噪會影響輸入，即使使用同一個模型，
 因此不能保證不同攝影機得到完全相同的辨識結果。
 Pi 的 Eye 校正使用 `vision/eye_j8.py`：在當前投影附近尋找兩列接點對比，只做垂直於排針列的共同位移，
 保留沿列腳距、兩列間距及腳位編號。舊暗色接頭輪廓會和深色桌墊合併，引起約20px跳動，
@@ -64,7 +63,7 @@ TFT 沿用安裝孔演算法，取樣保留孔環半徑與模糊邊緣所需像�
 有四孔時依四孔校正；只有三個當幀孔位時，用它們的仿射轉換調整當幀YOLO四角，診斷明列三孔觀測／一角推算。
 少於三孔、推算位移超出原搜尋範圍或幾何不成立時保持當幀YOLO；Webcam仍走原四孔流程。
 校正不改 YOLO 零件身分，不增加推論次數，不儲存跨幀偏移；影像不足時保留當前投影。
-HC／HW 的既有局部校正在本次原型未可靠改善，因此仍使用 YOLO 投影。
+HC 的既有局部校正在本次原型未可靠改善，因此仍使用 YOLO 投影。
 腳位出現不代表所有實體腳位編號與對位誤差已驗證；新視角的量測與殘餘誤差見 `runs/eye-fix-20260915/RESUMED.md`。
 Eye 不讀取 C920 的相機內參、FOV、曝光、對焦或手動畫面偏移。沒有新增校正、自動對焦、
 接線確認或電氣驗證介面；此模式暫停原有接線／驗證背景工作，退出後恢復其執行。
@@ -127,10 +126,16 @@ Eye 每幀影像與全部辨識只透過 `/api/tracking/frame` 同幀封裝傳�
 
 ## Eye 模型副本與框穩定
 
-`EyeModelLocator` 僅包住板卡及零件的模型入口。一般模式永遠呼叫原 session，Eye 模式才切到
-manifest 指定的獨立 ONNX。兩者都保留以供重入，不在同一影格重複推論。
-要求 CUDA 時，無法載入 CUDA 的新副本不會取代原模型，診斷會列出原因。
-manifest 在該程序第一次進入 Eye 時讀取；部署新副本後須重啟。
+`EyeModelLocator` 僅包住板卡及零件的模型入口。自 2026-09-22 起，正式工廠入口的
+`eye_variant=True` 只啟用模式包裝，預設不再讀取 `models/eye/manifest.json`，兩種模式共用原 session。
+診斷回報 `model_policy=shared`、`model_variant=original` 及實際 `model_path`，可與 Webcam 核對。
+這不會把 Webcam 的 SIFT 備援／LK 追蹤帶入 Eye；Eye 仍走上述 YOLO 同幀流程。
+
+保留獨立模型實驗能力，但必須在 Python 工廠入口額外明確傳入 `eye_model_variant=True`
+（直接建構 wrapper 時為 `use_eye_variant=True`）；一般 UI 切換不會啟用此選項。
+只有明確啟用時才在該程序第一次進入 Eye 讀取 manifest，診斷為 `model_policy=eye_variant`。
+要求 CUDA 時，無法載入 CUDA 的新副本不會取代原模型，診斷會列出原因；退出仍切回原 session。
+此實驗模式兩個 session 都保留以供重入，不在同一影格重複推論；部署新副本後須重啟。
 原模型檔、Webcam 相機參數及校正檔不會被此流程寫入。
 
 `EyeYoloDisplayStabilizer` 在類別間 NMS 後對當前辨識做小幅自適應平滑，

@@ -176,10 +176,11 @@ class CodexBridge:
         finally:
             self._lock.release()
 
-    def generate(self, prompt, schema, *, model=None, effort=None, image_paths=(), timeout_s=180, fail_if_busy=False, restricted_tools=False):
+    def generate(self, prompt, schema, *, model=None, effort=None, image_paths=(), timeout_s=180, fail_if_busy=False, restricted_tools=False, response_metadata=None):
         if not self._lock.acquire(blocking=not fail_if_busy):
             raise RuntimeError("雲端 AI 正忙，請稍後手動重試；本次尚未送出照片。")
         try:
+            request_started = time.monotonic()
             self._start()
             account = self._rpc("account/read", {"refreshToken": False}).get("account")
             if not account or account.get("type") != "chatgpt":
@@ -233,7 +234,11 @@ class CodexBridge:
                             raise RuntimeError((result.get("error") or {}).get("message", "AI generation failed"))
                         if not answer:
                             raise RuntimeError("AI 沒有回傳作品資料，請重試。")
-                        return json.loads(answer)
+                        parsed = json.loads(answer)
+                        if response_metadata is not None:
+                            response_metadata.update(model=model, effort=effort, completed_at=time.time(),
+                                                     elapsed_ms=round((time.monotonic() - request_started) * 1000))
+                        return parsed
                 raise TimeoutError(f"AI 回應超過 {timeout_s} 秒，請手動重試。")
             except Exception:
                 try:

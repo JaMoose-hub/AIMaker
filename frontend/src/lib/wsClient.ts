@@ -33,6 +33,7 @@ export interface WsSnapshot {
   hello: HelloMessage | null;
   /** Latest wire_trace message, or null before the first one arrives (wire-recognition-design.md §4 — its own throttled cadence, not tied to detectionsPerSec). */
   wireTrace: WireTraceMessage | null;
+  wireTraceReceivedAtMs: number;
   guidance: GuidanceCheckMessage | null;
   verification: VerificationUpdateMessage | null;
   connected: boolean;
@@ -59,6 +60,7 @@ class WsClient {
   private componentSegments: ComponentSegmentMessage | null = null;
   private hello: HelloMessage | null = null;
   private wireTrace: WireTraceMessage | null = null;
+  private wireTraceReceivedAtMs = 0;
   private guidance: GuidanceCheckMessage | null = null;
   private verification: VerificationUpdateMessage | null = null;
   private connected = false;
@@ -74,6 +76,7 @@ class WsClient {
     componentSegments: null,
     hello: null,
     wireTrace: null,
+    wireTraceReceivedAtMs: 0,
     guidance: null,
     verification: null,
     connected: false,
@@ -117,6 +120,7 @@ class WsClient {
     this.componentPose = null;
     this.componentSegments = null;
     this.wireTrace = null;
+    this.wireTraceReceivedAtMs = 0;
     this.guidance = null;
     this.verification = null;
     this.messageCount = 0;
@@ -241,6 +245,7 @@ class WsClient {
       // Own throttled cadence (design doc §4/§5) - deliberately NOT counted
       // into messageCount/detectionsPerSec, which reports pose-detection rate.
       this.wireTrace = message as WireTraceMessage;
+      this.wireTraceReceivedAtMs = Date.now();
       this.scheduleFlush();
     } else if (message.type === "guidance_check") {
       this.guidance = message as GuidanceCheckMessage;
@@ -291,6 +296,7 @@ class WsClient {
       componentSegments: this.componentSegments,
       hello: this.hello,
       wireTrace: this.wireTrace,
+      wireTraceReceivedAtMs: this.wireTraceReceivedAtMs,
       guidance: this.guidance,
       verification: this.verification,
       connected: this.connected,

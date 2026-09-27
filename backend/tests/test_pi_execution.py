@@ -187,6 +187,19 @@ def test_cancel_during_preflight_does_not_stop_or_launch(queue):
     assert not queue.pi.deployments
 
 
+def test_cancel_after_handoff_stop_prevents_replacement_launch(queue):
+    queue.tests.start(context()); old = queue.tests._active(); queue.tests._tick(old)
+    rid = queue.submit("deploy", {"code": "print('replacement')"})
+    queue._tick(); consent(queue, rid); queue._tick()
+    assert job(queue, rid)["state"] == "stopping"
+    assert old["pending"] == "stop"
+    queue.action(rid, "cancel")
+    queue.tests._tick(old)
+    queue._tick()
+    assert job(queue, rid)["state"] == "cancelled"
+    assert not queue.pi.deployments
+
+
 def test_unmanaged_remote_test_blocks_deploy_without_killing_it(queue):
     queue.pi.foreign_test = True
     rid = queue.submit("deploy", {"code": "print(1)"})

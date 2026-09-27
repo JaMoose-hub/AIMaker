@@ -241,6 +241,17 @@ test("manual-only semantics are identical in both views, while remote guidance r
   }
 });
 
+test("transient tracking prompts never cover the video, but offline warning remains", async () => {
+  for (const displayMode of ["standard", "smart-glasses-demo"]) {
+    const rendered = await renderWiringVideo({ displayMode, hasTarget: false,
+      boardPoseQuality: { outline_only: true }, componentPoseQuality: { partial: true } });
+    assert.doesNotMatch(rendered.html, /tracking-notice|確認定位中|局部追蹤/);
+    assert.match(rendered.html, /data-tracking-frame="77"/);
+  }
+  const offline = await renderWiringVideo({ backendDown: true, hasTarget: false });
+  assert.match(offline.html, /hint-pill offline/);
+});
+
 test("only Eye shows body-only recognition; Webcam retains original GPIO and wiring overlays", async () => {
   for (const displayMode of ["standard","smart-glasses-demo"]) {
     const searching = await renderWiringVideo({displayMode,searching:true,hasTarget:false,bodyEvidence:"current"});

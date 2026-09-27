@@ -147,6 +147,9 @@ export interface DetectionMessage {
     image_motion_px?: number;
     image_support?: number;
     visible_fraction?: number;
+    /** Same-frame local J8 appearance used by display-only GPIO alignment. */
+    pin_regions?: Record<string, { supported: boolean }>;
+    pin_alignment_offset_px?: [number, number];
   };
   pins: DetectionPin[];
 }

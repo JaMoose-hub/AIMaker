@@ -1,9 +1,14 @@
 import { useI18n } from "../lib/i18n";
 import { useDetections } from "../lib/wsClient";
+import { getMotionDisplay, subscribeMotionDisplay } from "../lib/motionDisplayStore";
+import {
+  advanceBoardStatus, currentPitchSample, distanceScaleAdvice, hasCurrentBoardBody,
+  type PitchSample,
+} from "../lib/boardDistance";
 import { pinDisplayNameWithNumber } from "../lib/capabilities";
 import type { AccuracySummary, Pin } from "../lib/types";
 import { CameraAutoTune } from "./CameraAutoTune";
-import { useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 interface StatusBarProps {
   webcamTuningVisible?: boolean;
@@ -28,6 +33,8 @@ interface StatusBarProps {
   /** Read-only profile/camera quality gate reported by GET /api/config. */
   accuracy: AccuracySummary | null;
   pinsById: ReadonlyMap<string, Pin>;
+  boardId?: string | null;
+  runtimeRevision?: number | null;
 }
 
 export function StatusBar({
@@ -43,45 +50,100 @@ export function StatusBar({
   opticalHudDisabled,
   accuracy,
   pinsById,
+  boardId = null,
+  runtimeRevision = null,
 }: StatusBarProps) {
   const { t } = useI18n();
   const [cameraTuningBusy, setCameraTuningBusy] = useState(false);
-  const { detection, connected, detectionsPerSec, guidance } = useDetections();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!webcamTuningVisible) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [webcamTuningVisible]);
+  const ws = useDetections();
+  const motion = useSyncExternalStore(subscribeMotionDisplay, getMotionDisplay, getMotionDisplay);
+  const expectedBoard = boardId ?? ws.runtime?.board_id ?? ws.detection?.board_id;
+  // The live stream revision changes immediately on a camera restart, while
+  // GET /api/config can still be loading. Do not discard current frames just
+  // because the previous config revision is still rendered.
+  const expectedRevision = ws.connected && ws.runtime && ws.runtime.board_id === expectedBoard
+    ? ws.runtime.runtime_revision
+    : motion && motion.board_id === expectedBoard && now - motion.receivedAt <= 1200
+      ? motion.runtime_revision
+    : runtimeRevision ?? ws.detection?.runtime_revision;
+  const rawDetection = ws.connected && ws.detection && ws.detectionReceivedAtMs > 0
+    && now - ws.detectionReceivedAtMs <= 1200 && ws.detection.board_id === expectedBoard
+    && ws.detection.runtime_revision === expectedRevision ? ws.detection : null;
+  // In realtime mode the video and GPIO overlay use the synchronized motion
+  // frame. A raw detector SEARCHING packet must not contradict that image.
+  const motionFrame = motion && motion.board_id === expectedBoard && motion.runtime_revision === expectedRevision
+    && motion.detection?.frame_id === motion.frame_id && now - motion.receivedAt <= 1200 ? motion : null;
+  const detection = motion !== undefined ? motionFrame?.detection ?? null : rawDetection;
+  const receivedAtMs = motion !== undefined ? motionFrame?.receivedAt ?? 0 : ws.detectionReceivedAtMs;
+  // A synchronized HTTP motion frame is a live video observation even if the
+  // independent guidance WebSocket is reconnecting. Keep its status separate
+  // from the WS connection indicator and distance/trace availability.
+  const streamLive = detection !== null && (motion !== undefined || ws.connected);
+  const currentSample = streamLive ? currentPitchSample(detection, receivedAtMs, pinsById, now) : null;
+  const lastSample = useRef<PitchSample | null>(null);
+  useEffect(() => {
+    if (currentSample) lastSample.current = currentSample;
+  }, [currentSample?.atMs, currentSample?.pitchPx, currentSample?.boardId, currentSample?.runtimeRevision]);
+  const distance = distanceScaleAdvice({
+    connected: ws.connected, detection, rawDetection, trace: ws.wireTrace,
+    traceReceivedAtMs: ws.wireTraceReceivedAtMs, accuracy,
+    currentSample, lastSample: lastSample.current, now,
+    boardId: expectedBoard ?? null, runtimeRevision: expectedRevision ?? null,
+    videoSize: detection?.video_size ?? rawDetection?.video_size ?? null,
+  });
 
-  const tracking = detection?.tracking ?? "searching";
-  const confidence =
-    detection && tracking !== "searching" ? Math.round(detection.confidence * 100) : null;
-  const liveGeometry = detection?.geometry;
+  // Require several consecutive, distinct current-frame locks before saying
+  // LOCKED. Loss of a trustworthy pose is immediate; this only stabilizes text.
+  const lockRun = useRef({ context: "", frameId: -1, count: 0 });
+  const context = `${expectedBoard ?? ""}:${expectedRevision ?? ""}:${motion !== undefined ? "motion" : "raw"}`;
+  const boardStatus = advanceBoardStatus(lockRun.current, context, detection, streamLive);
+  lockRun.current = boardStatus.run;
+  const { statusKey, pillClass } = boardStatus;
+  const poseConfidence = detection?.tracking === "locked" && !detection.pose_quality?.outline_only
+    && detection.pins?.some((pin) => pin.v) && Number.isFinite(detection.confidence)
+    ? detection.confidence : null;
+  const bodyConfidence = poseConfidence === null && hasCurrentBoardBody(detection)
+    ? detection?.body?.confidence ?? null : null;
+  const confidence = poseConfidence ?? bodyConfidence;
+  const pitchText = distance.pitchPx !== null
+    ? `${distance.sampleFresh ? "" : "≈"}${distance.pitchPx.toFixed(1)}px / ${(distance.pitchPx / 2.54).toFixed(2)} px/mm`
+    : "—";
   const poseQuality = detection?.pose_quality;
-  const guidancePin = guidance
-    ? pinDisplayNameWithNumber(pinsById.get(guidance.expected_pin_id)) || guidance.expected_pin_id
+  const guidancePin = ws.guidance
+    ? pinDisplayNameWithNumber(pinsById.get(ws.guidance.expected_pin_id)) || ws.guidance.expected_pin_id
     : null;
 
   return (
     <div className="statusbar">
       <div className="status-metrics">
-      <span className={`pill ${tracking}`}>
+      <span className={`pill ${pillClass}`}>
         <span className="pill-dot" aria-hidden="true" />
-        {t(`status.${tracking}`)}
+        {t(statusKey)}
       </span>
-        <span className="status-item">
-          {t("status.confidence")} <strong>{confidence === null ? "—" : `${confidence}%`}</strong>
+        <span className="status-item" title={t(bodyConfidence !== null ? "status.bodyConfidenceTooltip" : "status.poseConfidenceTooltip")}>
+          {t("status.confidence")} <strong>{confidence === null ? "—" : `${Math.round(confidence * 100)}%`}</strong>
         </span>
         <span className="status-item" title={t("status.resolutionTooltip")}>
           {t("status.resolution")} <strong>{detection?.video_size ? `${detection.video_size[0]}×${detection.video_size[1]}` : "—"}</strong>
         </span>
       <span className="status-item">
-        <span className={`ws-dot${connected ? " on" : ""}`} aria-hidden="true" />
-        {t(connected ? "status.connected" : "status.disconnected")}
+        <span className={`ws-dot${ws.connected ? " on" : ""}`} aria-hidden="true" />
+        {t(ws.connected ? "status.connected" : "status.disconnected")}
       </span>
       <span className="status-item">
-        {t("status.rate")} <strong>{detectionsPerSec}/s</strong>
+        {t("status.rate")} <strong>{ws.detectionsPerSec}/s</strong>
       </span>
         <span
-          className={`status-item${liveGeometry && liveGeometry.px_per_mm < 8 ? " status-warning" : ""}`}
+          className={`status-item${distance.pitchPx !== null && distance.minimumPx !== null && distance.pitchPx < distance.minimumPx ? " status-warning" : ""}`}
           title={t("status.geometryTooltip")}
         >
-          {t("status.pitch")} <strong>{liveGeometry ? `${liveGeometry.pitch_px.toFixed(1)}px / ${liveGeometry.px_per_mm.toFixed(2)} px/mm` : "—"}</strong>
+          {t("status.pitch")} <strong>{pitchText}</strong>
         </span>
         <span
           className={`status-item${poseQuality?.inlier_board_area_frac != null && poseQuality.inlier_board_area_frac < 0.05 ? " status-warning" : ""}`}
@@ -95,8 +157,8 @@ export function StatusBar({
         >
           {accuracy && accuracy.status !== "ready" ? t("status.accuracyWarning") : "—"}
         </span>
-        <span className={`status-item guidance-${guidance?.status ?? "idle"}`}>
-          {guidance ? t("status.guidance", { status: guidance.status, pin: guidancePin ?? guidance.expected_pin_id }) : "—"}
+        <span className={`status-item guidance-${ws.guidance?.status ?? "idle"}`}>
+          {ws.guidance ? t("status.guidance", { status: ws.guidance.status, pin: guidancePin ?? ws.guidance.expected_pin_id }) : "—"}
         </span>
       </div>
       <div className="status-actions">
@@ -120,7 +182,30 @@ export function StatusBar({
           {t("camera.triggerLabel")}
         </button>
       )}
-      {webcamTuningVisible ? <CameraAutoTune disabled={cameraPickerDisabled} onBusyChange={setCameraTuningBusy} /> : null}
+      {webcamTuningVisible && <details className="distance-assistant">
+        <summary title={t("distanceAssistant.tooltip")}>{t("distanceAssistant.title")}</summary>
+        <div className={`distance-assistant-panel ${distance.state}`} role="group" aria-label={t("distanceAssistant.title")}>
+          <strong aria-live="polite">{t(`distanceAssistant.${distance.state}`)}</strong>
+          {distance.boundaryUnverified && <span>{t("distanceAssistant.boundaryUnverified")}</span>}
+          {distance.pitchPx !== null && distance.minimumPx !== null && distance.targetPx !== null && <>
+            <span>{t(distance.sampleFresh ? "distanceAssistant.pitch" : "distanceAssistant.lastPitch", { current: distance.pitchPx.toFixed(1), minimum: distance.minimumPx.toFixed(1) })}</span>
+            <div className="distance-scale-track" role="meter" aria-label={t("distanceAssistant.meter")} aria-valuemin={0}
+              aria-valuemax={Math.ceil(distance.targetPx)} aria-valuenow={Math.min(Math.round(distance.pitchPx), Math.ceil(distance.targetPx))}>
+              <span style={{ width: `${Math.min(100, Math.round(distance.pitchPx / distance.targetPx * 20) * 5)}%` }} />
+            </div>
+            <span>{t("distanceAssistant.target", { target: distance.targetPx.toFixed(1) })}</span>
+            {(distance.state === "moveCloser" || distance.state === "addMargin") && distance.factor !== null &&
+              <span>{t("distanceAssistant.move", { factor: distance.factor.toFixed(1) })}</span>}
+          </>}
+          {expectedBoard === "raspberry-pi-5" && <CameraAutoTune
+            disabled={cameraPickerDisabled || expectedRevision == null} onBusyChange={setCameraTuningBusy}
+            alignment={{ detection, distance, receivedAtMs, now: Math.max(now, receivedAtMs), synchronized: motion !== undefined,
+              context: `${expectedBoard}:${expectedRevision ?? ""}` }} />}
+          <small>{t("distanceAssistant.limit")}</small>
+        </div>
+      </details>}
+      {webcamTuningVisible && expectedBoard !== "raspberry-pi-5" &&
+        <CameraAutoTune disabled={cameraPickerDisabled} onBusyChange={setCameraTuningBusy} />}
       <button
         type="button"
         className="smart-glasses-trigger"

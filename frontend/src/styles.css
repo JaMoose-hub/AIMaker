@@ -1005,24 +1005,6 @@ h3 {
   white-space: nowrap;
 }
 
-.tracking-notice {
-  position: absolute;
-  top: 94px;
-  left: 12px;
-  right: 12px;
-  z-index: 7;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  font-size: 12px;
-  pointer-events: none;
-}
-.tracking-notice span {
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: rgba(18, 21, 26, .84);
-  color: #f4cc79;
-}
 .realtime-tracking .overlay-svg.stale .board-outline,
 .realtime-tracking .component-overlay-svg.stale .board-outline {
   stroke: #f4cc79;
@@ -1886,6 +1868,54 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
 .status-actions .camera-auto-tune { flex-wrap: nowrap; }
 .status-actions .camera-auto-message { white-space: nowrap; max-width: none; }
 .status-actions .camera-auto-trigger { padding-block: 4px; }
+.distance-assistant { position: relative; }
+.distance-assistant summary {
+  padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11.5px;
+  list-style: none;
+  white-space: nowrap;
+}
+.distance-assistant summary::-webkit-details-marker { display: none; }
+.distance-assistant summary:hover,
+.distance-assistant[open] summary { border-color: var(--accent); color: var(--text); }
+.distance-assistant summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.distance-assistant-panel {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  gap: 5px;
+  width: min(340px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+  color: var(--text);
+  line-height: 1.45;
+  white-space: normal;
+}
+.distance-assistant-panel.moveCloser strong { color: #f4c95d; }
+.distance-assistant-panel.boardUnverified strong,
+.distance-assistant-panel.addMargin strong { color: #f4c95d; }
+.distance-assistant-panel.scaleReady strong { color: #65d6a0; }
+.distance-assistant-panel small { color: var(--text-dim); line-height: 1.45; }
+.distance-assistant-panel .camera-auto-tune { display: grid; gap: 5px; min-width: 0; }
+.distance-assistant-panel .camera-auto-trigger { justify-self: start; white-space: normal; }
+.distance-assistant-panel .camera-auto-message { white-space: normal; max-width: none; }
+.auto-alignment-message { color: #f4c95d; font-size: 12px; line-height: 1.45; }
+.auto-alignment-message.success { color: #65d6a0; }
+.distance-scale-track { height: 7px; overflow: hidden; border-radius: 999px; background: var(--border-strong); }
+.distance-scale-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .35s ease; }
+@media (max-width: 600px) {
+  .status-actions > .distance-assistant[open] { flex: 1 1 100%; }
+  .distance-assistant-panel { position: static; width: 100%; max-width: 340px; margin-top: 6px; }
+}
 .mirror-controls .realtime-toggle { min-width: 158px; font-variant-numeric: tabular-nums; }
 
 .status-item {

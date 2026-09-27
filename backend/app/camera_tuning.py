@@ -10,6 +10,7 @@ import logging
 import math
 import threading
 import time
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -40,6 +41,75 @@ def observations(state, timestamp: float) -> dict:
             and getattr(p, 'outline_px', None) is not None}
 
 
+def _pi_motion_observation(state, timestamp: float, frame_shape):
+    """Use a same-frame display track only as an image-quality ROI, never as pin evidence."""
+    motion = getattr(state, 'motion_frame_state', None)
+    capture = motion.get_capture() if motion is not None else None
+    if capture is None:
+        return None
+    packet, source = capture
+    if (frame_shape is None or source.frame.shape != frame_shape
+            or not 0 <= timestamp - source.ts_ms <= 500
+            or packet.get('board_id') != 'raspberry-pi-5'
+            or packet.get('frame_id') != source.frame_id
+            or packet.get('ts_ms') != source.ts_ms):
+        return None
+    runtime = getattr(state, 'runtime_manager', None)
+    if runtime is not None and packet.get('runtime_revision') != runtime.snapshot().runtime_revision:
+        return None
+    detection = packet.get('detection') or {}
+    if (detection.get('board_id') != 'raspberry-pi-5'
+            or detection.get('frame_id') != source.frame_id):
+        return None
+    body = detection.get('body')
+    if (isinstance(body, dict) and body.get('frame_id') == source.frame_id
+            and not body.get('partial') and isinstance(body.get('confidence'), (int, float))
+            and math.isfinite(body['confidence']) and body['confidence'] >= .5):
+        try:
+            box = np.asarray(body.get('box'), np.float32)
+        except (TypeError, ValueError):
+            box = np.empty(0)
+        if box.shape == (4,) and np.isfinite(box).all() and min(box[2:] - box[:2]) >= 32:
+            x0, y0, x1, y1 = box.tolist()
+            return SimpleNamespace(tracking='searching', pins=[],
+                                   outline_px=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+    if detection.get('tracking') == 'locked' and not detection.get('pose_quality', {}).get('outline_only'):
+        try:
+            outline = np.asarray(detection.get('outline'), np.float32)
+        except (TypeError, ValueError):
+            return None
+        if (outline.shape == (4, 2) and np.isfinite(outline).all()
+                and min(outline.max(axis=0) - outline.min(axis=0)) >= 32):
+            return SimpleNamespace(tracking='searching', pins=[], outline_px=outline.tolist())
+    return None
+
+
+def pi_tuning_observation(state, timestamp: float, frame_shape=None):
+    """Image-only Pi ROI; brief raw-model loss can use a paired display track."""
+    board_state = getattr(state, 'detection_state', None)
+    board = board_state.get() if board_state is not None else None
+    if (board is None or getattr(board, 'board_id', None) != 'raspberry-pi-5'
+            or not 0 <= timestamp - getattr(board, 'ts_ms', 0) <= 500):
+        return _pi_motion_observation(state, timestamp, frame_shape)
+    if getattr(board, 'tracking', None) == 'locked' and getattr(board, 'outline_px', None) is not None:
+        return board
+    if getattr(board, 'pose_stability_state', None) in ('corner_box_inconsistent', 'pcb_boundary_unverified'):
+        return _pi_motion_observation(state, timestamp, frame_shape)
+    body = getattr(board, 'body', None)
+    if (not isinstance(body, dict) or body.get('partial')
+            or not isinstance(body.get('confidence'), (int, float))
+            or not math.isfinite(body['confidence']) or body['confidence'] < .5):
+        return _pi_motion_observation(state, timestamp, frame_shape)
+    try:
+        box = np.asarray(body.get('box'), np.float32)
+    except (TypeError, ValueError):
+        return _pi_motion_observation(state, timestamp, frame_shape)
+    if box.shape != (4,) or not np.isfinite(box).all() or box[2] - box[0] < 32 or box[3] - box[1] < 32:
+        return _pi_motion_observation(state, timestamp, frame_shape)
+    x0, y0, x1, y1 = box.tolist()
+    return SimpleNamespace(outline_px=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+
+
 def fixed_regions(frame, detected: dict) -> dict:
     h, w = frame.shape[:2]
     regions = {}
@@ -53,6 +123,24 @@ def fixed_regions(frame, detected: dict) -> dict:
             regions[name] = (int(lo[0]), int(lo[1]), int(hi[0]), int(hi[1]))
     # Acquisition must work even when no detector can locate a component yet.
     return regions or {'workspace': (w // 10, h // 10, w * 9 // 10, h * 9 // 10)}
+
+
+def pi_tuning_regions(frame, observation) -> dict:
+    regions = fixed_regions(frame, {'raspberry-pi-5': observation} if observation else {})
+    if 'raspberry-pi-5' not in regions or getattr(observation, 'tracking', None) != 'locked':
+        return regions
+    pins = [(pin.x, pin.y) for pin in getattr(observation, 'pins', ())
+            if getattr(pin, 'header', None) == 'J8' and getattr(pin, 'visible', False)
+            and math.isfinite(pin.x) and math.isfinite(pin.y)]
+    if len(pins) < 8:
+        return regions
+    h, w = frame.shape[:2]
+    points = np.asarray(pins, np.float32)
+    lo = np.maximum(points.min(axis=0) - 12, [0, 0]).astype(int)
+    hi = np.minimum(points.max(axis=0) + 13, [w, h]).astype(int)
+    if min(hi - lo) >= 32:
+        regions['raspberry-pi-5-j8'] = (int(lo[0]), int(lo[1]), int(hi[0]), int(hi[1]))
+    return regions
 
 
 def quality(frame, regions: dict) -> tuple[dict, dict]:
@@ -110,7 +198,8 @@ class CameraTuner:
         self._thread = None
         self._closed = False
         self._undo = None
-        self._status = dict(state='idle', progress=0, reason=None, before=None, after=None, saved=False)
+        self._status = dict(state='idle', progress=0, reason=None, before=None, after=None,
+                            saved=False, target_id=None)
 
     def available(self):
         return (getattr(self.state.config.camera, 'source', None) == 'device'
@@ -119,12 +208,15 @@ class CameraTuner:
     def snapshot(self):
         with self._lock:
             data = copy.deepcopy(self._status)
-            data.update(available=self.available(), busy=bool(self._thread and self._thread.is_alive()),
+            data.update(available=self.available(), target_supported=True,
+                        busy=bool(self._thread and self._thread.is_alive()),
                         can_restore=bool(self._undo and self.state.source is self._undo['source']))
             return data
 
-    def start(self, restore=False):
+    def start(self, restore=False, target_id=None):
         with self._lock:
+            if target_id not in (None, 'raspberry-pi-5') or (restore and target_id is not None):
+                return {'ok': False, 'reason': 'unsupported'}
             if self._closed or not self.available():
                 return {'ok': False, 'reason': 'unsupported'}
             if self._thread and self._thread.is_alive():
@@ -135,9 +227,9 @@ class CameraTuner:
                 return {'ok': False, 'reason': 'busy'}
             self._cancel.clear()
             self._status = dict(state='restoring' if restore else 'preparing', progress=0,
-                                reason=None, before=None, after=None, saved=False)
+                                reason=None, before=None, after=None, saved=False, target_id=target_id)
             source = self.state.source
-            self._thread = threading.Thread(target=self._run, args=(source, restore), daemon=True,
+            self._thread = threading.Thread(target=self._run, args=(source, restore, target_id), daemon=True,
                                             name='BoardVision-CameraTuning')
             try:
                 self._thread.start()
@@ -197,23 +289,31 @@ class CameraTuner:
                 motion.extend(image_motion(previous[k], thumbs[k]) for k in thumbs)
             previous = thumbs
             rows.append(metrics)
-            for key in observations(self.state, slot.ts_ms):
+            observed = observations(self.state, slot.ts_ms)
+            for key in observed:
                 seen[key] = seen.get(key, 0) + 1
+            if (getattr(self, '_target_id', None) == 'raspberry-pi-5'
+                    and 'raspberry-pi-5' not in observed
+                    and pi_tuning_observation(self.state, slot.ts_ms, slot.frame.shape)):
+                seen['raspberry-pi-5'] = seen.get('raspberry-pi-5', 0) + 1
             self._cancel.wait(.10)
         if motion and np.percentile(motion, 80) > 2.5:
             raise TuneStopped('moving')
         if not getattr(self, '_scene_reference', None):
             self._scene_reference = previous
+        if getattr(self, '_target_id', None) and seen.get(self._target_id, 0) < math.ceil(self.samples / 2):
+            raise TuneStopped('target_not_visible')
         aggregate = {k: {m: float(np.median([row[k][m] for row in rows])) for m in rows[0][k]} for k in regions}
         penalty = max(0, exposure + 5) * .25 if exposure is not None else 0
         return dict(score=float(np.mean([r['score'] for r in aggregate.values()])) - penalty,
                     regions=aggregate, detected={k: seen.get(k, 0) / self.samples for k in TARGETS})
 
-    def _run(self, source, restore):
+    def _run(self, source, restore, target_id=None):
         original, touched = None, False
         old_saved = control_store.load(source.control_identity)
         self._deadline = time.monotonic() + self.budget_s
         self._scene_reference = None
+        self._target_id = target_id
         try:
             props = {p['Name']: p for p in source.read_live_controls()['controls']
                      if p['Name'] in control_store.NAMES and p['Flags'] in (1, 2)}
@@ -229,7 +329,13 @@ class CameraTuner:
             slot = self.state.frame_bus.get_latest(.5)
             if slot is None:
                 raise TuneStopped('no_frames')
-            regions = fixed_regions(slot.frame, observations(self.state, slot.ts_ms))
+            if target_id:
+                target = pi_tuning_observation(self.state, slot.ts_ms, slot.frame.shape)
+                regions = pi_tuning_regions(slot.frame, target)
+                if target_id not in regions:
+                    raise TuneStopped('target_not_visible')
+            else:
+                regions = fixed_regions(slot.frame, observations(self.state, slot.ts_ms))
             shape = slot.frame.shape
             original_exposure = original.get('exposure', {}).get('value')
             baseline = self._measure(source, regions, shape, original_exposure)
@@ -247,7 +353,17 @@ class CameraTuner:
                 self._check(source)
                 candidate = {**best_settings, **changes}
                 source.apply_live_controls(candidate)
-                score = self._measure(source, regions, shape, candidate.get('exposure', {}).get('value'))
+                try:
+                    score = self._measure(source, regions, shape, candidate.get('exposure', {}).get('value'))
+                except TuneStopped as error:
+                    if str(error) != 'target_not_visible':
+                        raise
+                    # A trial may temporarily hide the Pi. Reject just that
+                    # setting; do not abort the whole bounded search.
+                    self._check(source)
+                    source.apply_live_controls(best_settings)
+                    self._update(progress=progress)
+                    return
                 if is_better(score, best):
                     best, best_settings = score, copy.deepcopy(candidate)
                 self._update(progress=progress)
@@ -317,4 +433,5 @@ class CameraTuner:
                     log.error('Camera tune rollback failed', exc_info=True)
             self._update(state='cancelled' if reason == 'cancelled' else 'error', reason=reason, progress=100)
         finally:
+            self._target_id = None
             self.state.camera_control_lock.release()

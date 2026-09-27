@@ -262,7 +262,6 @@
   }
   .maker-layout .pin-calibration-controls { top: 58px; right: 8px; }
   .maker-layout .pin-calibration-toggle { width: 88px; font-size: 10px; line-height: 1.3; }
-  .maker-layout:not(.display-mode-active) .tracking-notice { top: 110px; font-size: 10px; }
 }
 @media (max-width: 380px) {
   .maker-layout .debug-status-grid { grid-template-columns: minmax(0, 1fr); }

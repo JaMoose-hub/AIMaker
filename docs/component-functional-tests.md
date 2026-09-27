@@ -5,7 +5,7 @@
 ## 使用方式
 
 1. 進入 Pin 接線引導，逐腳確認本零件全部必要接線。
-2. 上方工具列按「連線 Pi」（若尚未連線），再於接線卡按「測試 HC-SR04+」或「測試 MRD-TFT240」。不需要鏡頭定位或 AI 登入。
+2. 上方工具列按「連線 Pi」（若尚未連線），再於接線卡按「測試 HC-SR04+」或「測試 MRD-TFT240」。手動測試不需要鏡頭定位或 AI 登入。
 3. 先檢查 Pi 環境。測試與部署使用[共用 FIFO 佇列](pi-execution-queue.md)；若已有程式執行，在上方「執行管理」確認停止與交接，也可取消排隊或繼續接線。
 4. HC：擺近目標 → 準備好了 → 取樣 5 秒 → 移遠目標 → 準備好了 → 再取樣 5 秒。
 5. TFT：看紅、綠、藍與本次四位碼，選對測試碼且確認顏色正常，才記錄目視通過。全黑、白屏與異常有獨立除錯選項。
@@ -29,7 +29,8 @@
 
 `ProjectGuidePanel → useComponentTests → /api/pi/component-tests → ComponentTests → 既有 PiDeployer SSH → systemd-run 一次性 runner`
 
-- 固定模板：`backend/app/runtime/component_test.py`，版本 `component-test-v3`；TFT 重用 `ili9341_display.py`。
+- 固定模板：`backend/app/runtime/component_test.py`；手動測試維持 `component-test-v3`，TFT 重用 `ili9341_display.py`。
+- 04 的 AI 協作除錯另以 opt-in `component-test-v4-camera` 執行 TFT：RGB 每色 3 秒、測試碼 15 秒，各 RGB 階段有當次私有四位識別標記，畫面寫入完成後才記錄階段。相機照片與 run／階段綁定，觀察模型不取得標記答案、測試碼或人工候選；漏拍不能用末段畫面補證。相機比對只提供輔助觀察，原有人工選碼及顏色確認仍是實體通過條件。實機辨識率與時間窗待現場驗收。
 - 獨立遠端目錄：`<remote_dir>/component-tests/<run_id>/`，不覆蓋 `main.py`、正式 service 或部署檔案。
 - 狀態使用原子 JSON 寫入。回報 run_id、階段、心跳、最新有效讀值時間、段落樣本摘要與結構化錯誤。
 - 後端保存 `backend/runs/component-tests.json`（已由 gitignore 排除）。每筆綁定 Pi 目標雜湊、作品與 revision、零件、接線雜湊、人工確認時間與模板版本。

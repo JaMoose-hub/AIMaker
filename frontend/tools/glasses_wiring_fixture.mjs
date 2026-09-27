@@ -29,7 +29,8 @@ const recognitionOverlay = compile("components/ObjectRecognitionOverlay.tsx", { 
 
 export async function renderWiringVideo({ displayMode = "standard", boardId = "raspberry-pi-5", realtimeEnabled = true,
   state = "running", eyeActive = displayMode === "smart-glasses-demo", cameraSource = eyeActive ? "xreal" : "device",
-  hasTarget = true, manualOnly = false, searching = false, bodyEvidence = null, componentBodyBox = null, boardBodyPartial = false } = {}) {
+  hasTarget = true, manualOnly = false, searching = false, bodyEvidence = null, componentBodyBox = null, boardBodyPartial = false,
+  boardPoseQuality = null, componentPoseQuality = null, backendDown = false } = {}) {
   const detection = { type: "detection", board_id: boardId, runtime_revision: 12, frame_id: 77, ts_ms: 1000,
     tracking: searching ? "searching" : "locked", confidence: .92, video_size: [1920,1080],
     outline: searching ? null : [[100,100],[700,100],[700,600],[100,600]],
@@ -40,6 +41,8 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     outline: searching ? null : [[800,200],[1000,200],[1000,500],[800,500]],
     pins: searching ? [] : [{id:"TRIG",x:810,y:250,c:1,v:true},{id:"ECHO",x:820,y:250,c:1,v:true}],
     body:{box:[800,200,1000,500],confidence:.9,source:"fixture"} };
+  if (boardPoseQuality) detection.pose_quality = boardPoseQuality;
+  if (componentPoseQuality) component.pose_quality = componentPoseQuality;
   if (componentBodyBox) component.body.box=componentBodyBox;
   if (boardBodyPartial) detection.body.partial=true;
   if (bodyEvidence) for (const pose of [detection, component]) {
@@ -76,7 +79,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
   const element=createElement(VideoView, {
     displayMode,glassesStatus:{active:eyeActive,state,runtime_revision:12,requested:{width:1920,height:1080,fps:30,denoise:"clean"}},onGlassesDisplayFps(){},
     config:{board_id:boardId,camera_source:cameraSource,runtime_revision:12,video_size:[1920,1080],realtime_tracking:realtimeEnabled},pinsById:new Map(),
-    highlightIds:new Set(["GPIO17"]),selectedPinId:"GPIO17",onSelectPin(){},backendDown:false,legend:{colorVar:"--ok",label:"Selected target",count:1},
+    highlightIds:new Set(["GPIO17"]),selectedPinId:"GPIO17",onSelectPin(){},backendDown,legend:{colorVar:"--ok",label:"Selected target",count:1},
     outlineMm:[85,56],boardName:boardId,calibrateOpen:false,onCloseCalibrate(){},onCalibrationSuccess(){},guideTarget:target,
     opticalHudCalibration:null,onOpticalHudCalibrationComplete(){},
   });

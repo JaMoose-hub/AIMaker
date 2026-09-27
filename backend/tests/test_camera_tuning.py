@@ -10,7 +10,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.camera_tuning import CameraTuner, TuneStopped, fixed_regions, is_better, quality, snap
+from app.camera_tuning import (CameraTuner, TuneStopped, fixed_regions, is_better,
+                               pi_tuning_observation, pi_tuning_regions, quality, snap)
 from app.capture import control_store
 
 
@@ -96,6 +97,134 @@ def test_no_improvement_rolls_back_and_never_saves(rig, monkeypatch):
     assert not control_store.STORE.exists()
 
 
+def test_pi_tune_rejects_tft_only_scene_without_touching_camera(rig):
+    state, source, tuner = rig
+    tft = SimpleNamespace(component_id='mrd-tf240-8p-cs', tracking='locked',
+                          ts_ms=time.monotonic() * 1000,
+                          outline_px=[(20, 20), (80, 20), (80, 60), (20, 60)])
+    state.component_pose_state = SimpleNamespace(all=lambda: [tft])
+    assert tuner.start(target_id='raspberry-pi-5')['ok']
+    status = finish(tuner)
+    assert status['target_id'] == 'raspberry-pi-5'
+    assert status['reason'] == 'target_not_visible' and not status['saved']
+    assert source.calls == []
+
+
+def test_pi_tune_scores_only_pi_region_even_with_tft_visible(rig, monkeypatch):
+    state, source, tuner = rig
+    now = state.frame_bus.get_latest().ts_ms
+    pi = SimpleNamespace(board_id='raspberry-pi-5', tracking='locked', ts_ms=now,
+                         outline_px=[(2, 2), (58, 2), (58, 50), (2, 50)])
+    tft = SimpleNamespace(component_id='mrd-tf240-8p-cs', tracking='locked', ts_ms=now,
+                          outline_px=[(40, 35), (90, 35), (90, 75), (40, 75)])
+    state.detection_state = SimpleNamespace(get=lambda: pi)
+    state.component_pose_state = SimpleNamespace(all=lambda: [tft])
+    regions_seen = []
+    def measure(source, regions, shape, exposure=None):
+        regions_seen.append(set(regions))
+        return metrics(2. if source.props['focus']['Value'] == 20 else 1.)
+    monkeypatch.setattr(tuner, '_measure', measure)
+    assert tuner.start(target_id='raspberry-pi-5')['ok']
+    assert finish(tuner)['state'] == 'improved'
+    assert regions_seen and all(keys == {'raspberry-pi-5'} for keys in regions_seen)
+
+
+def test_tune_rejects_trial_that_loses_pi_but_continues_and_can_improve(rig, monkeypatch):
+    state, source, tuner = rig
+    original = source.settings()
+    lost_trials = []
+    now = state.frame_bus.get_latest().ts_ms
+    state.detection_state = SimpleNamespace(get=lambda: SimpleNamespace(
+        board_id='raspberry-pi-5', tracking='locked', ts_ms=now,
+        outline_px=[(2, 2), (58, 2), (58, 50), (2, 50)]))
+
+    def measure(source, regions, shape, exposure=None):
+        if source.props['exposure']['Value'] == -7:
+            lost_trials.append(source.settings())
+            raise TuneStopped('target_not_visible')
+        return metrics(2. if source.props['focus']['Value'] == 20 else 1.)
+
+    monkeypatch.setattr(tuner, '_measure', measure)
+    assert tuner.start(target_id='raspberry-pi-5')['ok']
+    result = finish(tuner)
+    assert lost_trials
+    assert result['state'] == 'improved' and result['saved']
+    assert source.props['exposure']['Value'] == original['exposure']['value']
+    assert source.props['focus']['Value'] == 20
+
+
+def test_pi_body_roi_is_fresh_and_rejects_partial_or_unreliable_boxes(rig):
+    state, _, _ = rig
+    now = time.monotonic() * 1000
+    board = SimpleNamespace(board_id='raspberry-pi-5', tracking='searching', ts_ms=now,
+                            outline_px=None, pose_stability_state=None,
+                            body={'box': [10, 8, 70, 58], 'confidence': .8})
+    state.detection_state = SimpleNamespace(get=lambda: board)
+    assert pi_tuning_observation(state, now).outline_px[0] == (10, 8)
+    board.body['partial'] = True
+    assert pi_tuning_observation(state, now) is None
+    board.body['partial'] = False
+    board.body['confidence'] = .4
+    assert pi_tuning_observation(state, now) is None
+    board.body['confidence'] = .8
+    board.body['box'] = 'invalid'
+    assert pi_tuning_observation(state, now) is None
+    board.body['box'] = [10, 8, 70, 58]
+    board.pose_stability_state = 'corner_box_inconsistent'
+    assert pi_tuning_observation(state, now) is None
+    board.pose_stability_state = None
+    assert pi_tuning_observation(state, now + 501) is None
+
+
+def test_pi_tune_can_use_fresh_same_frame_motion_body_when_raw_pose_drops(rig):
+    state, _, _ = rig
+    now = time.monotonic() * 1000
+    frame = np.zeros((80, 100, 3), np.uint8)
+    source = SimpleNamespace(frame=frame, frame_id=7, ts_ms=now)
+    packet = {
+        'board_id': 'raspberry-pi-5', 'runtime_revision': 3, 'frame_id': 7, 'ts_ms': now,
+        'detection': {
+            'board_id': 'raspberry-pi-5', 'frame_id': 7, 'tracking': 'searching',
+            'body': {'box': [10, 8, 70, 58], 'confidence': .7,
+                     'frame_id': 7, 'age_ms': 100, 'partial': False},
+        },
+    }
+    state.detection_state = SimpleNamespace(get=lambda: SimpleNamespace(
+        board_id='raspberry-pi-5', tracking='searching', ts_ms=now,
+        outline_px=None, pose_stability_state='pcb_boundary_unverified', body=None))
+    state.motion_frame_state = SimpleNamespace(get_capture=lambda: (packet, source))
+    state.runtime_manager = SimpleNamespace(snapshot=lambda: SimpleNamespace(runtime_revision=3))
+    observation = pi_tuning_observation(state, now + 100, frame.shape)
+    assert observation.outline_px == [(10, 8), (70, 8), (70, 58), (10, 58)]
+    assert observation.pins == []  # Image ROI, not GPIO pose.
+    assert pi_tuning_observation(state, now + 501, frame.shape) is None
+    assert pi_tuning_observation(state, now + 100, (40, 50, 3)) is None
+    packet['runtime_revision'] = 2
+    assert pi_tuning_observation(state, now + 100, frame.shape) is None
+    packet['runtime_revision'] = 3
+    packet['detection']['body']['partial'] = True
+    assert pi_tuning_observation(state, now + 100, frame.shape) is None
+    packet['detection']['body'] = None
+    packet['detection']['tracking'] = 'locked'
+    packet['detection']['outline'] = [[10, 8], [70, 8], [70, 58], [10, 58]]
+    assert pi_tuning_observation(state, now + 100, frame.shape).outline_px[0] == [10, 8]
+    packet['detection']['frame_id'] = 6
+    assert pi_tuning_observation(state, now + 100, frame.shape) is None
+
+
+def test_pi_tune_adds_j8_focus_region_only_with_visible_locked_pins():
+    frame = np.zeros((200, 320, 3), np.uint8)
+    pins = [SimpleNamespace(header='J8', visible=True, x=35 + i * 8, y=38 + i % 2 * 8)
+            for i in range(20)]
+    pi = SimpleNamespace(tracking='locked', pins=pins,
+                         outline_px=[(20, 20), (270, 20), (270, 170), (20, 170)])
+    regions = pi_tuning_regions(frame, pi)
+    assert set(regions) == {'raspberry-pi-5', 'raspberry-pi-5-j8'}
+    assert regions['raspberry-pi-5-j8'][0] < pins[0].x
+    pi.tracking = 'searching'
+    assert set(pi_tuning_regions(frame, pi)) == {'raspberry-pi-5'}
+
+
 @pytest.mark.parametrize('reason', ['no_frames', 'moving', 'timeout', 'cancelled'])
 def test_interrupted_trial_restores_original_and_releases_lease(rig, monkeypatch, reason):
     state, source, tuner = rig
@@ -179,6 +308,22 @@ def test_busy_lease_blocks_duplicate_tuning_and_other_camera_mutations(rig):
     assert not source.calls
 
 
+def test_targeted_tuning_api_is_explicit_and_reports_capability(rig):
+    from app.api.camera_tuning import router
+    state, source, tuner = rig
+    app = FastAPI()
+    app.state = state
+    app.include_router(router)
+    with TestClient(app) as client:
+        assert client.get('/api/camera/auto-tune').json()['target_supported'] is True
+        assert client.post('/api/camera/auto-tune', json={'target_id': 'tft'}).status_code == 422
+        accepted = client.post('/api/camera/auto-tune', json={'target_id': 'raspberry-pi-5'}).json()
+        assert accepted['ok'] is True
+        assert accepted['target_id'] == 'raspberry-pi-5'
+    assert finish(tuner)['reason'] == 'target_not_visible'
+    assert not source.calls
+
+
 def test_native_focus_is_live_and_does_not_restart_ffmpeg(monkeypatch):
     from app.capture.sources import FfmpegMjpegCameraSource
     from app.capture import windows_uvc
@@ -224,6 +369,14 @@ def test_average_cannot_hide_loss_of_other_component():
     assert is_better(metrics(1.5), baseline)
 
 
+def test_pi_board_improvement_cannot_hide_j8_focus_regression():
+    baseline = metrics(1)
+    baseline['regions']['raspberry-pi-5-j8'] = dict(score=1., highlight=0., sharpness=100., level=90.)
+    candidate = metrics(1.5)
+    candidate['regions']['raspberry-pi-5-j8'] = dict(score=.7, highlight=0., sharpness=60., level=90.)
+    assert not is_better(candidate, baseline)
+
+
 def test_snap_respects_driver_increment():
     prop = dict(Min=0, Max=250, Step=5)
     assert snap(prop, 13) == 15
@@ -241,6 +394,17 @@ def test_measure_requires_fresh_frames_and_never_reuses_cached_image(rig):
     state.frame_bus.get_latest = lambda *a, **kw: old
     with pytest.raises(TuneStopped, match='no_frames'):
         CameraTuner._measure(tuner, source, {'workspace': (0,0,100,80)}, (80,100,3))
+
+
+def test_targeted_measure_stops_when_pi_evidence_disappears(rig):
+    state, source, tuner = rig
+    tuner._target_id = 'raspberry-pi-5'
+    tuner._deadline = time.monotonic() + 5
+    frame = np.full((80, 100, 3), 80, np.uint8)
+    state.frame_bus = SimpleNamespace(latest_seq=0,
+        get_latest=lambda *a, **kw: SimpleNamespace(frame=frame, seq=1, ts_ms=time.monotonic() * 1000))
+    with pytest.raises(TuneStopped, match='target_not_visible'):
+        CameraTuner._measure(tuner, source, {'raspberry-pi-5': (0, 0, 80, 60)}, frame.shape)
 
 
 def test_device_profile_reapplied_on_start_without_new_stream(rig, monkeypatch):
@@ -271,3 +435,4 @@ def test_read_only_helper_never_writes(monkeypatch):
     monkeypatch.setattr(windows_uvc.subprocess,'run',run)
     windows_uvc.read_controls('mock')
     assert '-ReadOnly' in calls[0] and '-SettingsBase64' not in calls[0]
+    assert calls[0][calls[0].index('-ExecutionPolicy') + 1] == 'RemoteSigned'

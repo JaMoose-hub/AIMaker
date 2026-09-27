@@ -51,6 +51,13 @@ class TftRingAcquirer:
         if refined is None and previous is not None:
             evidence = {'search': 'recent_measured_rings', 'model_attempt': evidence}
             refined = refine_tft_rings(frame, previous[0], evidence)
+        if refined is None and observation is not None:
+            wide_evidence = {}
+            refined = refine_tft_rings(frame, observation, wide_evidence, expanded=True)
+            if refined is not None:
+                evidence = wide_evidence
+            else:
+                evidence['expanded_attempt'] = wide_evidence
         panel_seed = previous[0] if previous is not None else observation
         if refined is None and panel_seed is not None:
             panel_evidence = {}
@@ -82,6 +89,10 @@ class TftRingAcquirer:
                             corrected=bool(shifts[index]), reason='current_mounts_match_recent_header',
                             age_ms=round(float(ts_ms-anchor_ts), 1))
             evidence['orientation'] = orientation
+            if evidence.get('expanded_search') and not (orientation['verified'] or orientation.get('carried')):
+                evidence.update(accepted=False, reason='expanded_header_unverified')
+                self.evidence = evidence
+                return None
             self._last = (refined, frame_id, ts_ms, frame.shape)
         self.evidence = evidence
         return refined
@@ -125,6 +136,7 @@ def orient_tft_from_panel_inset(frame, observation, evidence):
     edges = cv2.morphologyEx(cv2.Canny(gray, 35, 100), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
     contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     candidates = []
+    complete_panel = False
     for contour in contours:
         if not .50 * 239 * 399 <= cv2.contourArea(contour) <= .95 * 239 * 399:
             continue
@@ -142,10 +154,14 @@ def orient_tft_from_panel_inset(frame, observation, evidence):
         vectors = np.abs(q - np.roll(q, -1, axis=0))
         if np.any(vectors.min(1) > .035):
             continue
+        complete_panel = True
         top, bottom = float(q[np.argsort(q[:, 1])[:2], 1].mean()), float(1-q[np.argsort(q[:, 1])[2:], 1].mean())
         if not .04 <= abs(top-bottom) <= .16:
             continue
         candidates.append((top, bottom))
+    if not candidates and not complete_panel:
+        candidates = [(top, bottom) for top, bottom in _panel_edge_insets(frame, corners)
+                      if .04 <= abs(top-bottom) <= .16]
     if not candidates or len({top > bottom for top, bottom in candidates}) != 1:
         evidence['reason'] = 'lcd_inset_ambiguous'
         return observation
@@ -196,6 +212,55 @@ def _contour_rings(gray, blue, short):
     return result
 
 
+def _panel_edge_insets(frame, corners):
+    """Verify four long LCD edges even when text/glare joins their contours.
+
+    Four measured mounts rectify the *current* image. Each LCD rail must then
+    have independent edge support at its physical inset, over at least 70% of
+    its length. Neither a dark rectangle nor the outside PCB alone suffices.
+    """
+    target = np.float32([[24, 24], [183, 24], [183, 243], [24, 243]])
+    patch = cv2.warpPerspective(frame, cv2.getPerspectiveTransform(
+        np.float32(corners), target), (208, 268))
+    gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+    edges = cv2.dilate(cv2.Canny(gray, 35, 100), np.ones((3, 3), np.uint8)) > 0
+    # Search only the rails and inset ends; exclude text in the display centre
+    # and the PCB perimeter outside the mounting-hole rectangle.
+    left = np.arange(12, 41)
+    right = np.arange(167, 197)
+    top = np.arange(31, 77)
+    bottom = np.arange(190, 237)
+    x1 = int(left[np.argmax(edges[77:190, left].mean(0))])
+    x2 = int(right[np.argmax(edges[77:190, right].mean(0))])
+    def supported_rows(rows):
+        values = rows[edges[rows, x1:x2+1].mean(1) >= .70]
+        return [int(np.median(group)) for group in np.split(values, np.flatnonzero(np.diff(values)>1)+1)
+                if len(group)]
+    result = []
+    for y1 in supported_rows(top):
+        for y2 in supported_rows(bottom):
+            horizontal_end = max(3, round(.15*(x2-x1)))
+            vertical_end = max(3, round(.15*(y2-y1)))
+            # Four unrelated lines are not a panel: they must also meet near
+            # all four corners. A covering hand's outer edge cannot substitute
+            # for a missing LCD rail while the other 70% remains visible.
+            joins = [edges[y, xs].mean() for y in (y1, y2)
+                     for xs in (slice(x1, x1+horizontal_end), slice(x2-horizontal_end, x2+1))]
+            joins += [edges[ys, x].mean() for x in (x1, x2)
+                      for ys in (slice(y1, y1+vertical_end), slice(y2-vertical_end, y2+1))]
+            if (.65 * 219 <= y2-y1 <= .88 * 219
+                    and min(edges[y1:y2+1, x1].mean(), edges[y1:y2+1, x2].mean()) >= .70
+                    and min(joins) >= .50):
+                result.append(((y1-24)/219, (243-y2)/219))
+    return result
+
+
+def _independent_panel_edges(frame, corners):
+    insets = [(top, bottom) for top, bottom in _panel_edge_insets(frame, corners)
+              if .04 <= abs(top-bottom) <= .16]
+    return bool(insets) and len({top > bottom for top, bottom in insets}) == 1
+
+
 def _screen_frame_supported(frame, corners):
     """Require an independently visible large rectangular panel between the rings."""
     # The mounting-hole centres are inset from the PCB: the LCD side rails
@@ -203,8 +268,7 @@ def _screen_frame_supported(frame, corners):
     target=np.float32([[24,24],[183,24],[183,243],[24,243]])
     canonical=cv2.warpPerspective(frame,cv2.getPerspectiveTransform(np.float32(corners),target),(208,268))
     gray=cv2.cvtColor(canonical,cv2.COLOR_BGR2GRAY)
-    edges=cv2.Canny(gray,35,100)
-    edges=cv2.morphologyEx(edges,cv2.MORPH_CLOSE,np.ones((3,3),np.uint8))
+    edges=cv2.morphologyEx(cv2.Canny(gray,35,100),cv2.MORPH_CLOSE,np.ones((3,3),np.uint8))
     contours,_=cv2.findContours(edges,cv2.RETR_LIST,cv2.CHAIN_APPROX_SIMPLE)
     for contour in contours:
         if cv2.contourArea(contour)<.50*160*220:
@@ -222,7 +286,7 @@ def _screen_frame_supported(frame, corners):
         vectors=np.abs(quad-np.roll(quad,-1,axis=0))
         if np.all(vectors.min(1)/np.maximum(vectors.max(1),1)<.30):
             return True
-    return False
+    return _independent_panel_edges(frame, corners)
 
 
 def refine_tft_panel(frame, observation, evidence):
@@ -332,7 +396,7 @@ def refine_tft_panel(frame, observation, evidence):
         box_xyxy=tuple(np.r_[corners.min(0),corners.max(0)]),source='tft_panel_geometry')
 
 
-def refine_tft_rings(frame, observation, evidence):
+def refine_tft_rings(frame, observation, evidence, *, expanded=False):
     evidence.update(accepted=False, source='tft_ring_geometry')
     predicted = np.asarray(observation.corners_px, np.float32)
     box = np.asarray(observation.box_xyxy, dtype=float)
@@ -341,8 +405,13 @@ def refine_tft_rings(frame, observation, evidence):
     extent = box[2:]-box[:2]
     if min(extent) < 50 or not cv2.isContourConvex(predicted):
         return None
-    lo = np.maximum(0, np.floor(box[:2]-.3*extent)).astype(int)
-    hi = np.minimum([frame.shape[1],frame.shape[0]], np.ceil(box[2:]+.3*extent)).astype(int)
+    if expanded and (observation.source != 'yolo' or max(extent) > .55*min(frame.shape[:2])):
+        evidence['reason'] = 'expanded_search_not_bounded'
+        return None
+    margin = 1.0 if expanded else .3
+    evidence['expanded_search'] = expanded
+    lo = np.maximum(0, np.floor(box[:2]-margin*extent)).astype(int)
+    hi = np.minimum([frame.shape[1],frame.shape[0]], np.ceil(box[2:]+margin*extent)).astype(int)
     if np.any(hi-lo < 32):
         return None
     crop = frame[lo[1]:hi[1],lo[0]:hi[0]]
@@ -355,9 +424,10 @@ def refine_tft_rings(frame, observation, evidence):
     gray = cv2.GaussianBlur(native_gray,(5,5),1.)
     short = min(extent)*scale
     rings = cv2.HoughCircles(gray,cv2.HOUGH_GRADIENT,dp=1.2,
-        minDist=max(12,short*.06),param1=90,param2=24,
-        minRadius=max(3,round(short*.012)),maxRadius=max(6,round(short*.060)))
+        minDist=max(12,short*.06),param1=90,param2=17 if expanded else 24,
+        minRadius=max(3,round(short*.012)),maxRadius=max(6,round(short*(.09 if expanded else .060))))
     candidates = []
+    appearance = {}
     for x,y,radius in ([] if rings is None else rings[0]):
         radius = float(radius)
         margin = int(np.ceil(radius*1.9))
@@ -368,8 +438,13 @@ def refine_tft_rings(frame, observation, evidence):
         annulus=(dist>=(radius*1.15)**2)&(dist<=(radius*1.85)**2)
         fraction=float(np.mean(blue[y1:y2,x1:x2][annulus]>0)) if annulus.any() else 0.
         if fraction >= .30:
-            candidates.append((fraction,np.array([x,y])/scale+lo,radius/scale))
-    contour_rings=_contour_rings(native_gray,blue,short)
+            point = np.array([x,y])/scale+lo
+            candidates.append((fraction,point,radius/scale))
+            inner = dist < (radius*.65)**2
+            patch = native_gray[y1:y2,x1:x2]
+            appearance[tuple(point)] = (abs(float(np.median(patch[inner]))-float(np.median(patch[annulus])))
+                                        -1.5*float(np.std(patch[inner]))) if inner.any() else -255.
+    contour_rings=[] if expanded else _contour_rings(native_gray,blue,short)
     evidence['plated_hole_candidates']=len(contour_rings)
     for fraction,point,radius in contour_rings:
         point=point/scale+lo
@@ -377,15 +452,17 @@ def refine_tft_rings(frame, observation, evidence):
         # One real hole must not become two votes (Hough + contour).
         candidates=[c for c in candidates if np.linalg.norm(c[1]-point)>max(c[2],radius)*.75]
         candidates.append((fraction,point,radius))
-    candidates=sorted(candidates,key=lambda c:c[0],reverse=True)[:12]
+    candidates=sorted(candidates,key=lambda c:appearance[tuple(c[1])] if expanded else c[0],reverse=True)[:16 if expanded else 12]
     evidence['ring_candidates']=len(candidates)
     if len(candidates)<4:
         evidence['reason']='four_visible_pcb_rings_required'
         return None
     best=None
-    area=abs(cv2.contourArea(predicted))
+    area=float(np.prod(extent)) if expanded else abs(cv2.contourArea(predicted))
     diagonal=max(np.linalg.norm(predicted[2]-predicted[0]),1.)
     for chosen in combinations(candidates,4):
+        if expanded and max(c[2] for c in chosen) > 1.5*min(c[2] for c in chosen):
+            continue
         # Glare may wash out two corners, but retain independent PCB identity
         # near at least two rings, plus a screen-frame check below.
         if sum(c[0]>=.30 for c in chosen)<2:
@@ -393,19 +470,20 @@ def refine_tft_rings(frame, observation, evidence):
         quad=np.float32([c[1] for c in chosen])
         center=quad.mean(0)
         quad=quad[np.argsort(np.arctan2(quad[:,1]-center[1],quad[:,0]-center[0]))]
-        if not cv2.isContourConvex(quad) or not .35*area <= cv2.contourArea(quad) <= 2.5*area:
+        if not cv2.isContourConvex(quad) or not .35*area <= cv2.contourArea(quad) <= (3. if expanded else 2.5)*area:
             continue
         for shift in range(4):
             ordered=np.roll(quad,shift,axis=0)
             distances=np.linalg.norm(ordered-predicted,axis=1)
-            if max(distances)>.45*diagonal:
+            if not expanded and max(distances)>.45*diagonal:
                 continue
             edges=np.linalg.norm(ordered-np.roll(ordered,-1,axis=0),axis=1)
             ratio=(edges[0]+edges[2])/(edges[1]+edges[3])
-            if not .35<=ratio<=1.2 or max(edges[0]/edges[2],edges[2]/edges[0],edges[1]/edges[3],edges[3]/edges[1])>1.8:
+            if not (.4<=ratio<=.9 if expanded else .35<=ratio<=1.2) or max(edges[0]/edges[2],edges[2]/edges[0],edges[1]/edges[3],edges[3]/edges[1])>(1.3 if expanded else 1.8):
                 continue
             score=float(np.mean(distances))
-            if (best is None or score<best[0]) and _screen_frame_supported(frame,ordered):
+            supported = _independent_panel_edges if expanded else _screen_frame_supported
+            if (best is None or score<best[0]) and supported(frame,ordered):
                 best=(score,ordered.copy())
     if best is None:
         evidence['reason']='ring_layout_unverified'

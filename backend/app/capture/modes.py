@@ -25,11 +25,17 @@ def parse_mjpeg_modes(text: str) -> list[dict]:
         # Discrete resolutions only; don't invent intermediate sizes/rates.
         if (w, h) != (max_w, max_h) or min(w, h, low, high) <= 0:
             continue
-        fps = min(high, 30.0) if low <= 30 else low
-        key = (int(w), int(h))
-        if key not in modes or modes[key]["fps"] < fps:
+        # Keep the existing preferred mode (up to 30 FPS), and expose 60 FPS
+        # when the camera's advertised interval includes it. The UI keys modes
+        # by width, height, and FPS, so both rates can appear for one resolution.
+        rates = {min(high, 30.0) if low <= 30 else low}
+        if low <= 60 <= high:
+            rates.add(60.0)
+        for fps in rates:
+            key = (int(w), int(h), fps)
             modes[key] = dict(width=key[0], height=key[1], fps=fps)
-    return sorted(modes.values(), key=lambda m: (m['width'] * m['height'], m['width']), reverse=True)
+    return sorted(modes.values(),
+                  key=lambda m: (m['width'] * m['height'], m['width'], m['fps']), reverse=True)
 
 
 @lru_cache(maxsize=8)

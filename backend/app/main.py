@@ -42,6 +42,7 @@ from app.cloud_wiring import CloudWiringService
 from app.api import wiring as api_wiring
 from app.api import pi as api_pi
 from app.api import debug as api_debug
+from app.api import debug_sessions as api_debug_sessions
 from app.api import design as api_design
 from app.api import tracking as api_tracking
 from app.api.static import mount_frontend
@@ -500,6 +501,7 @@ def build_app(
                 state.motion_worker.stop()
             if state.body_worker is not None:
                 state.body_worker.stop()
+            await asyncio.to_thread(state.debug_sessions.close)
             await asyncio.to_thread(state.pi_execution.close)
             await asyncio.to_thread(state.component_tests.close)
             await asyncio.to_thread(state.integration_trials.close)
@@ -583,6 +585,8 @@ def build_app(
 
     from app.glasses import GlassesStreamManager
     app.state.glasses_stream = GlassesStreamManager(app.state)
+    from app.debug_sessions import DebugSessions
+    app.state.debug_sessions = DebugSessions(app.state)
 
     # API routes first, then the catch-all static mount at "/".
     app.include_router(api_routes.router)
@@ -601,6 +605,7 @@ def build_app(
     app.include_router(api_wiring.router)
     app.include_router(api_pi.router)
     app.include_router(api_debug.router)
+    app.include_router(api_debug_sessions.router)
     app.include_router(api_design.router)
     app.include_router(api_cloud_wiring.router)
     mount_frontend(app, Path(config.frontend_dist))

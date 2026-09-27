@@ -192,6 +192,15 @@ test("partial outlines and interrupted tracks have distinct notices; old notices
   assert.deepEqual(trackingNotices(packet()), []);
 });
 
+test("Pi boundary rejection is not mislabeled as physical obstruction", () => {
+  const p = packet();
+  p.detection.pose_quality = { stability: "flow_lost", interrupted: true, reason: "pcb_boundary_unverified" };
+  assert.deepEqual(trackingNotices(p), [{ id: "raspberry-pi-5", key: "camera.trackingBoundaryUnverified" }]);
+  p.detection.pose_quality.reason = "awaiting_model_lock";
+  assert.deepEqual(trackingNotices(p), [{ id: "raspberry-pi-5", key: "camera.trackingObstructed" }]);
+  assert.deepEqual(trackingNotices(null), []);
+});
+
 test("shared display feed suspends cards on loss and old owners cannot revive frames", async () => {
   const { outputText } = ts.transpileModule(readFileSync(new URL("../src/lib/motionDisplayStore.ts", import.meta.url), "utf8"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },

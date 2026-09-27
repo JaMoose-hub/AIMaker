@@ -65,6 +65,9 @@ def case_action(case_id: str, body: Action, request: Request):
     if not body.confirmed:
         raise HTTPException(409, "confirmation_required")
     if body.action == "apply":
+        sessions = getattr(request.app.state, "debug_sessions", None)
+        if sessions is not None:
+            guarded(lambda: sessions.authorize_case_hardware(case_id), request)
         return guarded(lambda: service.apply(case_id, body.candidate_id, context), request)
     return guarded(lambda: service.restore(case_id, context), request)
 
@@ -77,6 +80,9 @@ def trials(request: Request, project_id: str | None = None):
 @router.post("/trials")
 def trial(body: Trial, request: Request):
     context = body.context.model_dump()
+    sessions = getattr(request.app.state, "debug_sessions", None)
+    if sessions is not None:
+        guarded(lambda: sessions.authorize_context_hardware(context), request)
     guarded(lambda: request.app.state.integration_trials.validate(context), request)
     return guarded(lambda: {"job_id": request.app.state.pi_execution.submit("trial", context, body.request_id)}, request)
 

@@ -101,6 +101,44 @@ def test_template_isolated_versioned_bounded_and_catalog_pins(tests):
     assert "private-test-password" not in json.dumps(tests.snapshot())
 
 
+def test_camera_mode_is_explicit_tft_only_and_secrets_are_not_public(tests):
+    with pytest.raises(ValueError, match="invalid_camera_test_mode"):
+        tests.start({**context(), "camera_assisted": True})
+    with pytest.raises(ValueError, match="invalid_camera_test_mode"):
+        tests.start({**context("mrd-tf240-8p-cs"), "camera_assisted": "yes"})
+    tests.start({**context("mrd-tf240-8p-cs"), "camera_assisted": True})
+    run = tests._active()
+    tests._tick(run)
+    assert run["template_version"] == "component-test-v4-camera"
+    assert len(set(run["camera_markers"].values()) | {run["visual_code"]}) == 4
+    public = tests.snapshot()["active"]
+    assert "camera_markers" not in public and "visual_code" not in public
+    config = json.loads(next(value for path, value in tests.pi.files.items() if path.endswith("/config.json")))
+    assert config["camera_markers"] == run["camera_markers"] and config["camera_assisted"] is True
+    # Comparison is advisory, with no human confirmation or test outcome mutation.
+    assert tests.compare_camera_observation(run["id"], 1, run["camera_markers"]["1"], "red")["matched"]
+    assert not tests.compare_camera_observation(run["id"], 1, run["camera_markers"]["2"], "red")["matched"]
+    assert not tests.compare_camera_observation(run["id"], 1, run["camera_markers"]["1"], "blue")["matched"]
+    assert run["outcome"] == "running"
+    tests.action(run["id"], "stop", "")
+    with pytest.raises(ValueError, match="stale_camera_test"):
+        tests.compare_camera_observation(run["id"], 1, run["camera_markers"]["1"], "red")
+
+
+def test_camera_stage_receipt_is_monotonic_bound_and_hides_remote_extras(tests):
+    tests.start({**context("mrd-tf240-8p-cs"), "camera_assisted": True})
+    run = tests._active()
+    tests._tick(run)
+    tests.pi.result = dict(run_id=run["id"], phase="display_red", heartbeat_at=time.time(),
+        camera_phase=dict(seq=1, phase="display_red", committed_at=time.time(), post_display=True, secret="must not escape"))
+    tests._poll(run)
+    stage = deepcopy(run["camera_phase"])
+    tests._poll(run)
+    assert stage == run["camera_phase"]
+    assert stage["run_id"] == run["id"] and stage["post_display"]
+    assert "secret" not in stage and stage["received_monotonic_ms"] > 0
+
+
 def test_preflight_before_consent_and_no_automatic_restart(tests):
     tests.pi._set(program="running")
     run = begin(tests)
@@ -368,6 +406,43 @@ def test_display_runner_rgb_code_and_cleanup_before_confirmation(monkeypatch):
     code_start = max(i for i, event in enumerate(events) if event == "frame_sent")
     assert events[code_start+1:-2] == ["display_code", ("sleep",1)] * 15
     assert sum(event[1] for event in events if isinstance(event, tuple)) == 18
+
+
+def test_camera_display_runner_marks_each_phase_only_after_write_without_secret_in_report(monkeypatch):
+    import sys
+    import types
+    events, frames, texts, reports = [], [], [], []
+    class Factory:
+        def close(self): events.append("factory_closed")
+    class Device:
+        size = (240, 320)
+        def display(self, image):
+            frames.append(image.copy())
+            events.append("frame_sent")
+    class Display:
+        def __init__(self, pins, factory): self.device = Device()
+        def text(self, draw, position, text, **kwargs): texts.append(text)
+        def close(self): events.append("display_closed")
+    class Report:
+        def update(self, **values):
+            if "camera_phase" in values:
+                assert events[-1] == "frame_sent"
+                reports.append(deepcopy(values))
+            events.append(values["phase"])
+    monkeypatch.setitem(sys.modules, "gpiozero.pins.lgpio", types.SimpleNamespace(LGPIOFactory=Factory))
+    monkeypatch.setitem(sys.modules, "display", types.SimpleNamespace(WiringDisplay=Display))
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
+    result = runner.display_test(dict(pins={}, visual_code="0732", camera_assisted=True,
+        camera_markers={"1":"1234", "2":"2345", "3":"3456"}), Report())
+    assert result["outcome"] == "awaiting_confirmation"
+    assert [frame.getpixel((230, 310)) for frame in frames[:3]] == [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+    assert all(frame.getpixel((5, 5)) == (0, 0, 0) for frame in frames[:3])
+    assert {"1234", "2345", "3456", "0732"}.issubset(texts)
+    assert [record["camera_phase"]["seq"] for record in reports] == [1, 2, 3, 4]
+    assert all(record["camera_phase"]["post_display"] for record in reports)
+    assert all(set(record["camera_phase"]) == {"seq", "phase", "committed_at", "post_display"} for record in reports)
+    assert [event for event in events if isinstance(event, tuple)] == [("sleep", 3)]*3 + [("sleep", 1)]*15
+    assert events[-2:] == ["display_closed", "factory_closed"]
 
 
 def test_code_viewing_keeps_lock_and_is_not_automatic_pass(tests):

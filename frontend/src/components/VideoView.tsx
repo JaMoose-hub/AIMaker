@@ -16,7 +16,7 @@ import type { ActiveGuideTarget } from "../lib/componentWiringGuides";
 import { useGuidedPose } from "../lib/useGuidedPose";
 import { useDetections } from "../lib/wsClient";
 import { useRealtimeTracking } from "../lib/useRealtimeTracking";
-import { currentBodyRecognitions, trackingNotices } from "../lib/realtimeFrame";
+import { currentBodyRecognitions } from "../lib/realtimeFrame";
 import type { AppConfig, Pin, TrackingState } from "../lib/types";
 import { CalibratePanel } from "./CalibratePanel";
 import { ComponentPinOverlay } from "./ComponentPinOverlay";
@@ -25,6 +25,7 @@ import { OpticalHudCalibrationOverlay } from "./OpticalHudCalibration";
 import { PinOverlay } from "./PinOverlay";
 import { ObjectRecognitionOverlay } from "./ObjectRecognitionOverlay";
 import { glassesVideoReady, type GlassesStatus } from "../lib/glasses";
+import type { CaptureTask, CaptureFeedback, DebugEvidence } from "../lib/debugSessions";
 
 const VIDEO_RETRY_MS = 3000;
 const MJPEG_STARTUP_TIMEOUT_MS = 1500;
@@ -123,6 +124,10 @@ interface VideoViewProps {
   guideTarget: ActiveGuideTarget | null;
   opticalHudCalibration: OpticalHudCalibration | null;
   onOpticalHudCalibrationComplete: (calibration: OpticalHudCalibration) => void;
+  debugView?: boolean;
+  debugCaptureTask?: CaptureTask | null;
+  debugEvidence?: DebugEvidence | null;
+  debugFramingFeedback?: CaptureFeedback | null;
 }
 
 export function VideoView({
@@ -144,6 +149,10 @@ export function VideoView({
   guideTarget,
   opticalHudCalibration,
   onOpticalHudCalibrationComplete,
+  debugView = false,
+  debugCaptureTask = null,
+  debugEvidence = null,
+  debugFramingFeedback = null,
 }: VideoViewProps) {
   const { t } = useI18n();
   const original = useDetections();
@@ -161,11 +170,9 @@ export function VideoView({
     glassesMode ? glassesStatus?.runtime_revision ?? -1 : original.runtime?.runtime_revision ?? original.hello?.runtime_revision ?? config?.runtime_revision ?? 1,
     glassesMode ? glassesStatus?.requested.fps ?? 30 : 30, glassesMode ? "eye" : "standard");
   useEffect(() => { onGlassesDisplayFps(glassesMode && glassesReady ? realtimeActive ? realtime.fps : null : 0); }, [glassesMode, glassesReady, realtimeActive, realtime.fps, onGlassesDisplayFps]);
-  const motionNotices = realtimeActive ? trackingNotices(realtime.frame) : [];
   // Body-only labels belong to Eye. Webcam keeps its original GPIO/Pin
   // overlays and search hint, even when the shared packet carries body data.
   const bodyRecognitions = glassesMode && realtimeActive ? currentBodyRecognitions(realtime.frame, true) : [];
-  const motionNames: Record<string, string> = { "raspberry-pi-5": "Pi 5", "hc-sr04": "HC-SR04", "mrd-tf240-8p-cs": "TFT" };
   const displaySnapshot = realtimeActive || glassesLeaving ? {
     ...original,
     detection: realtime.frame?.detection ?? null,
@@ -246,6 +253,30 @@ export function VideoView({
     [baseLetterbox, opticalHudCalibration, size.height, size.width],
   );
   const letterbox = opticalDemoMode && opticalTransform ? opticalTransform : baseLetterbox;
+  const debugCaptureBox = useMemo(() => {
+    if (!debugView || !debugCaptureTask || config?.camera_source !== "device" || glassesLeaving) return null;
+    const boxes = {
+      overview: [0.04, 0.06, 0.92, 0.88],
+      hc_target: [0.08, 0.10, 0.84, 0.80],
+      tft_screen: [0.10, 0.08, 0.80, 0.84],
+      pi_header: [0.08, 0.10, 0.84, 0.80],
+      module_header: [0.10, 0.10, 0.80, 0.80],
+    } as const;
+    const [x, y, w, h] = boxes[debugCaptureTask.target] ?? boxes.overview;
+    const first = toDisplay(baseLetterbox, x * videoWidth, y * videoHeight);
+    const second = toDisplay(baseLetterbox, (x + w) * videoWidth, (y + h) * videoHeight);
+    return { left: Math.min(first.x, second.x), top: Math.min(first.y, second.y),
+      width: Math.abs(second.x - first.x), height: Math.abs(second.y - first.y) };
+  }, [debugView, debugCaptureTask, config?.camera_source, glassesLeaving, baseLetterbox, videoWidth, videoHeight]);
+  const captureQuality = debugFramingFeedback?.quality ?? debugEvidence?.quality;
+  const captureStability = debugFramingFeedback?.stability ?? debugEvidence?.stability;
+  const captureWarnings = captureQuality?.warnings ?? [];
+  const debugCaptureHints = [
+    captureWarnings.includes("low_edge_detail") ? t("camera.debugBlur") : null,
+    captureWarnings.includes("exposure_clipping") ? t("camera.debugBright") : null,
+    captureWarnings.some(w => /underexpos|dark/i.test(w)) ? t("camera.debugDark") : null,
+    captureStability?.stable === false ? captureStability.mean_difference == null ? t("camera.debugSecondFrame") : t("camera.debugSteady") : null,
+  ].filter((hint): hint is string => Boolean(hint));
   const wiringLabels = useMemo(() => {
     if (boardId !== "raspberry-pi-5" || !guideTarget) return undefined;
     const boardPins = guideDetection?.tracking !== "searching" ? (guideDetection?.pins ?? []).filter(p => p.v) : [];
@@ -388,7 +419,7 @@ export function VideoView({
     ),
   );
   const showBoardSearchHint = !glassesLeaving && searching && !componentDetected && bodyRecognitions.length === 0 && (!glassesMode || glassesReady);
-  const showArOverlays = !glassesLeaving && (!realtimeActive || realtime.frame !== null)
+  const showArOverlays = !debugView && !glassesLeaving && (!realtimeActive || realtime.frame !== null)
     && !opticalCalibrationMode && (!opticalDemoMode || opticalTransform !== null)
     && (!glassesMode || glassesReady);
 
@@ -408,6 +439,13 @@ export function VideoView({
         onError={handleVideoError}
         onLoad={handleVideoLoad}
       />
+      {debugCaptureBox ? <div className="debug-capture-overlay" style={debugCaptureBox} aria-hidden="true">
+        <span>{debugCaptureTask?.target === "tft_screen" ? "TFT" : debugCaptureTask?.target === "hc_target" ? "HC-SR04+" : t("app.title")}</span>
+      </div> : null}
+      {debugView && (debugCaptureTask || debugCaptureHints.length > 0) ? <div className="debug-capture-feedback" role="status">
+        {debugCaptureTask?.instruction ? <strong>{debugCaptureTask.instruction}</strong> : null}
+        {debugCaptureHints.map((hint, index) => <span key={index}>{hint}</span>)}
+      </div> : null}
       {glassesMode && (!glassesReady || (realtimeActive && !realtime.frame)) && <div className="video-hint"><span className="hint-pill">
         {t(glassesStatus?.state === "error" ? "glasses.noCamera" : "glasses.waiting")}
       </span></div>}
@@ -480,9 +518,6 @@ export function VideoView({
       {showArOverlays && (
         <>
           {glassesMode && <ObjectRecognitionOverlay items={bodyRecognitions} letterbox={letterbox} width={size.width} height={size.height} />}
-          {motionNotices.length > 0 && <div className="tracking-notice" role="status">
-            {motionNotices.map(({ id, key }) => <span key={id}>{motionNames[id] ?? id} · {t(key)}</span>)}
-          </div>}
           {guideVisible && guideTarget?.connectionKind === "direct" ? <GuideConnectionOverlay
             detection={guideDetection}
             componentPose={guideComponentPose}
@@ -537,7 +572,7 @@ export function VideoView({
           ) : null}
         </>
       )}
-      {legend && !opticalCalibrationMode && (
+      {legend && !debugView && !opticalCalibrationMode && (
         <div className="video-legend">
           <span className="legend-dot" style={{ background: `var(${legend.colorVar})` }} />
           <span className="legend-label">{legend.label}</span>

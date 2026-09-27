@@ -198,16 +198,36 @@ def display_test(config, reporter):
         stack.callback(factory.close)
         display = WiringDisplay(config["pins"], factory)
         stack.callback(display.close)
-        for color in ("red", "lime", "blue"):
-            reporter.update(phase="display_" + color)
-            display.device.display(Image.new("RGB", display.device.size, color))
-            time.sleep(1)
+        camera_assisted = config.get("camera_assisted", False)
+        markers = config.get("camera_markers", {})
+        if camera_assisted and (type(camera_assisted) is not bool or set(markers) != {"1", "2", "3"}
+                or any(not isinstance(v, str) or len(v) != 4 or not v.isdigit() for v in markers.values())):
+            raise ValueError("Invalid camera test configuration")
+        for sequence, color in enumerate(("red", "lime", "blue"), 1):
+            phase = "display_" + color
+            image = Image.new("RGB", display.device.size, color)
+            if camera_assisted:
+                # Expected markers live only in private config and rendered pixels.
+                # A blind observer must read them; phase timing alone proves nothing.
+                draw = ImageDraw.Draw(image)
+                draw.rectangle((4, 4, 180, 62), fill="black")
+                display.text(draw, (12, 8), markers[str(sequence)], size=40)
+            else:
+                reporter.update(phase=phase)
+            display.device.display(image)
+            if camera_assisted:
+                reporter.update(phase=phase, camera_phase=dict(seq=sequence, phase=phase,
+                    committed_at=time.time(), post_display=True))
+            time.sleep(3 if camera_assisted else 1)
         image = Image.new("RGB", display.device.size, "#101820")
         draw = ImageDraw.Draw(image)
         display.text(draw, (12, 30), "MRD-TFT240", size=26)
         display.text(draw, (12, 110), config["visual_code"], size=48)
         display.text(draw, (12, 220), "R / G / B", size=24)
         display.device.display(image)
+        if camera_assisted:
+            reporter.update(phase="display_code", camera_phase=dict(seq=4, phase="display_code",
+                committed_at=time.time(), post_display=True))
         # Keep an explicit viewing window before releasing hardware. RGB had
         # one second per frame but the code previously disappeared at cleanup.
         # Never wait indefinitely for browser confirmation while holding GPIO.
