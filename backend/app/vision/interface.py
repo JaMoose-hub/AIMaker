@@ -77,6 +77,8 @@ class DetectionResult:
     # Independent fresh object box. Never read by pin/wiring verification.
     body: dict | None = None
     reference_evidence: dict | None = None
+    # Geometry provenance, not fresh/electrical evidence. Retained when held.
+    pin_alignment: dict | None = None
 
 
 class BoardDetector(Protocol):

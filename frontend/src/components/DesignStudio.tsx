@@ -18,7 +18,7 @@ export function DesignStudio({ state, setState, onAdopt }: { state: MakerState; 
       {confirming ? <div className="maker-draft-consent" role="alert"><p>{tr("你有手動修改的程式草稿。套用此版本會以新版程式取代它。", "Your code draft has manual edits. Applying this revision will replace it with the new code.")}</p>
         <button onClick={() => setConsentFor("")}>{tr("取消，保留草稿", "Cancel, keep draft")}</button>
         <button className="maker-primary" disabled={cannotConfirm} onClick={() => onAdopt(true)}>{tr("確認取代並進入 Blueprint", "Replace draft & open Blueprint")}</button></div> : null}
-      <p className="maker-muted">{design.summary}</p>
+      <details className="maker-concept-description" key={revisionKey}><summary>{tr("作品說明", "About this project")}</summary><p className="maker-muted">{design.summary}</p></details>
       {state.candidate && state.design ? <p className="maker-warning">{tr("新版預覽，尚未套用。確認後才更新 Blueprint、接線配置與程式。", "Unapplied revision. Confirm to update the blueprint, wiring and code.")}</p> : null}
       <ProjectConcept design={design} />
       {state.candidate ? <button onClick={() => setState(s => ({ ...s, candidate: null }))}>{tr("捨棄此預覽", "Discard preview")}</button> : null}

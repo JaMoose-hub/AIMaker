@@ -11,7 +11,7 @@ const m = await import(`data:text/javascript;base64,${Buffer.from(outputText).to
 const moduleUrl = js => `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;
 const hooksUrl = moduleUrl(`export let value=null; export const reset=()=>{value=null};
   export const useState=()=>[value,v=>{value=v}]; export const useEffect=()=>{};
-  export const useRef=()=>({current:null});`);
+  export const useRef=()=>({current:null}); export const useId=()=>"fixture-prompt";`);
 const hooks = await import(hooksUrl);
 let assistantJS = ts.transpileModule(readFileSync(new URL('../src/components/MakerAssistant.tsx',import.meta.url),'utf8'), {
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022,jsx:ts.JsxEmit.ReactJSX},
@@ -49,6 +49,42 @@ test('one composer replaces intent and appearance switches, clearing requires co
   assert.deepEqual(f.calls,['clear']);
 });
 
+test('integrated composer keeps a labelled two-line draft and an accessible icon submit',()=>{
+  const draft = '保留我的輸入\n第二行';
+  const f = assistantFixture({...m.initialMaker(),prompt:draft});
+  const tree = f.render();
+  const row = nodes(tree).find(n=>n.props?.className==='maker-compose-row');
+  const field = nodes(tree).find(n=>n.type==='label' && n.props.className==='maker-compose-label');
+  const input = nodes(row).find(n=>n.type==='textarea');
+  assert.equal(field.props.htmlFor,input.props.id);
+  assert.equal(input.props.rows,2);
+  assert.equal(input.props.value,draft);
+  assert.equal(input.props.maxLength,8000);
+  assert.match(textOf(field),/想做什麼，或想問什麼/);
+  assert.equal(nodes(row).filter(n=>n.type==='button'&&n.props.type==='submit').length,1);
+  const send = nodes(row).find(n=>n.type==='button');
+  assert.equal(send.props['aria-label'],'送出訊息');
+  assert.equal(send.props.title,'送出訊息');
+  assert.equal(nodes(send).find(n=>n.type==='svg').props['aria-hidden'],'true');
+  assert.equal(nodes(tree).find(n=>n.type==='button'&&n.props.type==='submit').props.disabled,false);
+  let prevented=false;
+  nodes(tree).find(n=>n.type==='form').props.onSubmit({preventDefault(){prevented=true}});
+  assert.equal(prevented,true);
+  assert.deepEqual(f.calls,['generate']);
+  assert.equal(nodes(assistantFixture({...m.initialMaker(),prompt:''}).render()).find(n=>n.type==='button'&&n.props.type==='submit').props.disabled,true);
+});
+
+test('icon submit preserves busy, whitespace and missing-component guards even on form submission',()=>{
+  for(const [state,busy] of [[m.initialMaker(),true],[{...m.initialMaker(),prompt:' \n'},false],[{...m.initialMaker(),selected:[]},false]]) {
+    const f=assistantFixture(state,busy), tree=f.render();
+    const send=nodes(tree).find(n=>n.type==='button'&&n.props.type==='submit');
+    assert.equal(send.props.disabled,true);
+    if(busy) assert.equal(send.props['aria-label'],'處理中…');
+    nodes(tree).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+    assert.deepEqual(f.calls,[]);
+  }
+});
+
 test('Demo asks before replacing a preview and never submits a cloud request',()=>{
   const f=assistantFixture({...m.initialMaker(),candidate:design});
   f.button('載入 Demo 示範').props.onClick();
@@ -75,6 +111,47 @@ const design = {
   component_ids: ["hc-sr04"], wiring: catalog.modules[0].steps.map(s => ({ ...s, id: `hc-sr04:${s.id}`, componentId: "hc-sr04" })),
   code: "old", tests: [], features: [], instructions: [], unresolved: [], bom: [],
 };
+
+test('starter prompt matches the requested multi-line brief without submitting an AI job',()=>{
+  const expected = [
+    '我想做一個桌上型距離監測器。', '', '需求：',
+    '- 可以偵測前方物體的距離',
+    '- 螢幕即時顯示目前距離與狀態',
+    '- 當距離小於 20 cm 時，顯示警告，並在螢幕上顯示一台靠近障礙物的小車圖示',
+    '- 裝置使用上下兩層圓形壓克力圓盤組成，並使用支柱固定',
+    '- 整體大小適合放在桌面上', '',
+    '請根據以上需求，幫我決定需要哪些電子零件、感測器、控制板、螢幕與其他必要元件，並規劃如何組裝與接線。',
+  ].join('\n');
+  assert.equal(m.defaultPrompt,expected);
+  assert.equal(m.initialMaker().prompt,expected);
+  assert.equal(m.restoreMaker(null).prompt,expected);
+  const f=assistantFixture(m.initialMaker());
+  assert.equal(nodes(f.render()).find(n=>n.type==='textarea').props.value,expected);
+  assert.deepEqual(f.calls,[]);
+  assert.equal(m.initialMaker().aiJobId,null);
+});
+
+test('known starter drafts upgrade without changing projects or overwriting custom and in-flight drafts',()=>{
+  const state={...m.initialMaker(),design,candidate:{...design,revision:2},code:'manual draft',
+    conversation:[{role:'user',text:'keep previous conversation'}]};
+  for(const prompt of [
+    '幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與警告狀態，距離小於 20 公分時顯示警告。',
+    '幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與顯示狀態，距離小於 20 公分時顯示警告的小車車',
+  ].flatMap(prompt=>[prompt, `${prompt}\n`, ` \t${prompt}\r\n`])) {
+    const restored=m.restoreMaker(JSON.stringify({...state,prompt}));
+    assert.equal(restored.prompt,m.defaultPrompt);
+    assert.deepEqual(restored.design,state.design);
+    assert.deepEqual(restored.candidate,state.candidate);
+    assert.equal(restored.code,state.code);
+    assert.deepEqual(restored.conversation,state.conversation);
+    assert.equal(restored.aiJobId,null);
+    assert.equal(m.restoreMaker(JSON.stringify(restored)).prompt,m.defaultPrompt);
+    assert.equal(m.restoreMaker(JSON.stringify({...state,prompt,aiJobId:'pending-job'})).prompt,prompt);
+  }
+  for(const prompt of ['', ' \n', '我還沒送出的自訂需求\n請保留', m.defaultPrompt,
+    '幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與顯示狀態，距離小於 21 公分時顯示警告的小車車\n'])
+    assert.equal(m.restoreMaker(JSON.stringify({...state,prompt})).prompt,prompt);
+});
 test("image requests are explicit, safe image URLs survive restoration, failed images cannot confirm", () => {
   const state = m.initialMaker();
   assert.equal(m.designRequest(state, 'zh-TW', null).generate_image, true);

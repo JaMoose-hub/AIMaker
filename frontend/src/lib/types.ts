@@ -127,6 +127,8 @@ export interface DetectionMessage {
   video_size: [number, number];
   pose_mode?: "pnp_8pt" | "hybrid_4pt" | "feature_fallback";
   pose_landmarks_visible?: number;
+  /** Geometry provenance for preserving existing manual display calibration. */
+  pin_alignment?: import("./pinCalibration").PinAlignment;
   /** Board outline corners in source pixels, or null. */
   outline: [number, number][] | null;
   /** Live projected header scale in source-frame pixels, when pin metadata is available. */

@@ -139,7 +139,7 @@ def test_pi5_image_anchor_and_pin_gate_reacquire_real_motion(monkeypatch):
     def observation(q):
         return BoardPoseObservation(q, .95, np.full(4, .95), (*q.min(0), *q.max(0)))
     monkeypatch.setattr(yp, "refine_board_corners_from_pcb", lambda *a, **kw: None)
-    monkeypatch.setattr(yp, "_correct_pi5_j8_from_image", lambda frame, profile, pins, size: pins)
+    monkeypatch.setattr(yp, "_correct_pi5_j8_from_image", lambda frame, profile, pins, size, **kwargs: pins)
     store = ProfileStore(Path(__file__).resolve().parents[2] / "profiles")
     detector = yp.YoloProfileDetector(locator=locator, jump_confirm_frames=2,
                                       deadband_exit_confirm_frames=2,

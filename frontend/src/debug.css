@@ -70,7 +70,14 @@
 .debug-workspace { display:grid; grid-template-columns:minmax(320px,.85fr) minmax(0,1.15fr); gap:24px; align-items:start; }
 .debug-workspace.debug-workspace-unified { grid-template-columns:minmax(0,1fr); gap:16px; }
 .debug-manual-check { padding-bottom:12px; border-bottom:1px solid var(--border); }
-.debug-page .debug-manual-tools { margin-top:24px; }
+.debug-tool-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.debug-page .debug-tool-heading :is(h3,h4) { margin:0; }
+.debug-page .debug-tool-heading button { flex-shrink:0; margin:0; }
+.debug-tool-heading :is(h3,h4):focus-visible { outline:2px solid #73cbbb; outline-offset:3px; }
+.debug-tool-view { min-width:0; overflow-wrap:anywhere; }
+/* Tools remain mounted for live tests and draft inputs, but closed views must
+   neither consume chat space nor expose hidden controls to keyboard users. */
+.debug-page :is(.debug-chat-view,.debug-tool-view,.ai-debug-conversation)[hidden] { display:none; }
 .debug-controls,.debug-results { min-width:0; }
 .debug-results { padding:22px; border:1px solid var(--border); border-radius:12px; background:#0c171f; }
 .debug-results > h3 { color:#9ce1d0; font-size:18px; }
@@ -160,6 +167,7 @@
 .ai-debug-head h3 { margin:0 0 6px; font-size:20px; }
 .ai-debug-head-actions { display:flex; flex-wrap:wrap; gap:6px; }
 .debug-page .ai-debug-head-actions button { min-height:34px; padding:6px 9px; font-size:11px; margin:0; }
+.debug-page .ai-debug-head-actions button[aria-expanded=true] { border-color:#73cbbb; background:#193831; }
 .ai-debug-panel h4 { margin:0 0 8px; font-size:14px; }
 .ai-debug-panel p { margin:9px 0; }
 .ai-debug-disclosure { padding:10px 12px; border-left:3px solid #5cc3a9; background:#17372d; font-size:12px; }
@@ -218,10 +226,9 @@
 .ai-debug-composer-hint { display:block; margin-top:4px; color:#78958b; font-size:10px; }
 .ai-debug-composer .ai-debug-quick { margin-bottom:10px; gap:6px; }
 .debug-page .ai-debug-composer .ai-debug-quick button { margin:0; min-height:30px; padding:5px 9px; font-size:11px; border-radius:999px; }
-.debug-page .ai-debug-session-details { padding:12px 0 0; margin-top:12px; font-size:11px; color:var(--text-dim); }
-.ai-debug-session-details > summary { cursor:pointer; }
-.ai-debug-session-details .ai-debug-disclosure { font-size:11px; line-height:1.7; }
-.ai-debug-session-details .ai-debug-evidence-levels { font-size:11px; }
+.ai-debug-records { margin-top:16px; color:var(--text-dim); font-size:12px; }
+.ai-debug-records .debug-tool-heading { color:var(--text); }
+.ai-debug-records .ai-debug-disclosure { font-size:12px; line-height:1.7; }
 @media(max-width:960px), (max-height:600px) {
   .maker-stage-debug:not(.display-mode-active) .main { display:flex; flex-direction:column; }
   .maker-stage-debug:not(.display-mode-active) .video-guide-stage { min-height:0; overflow:visible; }

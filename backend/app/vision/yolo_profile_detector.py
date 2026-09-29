@@ -22,7 +22,7 @@ from app.vision.body_tracking import body_observation
 from app.vision.eye_board_search import EyeBoardYoloSearch
 from app.vision.smoothing import PoseFilter
 from app.vision.pi5_pin_stability import PinImageAnchor, PinUpdateGate
-from app.vision.pi5_j8_geometry import align_pi5_j8
+from app.vision.pi5_j8_geometry import align_pi5_j8_contacts
 from app.vision.yolo_pose import (
     BoardPoseLocator,
     create_yolo_pose_locator,
@@ -234,9 +234,10 @@ def _correct_pi5_j8_from_image(
     profile,
     pins: list[PinDetection],
     video_size: tuple[int, int],
+    *, diagnostic=None,
 ) -> list[PinDetection]:
-    """Align the existing lattice using a full-length, image-supported J8 body."""
-    return align_pi5_j8(frame_bgr, profile, pins, video_size)
+    """Align the housing, then the visible contact rows when unambiguous."""
+    return align_pi5_j8_contacts(frame_bgr, profile, pins, video_size, diagnostic=diagnostic)
 
 
 def _anchor_profile_header_from_landmarks(
@@ -1059,10 +1060,12 @@ class YoloProfileDetector:
 
         motion_confirmed = False
         motion_pins = None
+        pin_alignment = {}
         if (self._image_motion_gate is not None and self._profile.board.id == 'raspberry-pi-5'
                 and not self._camera.calibrated):
             # Compare FINAL J8-corrected pins, not just a moving bounding box.
-            motion_pins = _correct_pi5_j8_from_image(frame_bgr, self._profile, _raw_pins, self._video_size)
+            motion_pins = _correct_pi5_j8_from_image(frame_bgr, self._profile, _raw_pins, self._video_size,
+                                                    diagnostic=pin_alignment)
             motion_confirmed = self._image_motion_gate.compare(
                 frame_bgr, raw_outline_arr, motion_pins, frame_id, ts_ms)
             if motion_confirmed:
@@ -1161,7 +1164,7 @@ class YoloProfileDetector:
                 self._profile, observation.corners_px, self._video_size, confidence
             )
             pins = motion_pins if motion_pins is not None else _correct_pi5_j8_from_image(
-                frame_bgr, self._profile, pins, self._video_size
+                frame_bgr, self._profile, pins, self._video_size, diagnostic=pin_alignment
             )
             wire_exclusion = outline
         elif use_observed_quad_projection:
@@ -1235,6 +1238,7 @@ class YoloProfileDetector:
             pose_visible_fraction=visible_fraction,
             pose_mode=pose_mode,
             pose_landmarks_visible=landmarks_visible,
+            pin_alignment=(pin_alignment or None) if pose_mode != "pnp_8pt" else None,
             )
 
         if pi5_planar:
@@ -1403,6 +1407,7 @@ class YoloProfileDetector:
             pose_visible_fraction=visible_fraction,
             pose_mode=last.pose_mode,
             pose_landmarks_visible=last.pose_landmarks_visible,
+            pin_alignment=last.pin_alignment,
         )
 
     def _hold_or_searching(

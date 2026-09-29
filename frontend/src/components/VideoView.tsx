@@ -17,6 +17,7 @@ import { useGuidedPose } from "../lib/useGuidedPose";
 import { useDetections } from "../lib/wsClient";
 import { useRealtimeTracking } from "../lib/useRealtimeTracking";
 import { currentBodyRecognitions } from "../lib/realtimeFrame";
+import { CONTACT_ALIGNMENT_VERSION, resolvePinCalibration, type PinCalibrationOffset } from "../lib/pinCalibration";
 import type { AppConfig, Pin, TrackingState } from "../lib/types";
 import { CalibratePanel } from "./CalibratePanel";
 import { ComponentPinOverlay } from "./ComponentPinOverlay";
@@ -43,11 +44,6 @@ const PIN_CALIBRATION_LIMIT_PX = 30;
 interface MirrorSettings {
   x: boolean;
   y: boolean;
-}
-
-interface PinCalibrationOffset {
-  x: number;
-  y: number;
 }
 
 function initialMirrorSettings(): MirrorSettings {
@@ -84,10 +80,12 @@ function initialPinCalibrationOffset(boardId: string | null): PinCalibrationOffs
         : null);
     if (stored !== null) {
       const parsed = JSON.parse(stored) as Partial<PinCalibrationOffset>;
-      if (typeof parsed.x === "number" && typeof parsed.y === "number") {
+      if (typeof parsed.x === "number" && Number.isFinite(parsed.x)
+          && typeof parsed.y === "number" && Number.isFinite(parsed.y)) {
         return {
           x: Math.max(-PIN_CALIBRATION_LIMIT_PX, Math.min(PIN_CALIBRATION_LIMIT_PX, parsed.x)),
           y: Math.max(-PIN_CALIBRATION_LIMIT_PX, Math.min(PIN_CALIBRATION_LIMIT_PX, parsed.y)),
+          alignmentVersion: parsed.alignmentVersion === CONTACT_ALIGNMENT_VERSION ? parsed.alignmentVersion : undefined,
         };
       }
     }
@@ -232,7 +230,11 @@ export function VideoView({
   // can mirror without changing any backend pixel coordinates.
   const displayedMirrorX = mirror.x && !calibrateOpen && !opticalHudMode && !glassesMode;
   const displayedMirrorY = mirror.y && !calibrateOpen && !opticalHudMode && !glassesMode;
-  const displayedPinOffset = glassesMode ? { x: 0, y: 0 } : pinCalibrationOffset;
+  // Keep old nudges as fallback; never add them to observed contact rows.
+  // Use this exact displayed/held pose, not unrelated live telemetry.
+  const displayedPinOffset = glassesMode ? { x: 0, y: 0 }
+    : resolvePinCalibration(pinCalibrationOffset, boardId, guideDetection?.pin_alignment);
+  const legacyCalibrationRetained = !glassesMode && displayedPinOffset !== pinCalibrationOffset;
   const baseLetterbox = useMemo(
     () => computeLetterbox(
       [videoWidth, videoHeight],
@@ -314,9 +316,12 @@ export function VideoView({
 
   const adjustPinCalibration = (dx: number, dy: number) => {
     setPinCalibrationOffset((current) => {
+      const effective = resolvePinCalibration(current, boardId, guideDetection?.pin_alignment);
       const next = {
-        x: Math.max(-PIN_CALIBRATION_LIMIT_PX, Math.min(PIN_CALIBRATION_LIMIT_PX, current.x + dx)),
-        y: Math.max(-PIN_CALIBRATION_LIMIT_PX, Math.min(PIN_CALIBRATION_LIMIT_PX, current.y + dy)),
+        x: Math.max(-PIN_CALIBRATION_LIMIT_PX, Math.min(PIN_CALIBRATION_LIMIT_PX, effective.x + dx)),
+        y: Math.max(-PIN_CALIBRATION_LIMIT_PX, Math.min(PIN_CALIBRATION_LIMIT_PX, effective.y + dy)),
+        alignmentVersion: guideDetection?.pin_alignment?.accepted
+          ? guideDetection.pin_alignment.version : current.alignmentVersion,
       };
       try {
         if (boardId) {
@@ -509,7 +514,8 @@ export function VideoView({
                   <button type="button" title={t("camera.pinCalibrationDown")} onClick={() => adjustDisplayedPinCalibration(0, 1)}>↓</button>
                   <span />
                 </div>
-                <small className="pin-calibration-value">X {pinCalibrationOffset.x} · Y {pinCalibrationOffset.y}</small>
+                <small className="pin-calibration-value">X {displayedPinOffset.x} · Y {displayedPinOffset.y}</small>
+                {legacyCalibrationRetained && <small>{t("camera.pinCalibrationAutoRetained")}</small>}
               </div>
             )}
           </div>

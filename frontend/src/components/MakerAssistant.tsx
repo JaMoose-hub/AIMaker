@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { makerCatalog, type MakerState, type MakerStage } from "../lib/maker";
 import type { GuidedComponentId } from "../lib/componentWiringGuides";
 import type { useMakerAI } from "../lib/useMakerAI";
@@ -13,6 +13,9 @@ export function MakerAssistant({ state, setState, assistant, onReview, showHeadi
   const tr = useMakerText();
   const { tx } = useI18n();
   const { ai, aiOptions, busy, error, generate } = assistant;
+  const promptId = useId();
+  const canSend = !busy && Boolean(ai?.logged_in && aiOptions.estimate && aiOptions.selectionValid && state.prompt.trim() && state.selected.length);
+  const sendLabel = busy ? tr("處理中…", "Working…") : tr("送出訊息", "Send message");
   const log = useRef<HTMLDivElement>(null);
   const [confirmAction, setConfirmAction] = useState<"clear" | "demo" | null>(null);
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [state.conversation.length]);
@@ -37,12 +40,15 @@ export function MakerAssistant({ state, setState, assistant, onReview, showHeadi
     {state.candidate && state.stage !== "design" ? <button className="maker-candidate-notice" onClick={onReview}>{tr("有新版作品待確認 → 查看預覽", "New revision ready → Review concept")}</button> : null}
     {error || aiOptions.estimateError ? <pre className="maker-error" role="alert">{error || aiOptions.estimateError}</pre> : null}
     {state.candidate?.image_error && state.candidate.image_job_id ? <div className="maker-warning"><p>{tr("作品文字已保留，可以只重新生成圖片；會再次使用生圖額度。", "The text design is saved. Retry just the image; this uses image allowance again.")}</p><button disabled={busy || !ai?.logged_in} onClick={() => void assistant.retryImage()}>{tr("只重試生圖", "Retry image only")}</button></div> : null}
-    <form onSubmit={e => { e.preventDefault(); void generate(); }}>
-      <label className="maker-field">{tr("想做什麼，或想問什麼？", "What would you like to make or ask?")}
-        <textarea value={state.prompt} placeholder={tr("例如：這個零件做什麼？／把螢幕移到前面／換一個全新造型", "Ask about a component, move the screen, or request a new design…")} maxLength={8000} onChange={e => setState(s => ({ ...s, prompt: e.target.value }))} rows={4} /></label>
-      <small className="maker-muted">{tr("提問就回答，想修改就產生預覽。不確定時會先問你；確認後才更新作品。", "Ask a question or request a change. Changes stay as previews until you confirm; unclear requests get a follow-up question.")}</small>
-      <div className="maker-compose-footer">
-        <button type="submit" className="maker-primary" disabled={busy || !ai?.logged_in || !aiOptions.estimate || !aiOptions.selectionValid || !state.prompt.trim() || !state.selected.length}>{busy ? tr("雲端處理中…", "Working…") : tr("送出 →", "Send →")}</button></div>
+    <form className="maker-composer" onSubmit={e => { e.preventDefault(); if (canSend) void generate(); }}>
+      <label className="maker-compose-label" htmlFor={promptId}>{tr("想做什麼，或想問什麼？", "What would you like to make or ask?")}</label>
+      <div className="maker-compose-row">
+        <textarea id={promptId} value={state.prompt} placeholder={tr("例如：這個零件做什麼？／把螢幕移到前面／換一個全新造型", "Ask about a component, move the screen, or request a new design…")} maxLength={8000} onChange={e => setState(s => ({ ...s, prompt: e.target.value }))} rows={2} />
+        <button type="submit" className="maker-primary maker-compose-send" aria-label={sendLabel} title={sendLabel} disabled={!canSend}>
+          {busy ? <span aria-hidden="true">…</span> : <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>}
+        </button>
+      </div>
+      <small className="maker-muted">{tr("提問或修改都可以；作品確認後才更新。", "Ask or request changes. Your project updates only after confirmation.")}</small>
     </form>
     <details className="maker-assistant-options maker-assistant-parts"><summary>{tr("限定零件", "Supported parts")} · Pi 5 + {state.selected.length}</summary>
       <fieldset className="maker-parts"><legend>{tr("沿用現有零件，每種最多一個", "Existing modules only, at most one each")}</legend>

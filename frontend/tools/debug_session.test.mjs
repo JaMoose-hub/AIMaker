@@ -109,6 +109,18 @@ test('Eye requires restore before AI session start and explains model photo tran
   assert.match(html,/<button[^>]*disabled=""[^>]*>幫我檢查<\/button>/);
 });
 
+test('photo records use a header action and stay mounted in a hidden tool view',()=>{
+  const html=render();
+  const head=html.slice(0,html.indexOf('<div class="ai-debug-conversation"'));
+  assert.match(head,/<button[^>]*aria-expanded="false"[^>]*aria-controls="ai-debug-records"[^>]*>檢查紀錄<\/button>/);
+  assert.match(head,/<button[^>]*aria-controls="debug-manual-tools"[^>]*>手動測試工具<\/button>/);
+  assert.match(html,/<div id="ai-debug-records" class="debug-tool-view ai-debug-records" hidden="" role="region" aria-labelledby="ai-debug-records-heading">/);
+  assert.match(html,/返回對話/);
+  assert.match(html,/Webcam 照片與遮蔽密碼、金鑰後的診斷資料/);
+  assert.match(html,/Photos|照片、測試與工作紀錄/);
+  assert.doesNotMatch(html,/ai-debug-session-details/);
+});
+
 test('AI can inspect the camera before wiring confirmation and without a symptom',()=>{
   const html=render(null,{wired:false});
   assert.match(html,/可以先讓 AI 看畫面並引導排查/);

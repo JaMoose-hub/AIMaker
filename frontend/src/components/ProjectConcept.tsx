@@ -21,6 +21,6 @@ export function ProjectConcept({ design }: { design: ProjectDesign }) {
       {image ? <button onClick={() => setFailedURL("")}>{tr("重新載入圖片", "Reload image")}</button> : null}
     </div>}
     <div className="project-scope"><span>Raspberry Pi 5</span>{design.component_ids.map(id => <span key={id}>{tx(makerCatalog.modules.find(m => m.id === id)!.name)}</span>)}</div>
-    {design.assembly ? <><p>{design.assembly.description}</p><div className="project-structure-tags">{design.assembly.parts.map(p => <span key={p.kind}>{structuralParts[p.kind].name} × {p.quantity}</span>)}</div></> : null}
+    {design.assembly ? <details className="project-assembly-details" key={`${design.id}:${design.revision}`}><summary>{tr("造型與結構", "Shape & structure")}</summary><p>{design.assembly.description}</p><div className="project-structure-tags">{design.assembly.parts.map(p => <span key={p.kind}>{structuralParts[p.kind].name} × {p.quantity}</span>)}</div></details> : null}
   </div>;
 }

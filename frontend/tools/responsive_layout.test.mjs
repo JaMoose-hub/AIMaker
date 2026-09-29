@@ -50,6 +50,26 @@ test('guide toggle and video occupy separate rows without altering overlay coord
   assert.doesNotMatch(css.toString(), /\.video-img|\.overlay-svg|computeLetterbox/);
 });
 
+test('debug camera and chat share toolbar/content tracks without fixed header offsets', () => {
+  const desktop='(min-width: 961px) and (min-height: 601px)';
+  rule('.main:has(> .debug-chat-page)', 'grid-template-rows', 'auto auto minmax(0, 1fr)', desktop);
+  rule(':is(.video-guide-stage, .debug-chat-page)', 'grid-template-rows', 'subgrid', desktop);
+  rule(':is(.video-guide-stage, .debug-chat-page)', 'grid-row', '2 / 4', desktop);
+  rule('.debug-chat-page > .debug-chat-heading', 'grid-row', '1', desktop);
+  rule('.debug-chat-page > .debug-page-content', 'grid-row', '2', desktop);
+  rule('.debug-chat-page > .debug-page-content', 'overflow', 'auto', desktop);
+  rule('.debug-chat-page .ai-debug-chat', 'max-height', 'none', desktop);
+  rule('.maker-layout.maker-stage-debug:not(.display-mode-active) .debug-chat-page', 'padding', '0', desktop);
+});
+
+test('debug tools occupy their own view instead of stacking beneath the composer', () => {
+  const desktop='(min-width: 961px) and (min-height: 601px)';
+  rule('.debug-chat-page .ai-debug-conversation', 'flex', '1 1 0', desktop);
+  rule('.debug-chat-page .debug-tool-view', 'overflow', 'auto', desktop);
+  rule(':is(.debug-chat-view,.debug-tool-view,.ai-debug-conversation)[hidden]', 'display', 'none', desktop);
+  assert.match(read('../src/debug.css'), /\.debug-page :is\(\.debug-chat-view,\.debug-tool-view,\.ai-debug-conversation\)\[hidden\] \{ display:none; \}/);
+});
+
 test('menus and dialogs stay bounded and code or pin diagrams scroll locally', () => {
   rule('.maker-model-popover, .pi-execution-popover', 'width', 'min(420px, 100%)', '(max-width: 960px)');
   rule('.maker-model-popover, .pi-execution-popover', 'left', '0');

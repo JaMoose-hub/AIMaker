@@ -47,8 +47,23 @@ export interface MakerState {
 }
 export const makerCatalog = catalog;
 export const emptyGuide = (): ProjectGuideState => ({ componentIndex: 0, index: 0, phase: "prepare", mode: "camera", checks: [], confirmed: {}, restored: false });
-export const defaultPrompt = "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與警告狀態，距離小於 20 公分時顯示警告。";
-export const initialMaker = (): MakerState => ({ standalone: false, stage: "design", prompt: "",
+export const defaultPrompt = `我想做一個桌上型距離監測器。
+
+需求：
+- 可以偵測前方物體的距離
+- 螢幕即時顯示目前距離與狀態
+- 當距離小於 20 cm 時，顯示警告，並在螢幕上顯示一台靠近障礙物的小車圖示
+- 裝置使用上下兩層圓形壓克力圓盤組成，並使用支柱固定
+- 整體大小適合放在桌面上
+
+請根據以上需求，幫我決定需要哪些電子零件、感測器、控制板、螢幕與其他必要元件，並規劃如何組裝與接線。`;
+// Upgrade only known starters, ignoring surrounding whitespace from textarea input.
+// Custom drafts (including a deliberately cleared input) must stay untouched.
+const previousStarterPrompts = new Set([
+  "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與警告狀態，距離小於 20 公分時顯示警告。",
+  "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與顯示狀態，距離小於 20 公分時顯示警告的小車車",
+]);
+export const initialMaker = (): MakerState => ({ standalone: false, stage: "design", prompt: defaultPrompt,
   aiModel: "", aiEffort: "low", aiExpectedOutputTokens: null,
   aiIntent: "auto", aiJobId: null, designMode: "free",
   selected: ["hc-sr04", "mrd-tf240-8p-cs"], design: null, candidate: null,
@@ -164,6 +179,7 @@ export function restoreMaker(raw: string | null): MakerState {
     }));
     guide.index = 0;
     return { ...base, ...stored, design, guide,
+      prompt: typeof stored.prompt !== "string" || (!stored.aiJobId && previousStarterPrompts.has(stored.prompt.trim())) ? defaultPrompt : stored.prompt,
       aiModel: typeof stored.aiModel === "string" && stored.aiModel.length <= 150 ? stored.aiModel : "",
       aiEffort: ["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(stored.aiEffort) ? stored.aiEffort : "low",
       aiExpectedOutputTokens: Number.isInteger(stored.aiExpectedOutputTokens) && stored.aiExpectedOutputTokens! >= 256 && stored.aiExpectedOutputTokens! <= 128000 ? stored.aiExpectedOutputTokens : null,

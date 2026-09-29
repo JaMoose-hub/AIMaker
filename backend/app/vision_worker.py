@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from copy import deepcopy
 from typing import Callable
 
 from app.capture.bus import FrameBus, FrameSlot
@@ -154,6 +155,8 @@ def detection_message(
         message["pose_quality"] = quality
     if result.reference_evidence is not None:
         message.setdefault('pose_quality', {})['reference_recovery'] = result.reference_evidence
+    if result.pin_alignment is not None:
+        message['pin_alignment'] = deepcopy(result.pin_alignment)
     return message
 
 

@@ -78,6 +78,8 @@ def test_translation_rotation_and_scale_follow_each_frame(dx, angle, scale):
     frame, quad = scene()
     tracker = MotionTrack()
     seed = pose(quad)
+    seed['pin_alignment'] = dict(version='pi5-contact-rows-v1', accepted=True,
+        reference_center=[160., 130.], offset_px=[-18., 0.])
     tracker.observe(seed, frame, 1)
     for i in range(1, 11):
         affine = cv2.getRotationMatrix2D((240, 180), angle * i, scale ** i)
@@ -89,7 +91,13 @@ def test_translation_rotation_and_scale_follow_each_frame(dx, angle, scale):
         assert np.max(np.linalg.norm(np.asarray(result['outline']) - transform(quad, matrix), axis=1)) < 1.0
         expected_pin = transform([[145, 125]], matrix)[0]
         assert np.linalg.norm(np.array([result['pins'][0]['x'], result['pins'][0]['y']]) - expected_pin) < 1
-    assert seed == pose(quad), 'tracking must not mutate detector result'
+        expected_reference = transform([[160., 130.], [142., 130.]], matrix)
+        np.testing.assert_allclose(result['pin_alignment']['offset_px'],
+            expected_reference[1] - expected_reference[0], atol=.2)
+    original = pose(quad)
+    original['pin_alignment'] = dict(version='pi5-contact-rows-v1', accepted=True,
+        reference_center=[160., 130.], offset_px=[-18., 0.])
+    assert seed == original, 'tracking must not mutate detector result'
 
 
 def test_static_frames_stay_fixed_and_model_noise_cannot_tug_track():

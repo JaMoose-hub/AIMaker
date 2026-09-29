@@ -67,6 +67,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     "../lib/geometry":geometry,"../lib/i18n":i18n,"../lib/wsClient":ws,"../lib/useGuidedPose":guide,"../lib/useRealtimeTracking":tracker,
     "../lib/displayMode":compile("lib/displayMode.ts"),"../lib/opticalHud":compile("lib/opticalHud.ts",{"./geometry":geometry}),
     "../lib/realtimeFrame":compile("lib/realtimeFrame.ts"),"../lib/glasses":compile("lib/glasses.ts"),
+    "../lib/pinCalibration":compile("lib/pinCalibration.ts"),
     "./PinOverlay":pinRecorder,"./ComponentPinOverlay":componentOverlay,"./GuideConnectionOverlay":connectionOverlay,
     "./ObjectRecognitionOverlay":recognitionOverlay,
     "./CalibratePanel":dataUrl("export const CalibratePanel=()=>null;"),"./OpticalHudCalibration":dataUrl("export const OpticalHudCalibrationOverlay=()=>null;"),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDebug, codeHash, type DebugCase, type DebugContext } from "../lib/debug";
 import { sameDebugTestKeys } from "../lib/debugSessions";
 import { componentComplete, componentTestKey, testReasons } from "../lib/componentTests";
@@ -62,13 +62,25 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect, 
   const [confirmAction,setConfirmAction] = useState<"apply"|"restore"|null>(null);
   const [repairAccepted,setRepairAccepted] = useState<{caseId:string;candidateId:string;codeHash:string}|null>(null);
   const [checkFeedback,setCheckFeedback] = useState<CheckFeedback|null>(null);
+  const [manualOpen,setManualOpen] = useState(false);
   const agentDetails = useRef<HTMLDetailsElement>(null);
   const reportDetails = useRef<HTMLDetailsElement>(null);
   const overviewDetails = useRef<HTMLDetailsElement>(null);
   const problemCard = useRef<HTMLElement>(null);
   const trialCard = useRef<HTMLElement>(null);
   const trialDetails = useRef<HTMLDetailsElement>(null);
-  const manualDetails = useRef<HTMLDetailsElement>(null);
+  const manualHeading = useRef<HTMLHeadingElement>(null);
+  const manualReturnFocus = useRef<HTMLElement|null>(null);
+  const manualFocusTarget = useRef<HTMLElement|null>(null);
+  useLayoutEffect(()=>{
+    if (manualOpen) {
+      const target = manualFocusTarget.current ?? manualHeading.current;
+      target?.focus({preventScroll:true});
+      if (manualFocusTarget.current) target?.scrollIntoView({block:"nearest"});
+    } else if (manualReturnFocus.current?.isConnected) {
+      manualReturnFocus.current.focus({preventScroll:true});
+    }
+  },[manualOpen]);
   const record = debug.record;
   useEffect(()=>{
     if(checkFeedback?.phase!=="running"||!checkFeedback.caseId||record?.id!==checkFeedback.caseId)return;
@@ -275,17 +287,27 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect, 
       <div className="debug-workspace debug-workspace-unified"><div className="debug-controls">{controls}<p>{tr("先建立作品，就能使用零件測試與試跑。現在仍可以檢查 Pi 連線。","Create a project to test components. You can still check the Pi connection.")}</p>{trialTools}</div><aside className="debug-results" aria-label={tr("輸出結果與報告", "Results and reports")}><h3>{tr("程式與檢查紀錄", "Code and check records")}</h3>{reports}</aside></div>}
     <small>{tr("改接線前斷電，接好再上電測試。功能通過不代表所有線路與電壓已驗證。","Power off before rewiring, then power on to test. Functional success does not verify all wiring or voltages.")}</small>
   </>;
-  function openManual() {
-    if (manualDetails.current) manualDetails.current.open = true;
+  function openManual(target?:HTMLDetailsElement|null) {
+    manualReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (target) target.open = true;
+    manualFocusTarget.current = target?.querySelector("summary") ?? null;
+    setManualOpen(true);
   }
-  return <section className="debug-page" aria-label={tr("測試與除錯","Test & debug")}>
+  return <section className={`debug-page${assistant ? " debug-chat-page" : ""}`} aria-label={tr("測試與除錯","Test & debug")}>
     <header className={`debug-heading workflow-heading${assistant ? " debug-chat-heading" : ""}`}><div><div className="workflow-eyebrow">{tr("04 · 測試與除錯", "04 · Test & debug")}</div>{!assistant ? <><h2>{tr("哪個地方沒有正常運作？", "What isn't working?")}</h2>
       <p className="workflow-subtitle">{tr("把零件放進鏡頭，讓 AI 看畫面並帶你查找原因。", "Show the components to the camera so AI can inspect them and guide your diagnosis.")}</p></> : null}</div>
       <div className="workflow-heading-actions"><button className="workflow-secondary" onClick={onDeploy}>{tr("先去啟動作品 →","Go to deployment →")}</button></div></header>
+    <div className="debug-page-content">
+    {assistant ? <div className="debug-chat-view" hidden={manualOpen}>
     {assistant?.({context,codeHash:hash,repairCaseId:record?.id??null,
       repairAppliedHash:record?.candidate?.applied ? record.candidate.code_hash : repairAccepted && repairAccepted.caseId===record?.id && repairAccepted.candidateId===record?.candidate?.id ? repairAccepted.codeHash : null,
       repairCandidateReady:Boolean(record?.candidate),
-      onRetest:id=>{openManual();openRetest(id);},onTrial:()=>{openManual();revealDetails(trialDetails.current);},onReviewRepair:()=>{openManual();revealDetails(agentDetails.current);},onManual:openManual})}
-    {assistant ? <details id="debug-manual-tools" ref={manualDetails} className="debug-manual-tools workflow-details"><summary><strong>{tr("手動測試與程式工具", "Manual tests and code tools")}</strong><span>{tr("需要自行操作零件測試、目視確認或查看程式修復時展開", "Open for manual component tests, physical confirmation, or code repairs")}</span></summary><div className="workflow-details-body">{manualTools}</div></details> : manualTools}
+      onRetest:id=>{openManual();openRetest(id);},onTrial:()=>openManual(trialDetails.current),onReviewRepair:()=>openManual(agentDetails.current),onManual:()=>openManual()})}
+    </div> : null}
+    {assistant ? <div id="debug-manual-tools" className="debug-tool-view debug-manual-tools" hidden={!manualOpen} role="region" aria-labelledby="debug-manual-heading" onKeyDown={event=>{if(event.key==="Escape"&&!event.defaultPrevented){event.stopPropagation();setManualOpen(false);}}}>
+      <div className="debug-tool-heading"><h3 id="debug-manual-heading" ref={manualHeading} tabIndex={-1}>{tr("手動測試與程式工具", "Manual tests and code tools")}</h3><button type="button" className="workflow-secondary" onClick={()=>setManualOpen(false)}>{tr("返回對話", "Back to chat")}</button></div>
+      {manualTools}
+    </div> : manualTools}
+    </div>
   </section>;
 }

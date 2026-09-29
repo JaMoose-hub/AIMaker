@@ -28,7 +28,7 @@ function renderDebug({record=null,connected=true,trial=null,locale='zh-TW',selec
   let stateCall=0;
   const Page=debugFunction('DebugPage',{
     React,useMakerText:()=> (zh,en)=>locale==='zh-TW'?zh:en,
-    useState:value=>[stateCall++===7?checkFeedback:value,()=>{}],useEffect(){},useMemo:fn=>fn(),useRef:()=>({current:null}),
+    useState:value=>[stateCall++===7?checkFeedback:value,()=>{}],useEffect(){},useLayoutEffect(){},useMemo:fn=>fn(),useRef:()=>({current:null}),
     usePiConnection:()=>({status:{connected},networkError:false,pending:false}),
     useDebug:()=>({record,pending:false,error:'',trials:{active:trial,results:[]},action(){throw Error('Render cannot run an action');}}),
     componentTestKey:componentTests.componentTestKey,componentComplete:componentTests.componentComplete,testReasons:componentTests.testReasons,sameDebugTestKeys,
@@ -51,15 +51,38 @@ test('a hash from the previous draft is hidden immediately while the new draft i
   assert.equal(currentHash({code:'new draft',hash:'new-sha'},{code:'new draft'}),'new-sha');
 });
 
-test('AI is the default workflow and manual tools open only on explicit request without scrolling',()=>{
+test('manual tools are mounted but hidden outside the conversation until explicitly opened',()=>{
   const html=renderDebug({assistant:()=>React.createElement('button',{'data-visual-check':true},'幫我檢查')});
-  const manualIndex=html.indexOf('<details id="debug-manual-tools"');
+  const manualIndex=html.indexOf('<div id="debug-manual-tools"');
   assert.ok(manualIndex>html.indexOf('data-visual-check'));
-  assert.match(html,/<details id="debug-manual-tools" class="debug-manual-tools workflow-details">/);
+  assert.match(html,/<div id="debug-manual-tools" class="debug-tool-view debug-manual-tools" hidden="" role="region" aria-labelledby="debug-manual-heading">/);
   assert.doesNotMatch(html.slice(0,manualIndex),/檢查 Pi 與程式紀錄|測不到距離，或數字不對/);
-  const details={open:false,scrollIntoView(){throw Error('Opening manual tools must not scroll');}};
-  debugFunction('openManual',{manualDetails:{current:details}})();
-  assert.equal(details.open,true);
+  assert.match(html.slice(manualIndex),/返回對話/);
+  assert.doesNotMatch(html,/<details id="debug-manual-tools"|需要自行操作零件測試/);
+  class Element {}
+  const trigger=new Element();
+  const manualReturnFocus={current:null},manualFocusTarget={current:null};
+  let opened=false;
+  const open=debugFunction('openManual',{manualReturnFocus,manualFocusTarget,document:{activeElement:trigger},HTMLElement:Element,setManualOpen:value=>{opened=value;}});
+  open();
+  assert.equal(opened,true);
+  assert.equal(manualReturnFocus.current,trigger);
+  assert.equal(manualFocusTarget.current,null);
+  const summary=new Element();
+  const details={open:false,querySelector:()=>summary};
+  open(details);
+  assert.equal(details.open,true,'targeted trial/repair details are revealed inside the tool view');
+  assert.equal(manualFocusTarget.current,summary);
+});
+
+test('chat toolbar and content have separate layout tracks without changing the manual workflow',()=>{
+  const html=renderDebug({assistant:()=>React.createElement('section',{className:'ai-debug-panel'},'chat fixture')});
+  assert.match(html,/class="debug-page debug-chat-page"/);
+  assert.match(html,/<\/header><div class="debug-page-content"><div class="debug-chat-view"><section class="ai-debug-panel">chat fixture<\/section><\/div><div id="debug-manual-tools"/);
+  const manual=renderDebug();
+  assert.match(manual,/class="debug-page"/);
+  assert.doesNotMatch(manual,/debug-chat-page/);
+  assert.match(manual,/debug-page-content/);
 });
 
 test('recommendations and report evidence follow the selected component',()=>{

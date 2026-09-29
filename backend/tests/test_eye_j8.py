@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from app.vision.eye_j8 import correct_eye_j8_from_image
+from app.vision.pi5_j8_geometry import align_pi5_j8_contacts
 from app.vision.interface import PinDetection
 
 
@@ -35,12 +36,13 @@ def contacts(pins, normal, offset, *, columns=20):
 
 @pytest.mark.parametrize('angle', [0., 25., 90., 180.])
 @pytest.mark.parametrize('offset', [8., -6.])
-def test_visible_shifted_rows_correct_normal_only_and_preserve_spacing(angle, offset):
+@pytest.mark.parametrize('corrector', [correct_eye_j8_from_image, align_pi5_j8_contacts])
+def test_visible_shifted_rows_correct_normal_only_and_preserve_spacing(angle, offset, corrector):
     pins, normal = lattice(angle)
     original = np.array([[pin.x, pin.y] for pin in pins])
     image = contacts(pins, normal, offset)
     diagnostic = {}
-    result = correct_eye_j8_from_image(image, PROFILE, pins, SIZE, diagnostic=diagnostic)
+    result = corrector(image, PROFILE, pins, SIZE, diagnostic=diagnostic)
     assert diagnostic['accepted']
     assert result is not pins
     actual = np.array([[pin.x, pin.y] for pin in result])
@@ -57,7 +59,8 @@ def test_visible_shifted_rows_correct_normal_only_and_preserve_spacing(angle, of
 
 
 @pytest.mark.parametrize('kind', ['flat', 'occluded', 'noise', 'ambiguous_repeated_rows'])
-def test_unsupported_current_image_keeps_current_projection(kind):
+@pytest.mark.parametrize('corrector', [correct_eye_j8_from_image, align_pi5_j8_contacts])
+def test_unsupported_current_image_keeps_current_projection(kind, corrector):
     pins, normal = lattice()
     if kind == 'flat':
         image = np.full((*SIZE[::-1], 3), 150, np.uint8)
@@ -71,7 +74,7 @@ def test_unsupported_current_image_keeps_current_projection(kind):
             for column in range(20):
                 cv2.circle(image, (167 + column * 14, y), 3, (240, 240, 240), -1)
     diagnostic = {}
-    assert correct_eye_j8_from_image(image, PROFILE, pins, SIZE, diagnostic=diagnostic) is pins
+    assert corrector(image, PROFILE, pins, SIZE, diagnostic=diagnostic) is pins
     assert diagnostic['accepted'] is False
 
 

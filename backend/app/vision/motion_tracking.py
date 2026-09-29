@@ -7,6 +7,7 @@ velocity extrapolation is used when image evidence disappears.
 from __future__ import annotations
 
 from copy import deepcopy
+from app.vision.pin_alignment import transport_pin_alignment
 import time
 
 import cv2
@@ -611,6 +612,7 @@ class MotionTrack:
             # Convert tracking-resolution coordinates back to source pixels.
             scaling = np.diag([self.scale, self.scale, 1.0])
             matrix = np.linalg.inv(scaling) @ matrix @ scaling
+            transport_pin_alignment(self.message, matrix)
             # Accumulating tiny real movements is intentional; freezing each
             # small frame delta would prevent slow handheld movement entirely.
             self.message['outline'] = transform(self.message['outline'], matrix).tolist()

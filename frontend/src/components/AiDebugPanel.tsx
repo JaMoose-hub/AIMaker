@@ -24,6 +24,10 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   const [kind, setKind] = useState("custom");
   const [responseMode, setResponseMode] = useState<DebugResponseMode>(session.record?.response_mode ?? "fast");
   const [now, setNow] = useState(Date.now());
+  const [recordsOpen, setRecordsOpen] = useState(false);
+  const recordsTrigger = useRef<HTMLButtonElement>(null);
+  const recordsHeading = useRef<HTMLHeadingElement>(null);
+  const recordsWasOpen = useRef(false);
   const chatRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const followTail = useRef(true);
@@ -93,6 +97,11 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     if (active && record?.diagnosis?.case_id && record.diagnosis.case_id !== state.debug?.caseId) onCase(record.diagnosis.case_id);
   }, [active, record?.diagnosis?.case_id, state.debug?.caseId, onCase]);
   useEffect(() => { if (record?.id) setEntry(""); }, [record?.id]);
+  useLayoutEffect(() => {
+    if (recordsOpen) recordsHeading.current?.focus({preventScroll:true});
+    else if (recordsWasOpen.current) recordsTrigger.current?.focus({preventScroll:true});
+    recordsWasOpen.current = recordsOpen;
+  }, [recordsOpen]);
   useLayoutEffect(() => {
     const input = composerRef.current;
     if (!input) return;
@@ -198,8 +207,9 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   return <section className="ai-debug-panel" aria-labelledby="ai-debug-heading">
     <div className="ai-debug-head">
       <div><h3 id="ai-debug-heading">{tr("與 AI 一起除錯", "Debug with AI")}</h3><span className="ai-debug-model">{record?.model || state.aiModel || "Codex"} · {tr("沿用目前作品與接線資料", "Using this project's wiring and specifications")}</span></div>
-      <div className="ai-debug-head-actions">{active ? <button type="button" disabled={session.pending} onClick={() => act("stop")}>{tr("停止本次除錯", "Stop this session")}</button> : null}<button type="button" className="workflow-secondary" onClick={onManual}>{tr("手動測試工具", "Manual test tools")}</button></div>
+      <div className="ai-debug-head-actions">{active ? <button type="button" disabled={session.pending} onClick={() => act("stop")}>{tr("停止本次除錯", "Stop this session")}</button> : null}<button ref={recordsTrigger} type="button" className="workflow-secondary" aria-expanded={recordsOpen} aria-controls="ai-debug-records" title={tr("照片使用與檢查紀錄", "Photo use and inspection records")} onClick={() => setRecordsOpen(value => !value)}>{tr("檢查紀錄", "Check records")}</button><button type="button" className="workflow-secondary" aria-controls="debug-manual-tools" onClick={() => {setRecordsOpen(false);onManual();}}>{tr("手動測試工具", "Manual test tools")}</button></div>
     </div>
+    <div className="ai-debug-conversation" hidden={recordsOpen}>
     {!webcamReady ? <div className="guide-caution" role="status">
       <p>{eyeActive ? tr("目前是 Eye 畫面。請先恢復 Webcam，再開始 AI 協作除錯。", "Eye is active. Restore the Webcam before starting AI guided debugging.") : tr("請先啟用 Webcam，才能用相機協作除錯。", "Enable a Webcam before camera guided debugging.")}</p>
       {eyeActive ? <button type="button" onClick={onReturnWebcam}>{tr("返回 Webcam", "Restore Webcam")}</button> : null}
@@ -250,7 +260,9 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
       <small className="ai-debug-composer-hint">{tr("Enter 傳送 · Shift + Enter 換行", "Enter to send · Shift + Enter for a new line")}</small>
       {session.error ? <p className="pi-error" role="alert">{readableError(session.error)}</p> : null}
     </div>
-    <details className="ai-debug-session-details"><summary>{tr("照片使用與檢查紀錄", "Photo use and inspection records")}</summary>
+    </div>
+    <div id="ai-debug-records" className="debug-tool-view ai-debug-records" hidden={!recordsOpen} role="region" aria-labelledby="ai-debug-records-heading" onKeyDown={event => {if (event.key === "Escape" && !event.defaultPrevented) {event.stopPropagation();setRecordsOpen(false);}}}>
+    <div className="debug-tool-heading"><h4 id="ai-debug-records-heading" ref={recordsHeading} tabIndex={-1}>{tr("照片使用與檢查紀錄", "Photo use and inspection records")}</h4><button type="button" className="workflow-secondary" onClick={() => setRecordsOpen(false)}>{tr("返回對話", "Back to chat")}</button></div>
     <p className="ai-debug-disclosure">{tr("開始後，本次選取的 Webcam 照片與遮蔽密碼、金鑰後的診斷資料會送給上方選擇的 Codex 模型分析。文字回覆沿用本次對話；需要新畫面時，才重新拍照。", "After you start, selected Webcam photos and diagnostics with passwords and keys redacted are sent to the Codex model selected above. Text replies use this conversation; a new photo is captured when needed.")}</p>
     {record ? <>
       <div className="ai-debug-evidence-levels" aria-label={tr("證據層級", "Evidence levels")}>
@@ -269,6 +281,6 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
         {record.budget ? <small>{tr("AI 呼叫", "AI calls")} {record.budget.model_calls}/{record.budget.max_model_calls} · {tr("照片", "Photos")} {record.budget.captures}/{record.budget.max_captures}</small> : null}
       </details>
     </> : null}
-    </details>
+    </div>
   </section>;
 }

@@ -1,6 +1,6 @@
 """Conservative image alignment of a projected Pi 5 J8 lattice.
 
-This locates the header housing, not electrical contacts or wire continuity.
+This locates the header housing and visible rows, not wire continuity.
 The board model supplies identity, pin numbering and perspective. No fixed
 screen-space offset is learned or retained by this module.
 """
@@ -12,6 +12,33 @@ import cv2
 import numpy as np
 
 from app.vision.interface import PinDetection
+from app.vision.eye_j8 import correct_eye_j8_from_image
+
+
+def align_pi5_j8_contacts(frame_bgr, profile, pins, video_size, *, diagnostic=None):
+    """Refine the housing projection using the two visible contact rows.
+
+    Reuse the bounded, ambiguity-rejecting Eye row search for webcams too.
+    This preserves pin identity/spacing and is not electrical verification.
+    Versioned provenance lets the UI retain old nudges as fallback without
+    adding a historical board-corner correction to observed contacts.
+    """
+    housing = align_pi5_j8(frame_bgr, profile, pins, video_size)
+    evidence = {}
+    corrected = correct_eye_j8_from_image(
+        frame_bgr, profile, housing, video_size, diagnostic=evidence)
+    if diagnostic is not None:
+        diagnostic.clear()
+        diagnostic.update(evidence, version='pi5-contact-rows-v1', offset_px=[0., 0.])
+        j8 = [p for p in housing if p.header == 'J8']
+        if j8:
+            diagnostic['reference_center'] = np.mean([[p.x, p.y] for p in j8], axis=0).tolist()
+        if evidence.get('accepted'):
+            before = {p.pin_id: p for p in housing}
+            diagnostic['offset_px'] = np.median([
+                [p.x - before[p.pin_id].x, p.y - before[p.pin_id].y]
+                for p in corrected if p.header == 'J8'], axis=0).tolist()
+    return corrected
 
 
 def align_pi5_j8(

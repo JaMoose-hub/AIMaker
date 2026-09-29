@@ -2,6 +2,7 @@
 from copy import deepcopy
 import cv2
 import numpy as np
+from app.vision.pin_alignment import transport_pin_alignment
 
 
 class DisplayPrediction:
@@ -39,6 +40,7 @@ class DisplayPrediction:
             return message
         h = cv2.getPerspectiveTransform(current, predicted)
         result = deepcopy(b)
+        transport_pin_alignment(result, h)
         result.update(frame_id=message['frame_id'], ts_ms=message['ts_ms'], tracking='stale',
                       confidence=min(.49, b.get('confidence', 0)), outline=predicted.tolist(), body=None)
         for pin in result['pins']:
