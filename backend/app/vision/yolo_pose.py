@@ -112,6 +112,13 @@ def refine_board_corners_from_pcb(
         np.array([95, 255, 245], dtype=np.uint8),
     )
     mask = cv2.bitwise_or(blue, green)
+    if boundary_evidence is not None:
+        # Pi-only physical boundary check. The shared blue/green mask admits
+        # yellow wood (H=25..37), which can join the PCB into a plausible but
+        # oversized rectangle even without touching the search ROI edge.
+        # Keep that material out instead of accepting its high contour fill.
+        # UNO's established blue-board path and pin/wire colors are unchanged.
+        mask = cv2.inRange(hsv, np.uint8([38, 45, 18]), np.uint8([95, 255, 245]))
 
     short_side = float(min(h, w))
     close_size = max(5, int(round(short_side * 0.023)))

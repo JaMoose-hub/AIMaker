@@ -433,7 +433,7 @@ class OllamaOpenAIProvider:
 
     def complete(self, prompt: str, image_b64: str | None, timeout_s: float) -> str:
         system = (
-            "Return ONLY JSON matching the Board Vision scene-understanding schema. "
+            "Return ONLY JSON matching the Tinkro scene-understanding schema. "
             "Use null/unknown and uncertain_items when evidence is insufficient. "
             "Never claim electrical safety or override geometric detection."
         )

@@ -1,4 +1,4 @@
-/* Maker workflow extends the existing dark UI. Camera geometry is unchanged. */
+/* Maker workflow geometry and fallback styles. Tinkro tokens load last. */
 .maker-layout .main { min-height: 0; }
 .maker-stage-design, .maker-stage-blueprint, .maker-stage-debug, .maker-stage-deploy, .maker-wiring-full-width { grid-template-columns: minmax(0, 1fr) !important; }
 .maker-stage-design > .side, .maker-stage-blueprint > .side { display: none; }

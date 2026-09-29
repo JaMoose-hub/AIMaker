@@ -82,7 +82,7 @@ class CodexBridge:
             raise RuntimeError("Codex App Server 已中斷，請重試。")
         if "id" in message and "method" in message:
             # A design-only job cannot approve tools or request user interaction.
-            self._send({"id": message["id"], "error": {"code": -32601, "message": "BoardVision design-only client does not execute tools"}})
+            self._send({"id": message["id"], "error": {"code": -32601, "message": "Tinkro design-only client does not execute tools"}})
             return {}
         return message
 

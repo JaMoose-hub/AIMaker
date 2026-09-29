@@ -194,9 +194,9 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect, 
     ? tr("檢查完成，結果已更新。","Check complete. Results are updated.")
     : checkFeedback?.phase==="failure"
     ? checkFeedback.error==="Invalid API response"
-      ? tr("檢查失敗：後端回傳了無法讀取的資料（Invalid API response）。請重新啟動 Board Vision 後端後再試。","Check failed: the backend returned an invalid API response. Restart the Board Vision backend and try again.")
+      ? tr("檢查失敗：後端回傳了無法讀取的資料（Invalid API response）。請重新啟動 Tinkro 後端後再試。","Check failed: the backend returned an invalid API response. Restart the Tinkro backend and try again.")
       : /^HTTP (404|405)$/.test(checkFeedback.error??"")
-      ? tr(`檢查失敗：除錯 API 不可用（${checkFeedback.error}）。請重新啟動 Board Vision 後端。`,`Check failed: the debug API is unavailable (${checkFeedback.error}). Restart the Board Vision backend.`)
+      ? tr(`檢查失敗：除錯 API 不可用（${checkFeedback.error}）。請重新啟動 Tinkro 後端。`,`Check failed: the debug API is unavailable (${checkFeedback.error}). Restart the Tinkro backend.`)
       : `${tr("檢查失敗","Check failed")}：${checkFeedback.error??tr("未知錯誤","Unknown error")}`
     : null;
   async function agent() {if(record)await debug.action(`debug/cases/${record.id}/actions`,{action:"analyse",context,model:state.aiModel||null,effort:state.aiEffort});}
@@ -265,7 +265,7 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect, 
       <button onClick={()=>void copy()}>{copied?tr("已複製","Copied"):tr("複製報告，尋求協助","Copy report for support")}</button>
       <p className="workflow-muted">{tr("報告已遮蔽密碼與金鑰。","Passwords and keys are redacted.")}</p><pre>{JSON.stringify(focusedReport,null,2)}</pre>
     </div></details>
-    {debug.error||record?.error?<p className="pi-error" role="alert">{debug.error.includes("404")?tr("除錯 API 尚未載入，請重新啟動 Board Vision 後端。","Debug API is unavailable; restart the Board Vision backend."):message(debug.error||record?.error)}</p>:null}
+    {debug.error||record?.error?<p className="pi-error" role="alert">{debug.error.includes("404")?tr("除錯 API 尚未載入，請重新啟動 Tinkro 後端。","Debug API is unavailable; restart the Tinkro backend."):message(debug.error||record?.error)}</p>:null}
 </>;
   const trialTools = <>    <section ref={trialCard} className="debug-trial" tabIndex={-1}><details ref={trialDetails} className="debug-tool" open={Boolean(trial?.reserved||trial?.outcome==="awaiting_confirmation"||trialQueued)||undefined}><summary><strong>{tr("零件都好了？一起試跑 60 秒", "Components ready? Try them together for 60 seconds")}</strong><span>{tr("最後再做，不必每次都測", "Optional final check")}</span></summary><p>{tr("移動前方物體，看看距離與實體螢幕是否一起變化。只試跑 60 秒，不覆蓋正式作品。", "Move the target and watch whether distance and the screen change together. This 60-second trial does not replace the deployed project.")}</p>
       <button disabled={!hardwareReady||debug.pending||trialQueued||Boolean(trial?.reserved)} onClick={()=>void debug.action("debug/trials",{context,request_id:crypto.randomUUID()})}>{tr("開始 60 秒試跑","Start 60-second trial")}</button>

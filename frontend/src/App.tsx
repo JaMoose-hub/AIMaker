@@ -490,13 +490,12 @@ export default function App() {
   }, [config, controllerSwitching, guidePinId, t]);
 
   return (
-    <div className={`app${makerEnabled ? ` pi-deploy-layout maker-layout maker-stage-${makerStage}` : ""}${fullWidthWiring ? " maker-wiring-full-width" : ""}${displayModeActive ? ` display-mode-active ${displayMode}` : ""}`}>
+    <div className={`app tinkro-theme${makerEnabled ? ` pi-deploy-layout maker-layout maker-stage-${makerStage}` : ""}${fullWidthWiring ? " maker-wiring-full-width" : ""}${displayModeActive ? ` display-mode-active ${displayMode}` : ""}`}>
       <main className="main">
         <header className={`header${makerEnabled ? " maker-header" : ""}`}>
           <div className="brand">
-            <span className="brand-mark" aria-hidden="true" />
             <div className="brand-text">
-              <h1 className="brand-title">{t("app.title")}</h1>
+              <h1 className="brand-title"><img className="brand-logo" src="/brand/tinkro-dark.png" alt={t("app.title")} width={152} height={48} /></h1>
               <div className="brand-subtitle">{t("app.subtitle")}</div>
             </div>
           </div>

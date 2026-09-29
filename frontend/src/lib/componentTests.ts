@@ -75,13 +75,13 @@ export function missingDependencyMessage(detail: string, phase?: string): [strin
   if (!name) return null;
   const notStarted = phase === 'preflight';
   return [
-    `Pi 測試環境缺少 ${name}。${notStarted ? '本次尚未啟動硬體測試；' : ''}請在 Board Vision 使用的虛擬環境補裝，再按「重新測試」。不必先重接線。`,
-    `The Pi test environment is missing ${name}. ${notStarted ? 'Hardware testing has not started. ' : ''}Install it in the virtual environment used by Board Vision, then retry. Do not rewire yet.`,
+    `Pi 測試環境缺少 ${name}。${notStarted ? '本次尚未啟動硬體測試；' : ''}請在 Tinkro 使用的虛擬環境補裝，再按「重新測試」。不必先重接線。`,
+    `The Pi test environment is missing ${name}. ${notStarted ? 'Hardware testing has not started. ' : ''}Install it in the virtual environment used by Tinkro, then retry. Do not rewire yet.`,
   ];
 }
 
 export const testReasons: Record<string, [string, string]> = {
-  executor_restart_required: ["請重新啟動 Board Vision 後端，啟用共用執行佇列後再測試。", "Restart the Board Vision backend to enable the shared execution queue before testing."],
+  executor_restart_required: ["請重新啟動 Tinkro 後端，啟用共用執行佇列後再測試。", "Restart the Tinkro backend to enable the shared execution queue before testing."],
   connection_lost: ["無法取得 Pi 目前狀態。請檢查電源／網路；尚未確認停止前不會啟動第二份測試。", "Pi status is unknown. Check power/network; another test cannot start until stop is confirmed."],
   missing_dependency: ["Pi 測試環境未準備好。請展開環境設定，先完成套件與虛擬環境準備，不必重接線。", "Pi test dependencies are missing. Expand setup instructions; do not rewire yet."],
   spi_missing: ["找不到 SPI0。請在 Pi 的 raspi-config 啟用 SPI，再依提示重新開機。", "SPI0 is missing. Enable SPI in raspi-config and reboot if prompted."],

@@ -17,7 +17,7 @@ def build_design_prompt(body):
                "conversation": [] if fresh else [m.model_dump() for m in body.conversation], "workflow": workflow,
                "catalog": [{"id": cid, "name": MODULES[cid]["name"], "safety": MODULES[cid]["safety"], "runtime": MODULES[cid]["runtime"], "steps": MODULES[cid]["steps"], "unresolved": MODULES[cid]["unresolved"]} for cid in body.component_ids]}
     if body.intent == "ask":
-        return f"""You are BoardVision's cloud assistant throughout design, blueprint, wiring and deployment.
+        return f"""You are Tinkro's cloud assistant throughout design, blueprint, wiring and deployment.
 Respond in {body.locale}. Return only JSON with answer. This is a question, NOT permission to revise or deploy.
 Use only Raspberry Pi 5 and the catalog modules. Do not introduce replacement modules, new pins or drivers.
 Passive structural accessories are allowed: wheels, axles, acrylic panels, brass standoffs, brackets and screws.
@@ -60,7 +60,7 @@ The following design/logic/preview requirements apply ONLY when proposal is non-
 Return only the requested JSON. Do not call any tools, read files, run commands or deploy anything.
 {mode_instruction}
 Use only available_modules, at most once each. Honor requested removals and changes to the current design.
-Wiring and GPIO are managed by BoardVision. Do not invent pins, hardware identity, drivers or installations.
+Wiring and GPIO are managed by Tinkro. Do not invent pins, hardware identity, drivers or installations.
 The selected HC-SR04+ is the wide-voltage variant powered by Pi physical Pin 1 (3.3V),
 with ECHO directly to GPIO18 only for confirmed 3.3V-compatible ECHO. Do not describe a 5V
 supply or require divider resistors for this variant. It is not the standard 5V HC-SR04.

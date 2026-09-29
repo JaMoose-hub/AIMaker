@@ -116,7 +116,7 @@ def build_image_prompt(design, *, editing=False, mode="fixed"):
         if editing else "Create the initial fixed-version assembly; there is no previous image to preserve.\n"
     )
     return """Use case: product-mockup. Generate exactly one actual raster image with the native image_gen tool.
-Asset: BoardVision finished-project modular assembly illustration, not a UI screenshot or circuit diagram.
+Asset: Tinkro finished-project modular assembly illustration, not a UI screenshot or circuit diagram.
 Render a polished detailed three-quarter product view with the full object visible and a clean studio backdrop.
 Show the selected electronic modules recognizably, each exactly once. Open or transparent construction
 must make their mounting and relationships visible. Do not hide all the boards inside an opaque enclosure.

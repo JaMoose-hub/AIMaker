@@ -68,7 +68,7 @@
   "pi.output": "程式輸出",
   "pi.outputLimit": "每秒更新 · 最近 1,000 行",
   "pi.noOutput": "部署後，程式輸出會出現在這裡。",
-  "pi.networkError": "無法連到 BoardVision 後端，恢復連線後會自動更新狀態。",
+  "pi.networkError": "無法連到 Tinkro 後端，恢復連線後會自動更新狀態。",
   "pi.actionFailed": "操作失敗，請重新連線後再試。",
   "pi.rebootHint": "關閉筆電後仍會執行；Pi 重開機後需再次部署。HIGH／LOW 並非光照強度。",
   "runtime.toolbarLabel": "執行環境工具列",
@@ -246,8 +246,8 @@
   "verification.reason.electrical_pass_visual_incomplete": "電氣已通過，等待相機證據",
   "verification.reason.stale_evidence": "證據已過期，正在重新確認",
   "verification.reason.awaiting_evidence": "等待新的驗證結果",
-  "app.title": "Board Vision",
-  "app.subtitle": "AI Maker Runtime · 即時板卡視覺辨識",
+  "app.title": "Tinkro",
+  "app.subtitle": "讓想法，動起來",
 
   "backend.down": "後端未連線",
   "backend.retrying": "自動重試中…",
@@ -753,5 +753,5 @@
   ,"cameraTune.restore_failed": "無法確認還原成功，請按「還原」重試"
   ,"cameraTune.network": "無法連線；請稍候，伺服器仍會保留或還原設定"
   ,"cameraTune.target_not_visible": "這次無法持續取得可靠的 Pi 5 區域，未調整相機；請保持板子穩定後重試"
-  ,"cameraTune.restart_required": "請重新啟動 Board Vision 後端，再使用 Pi 5 定向優化"
+  ,"cameraTune.restart_required": "請重新啟動 Tinkro 後端，再使用 Pi 5 定向優化"
 }

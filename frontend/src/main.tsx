@@ -6,6 +6,7 @@ import { PiConnectionProvider } from "./lib/PiConnection";
 import "./styles.css";
 import "./debug.css";
 import "./responsive.css";
+import "./tinkro.css";
 import { migrateStoredMaker } from "./lib/makerMigration";
 
 const root = document.getElementById("root")!;

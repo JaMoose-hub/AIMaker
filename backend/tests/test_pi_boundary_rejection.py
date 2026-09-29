@@ -38,6 +38,49 @@ def test_search_rectangle_is_not_a_physical_board_edge():
     assert evidence['rejected'] and evidence['at_search_edge']
 
 
+@pytest.mark.parametrize('angle', [0, 37, 90, 180, 270])
+def test_warm_desk_patch_cannot_expand_pi_boundary_or_gpio_pitch(angle):
+    from app.profiles.store import ProfileStore
+    from app.vision.yolo_profile_detector import _project_profile_on_observed_quad
+
+    def bgr(h, s, v):
+        return tuple(int(x) for x in cv2.cvtColor(np.uint8([[[h, s, v]]]), cv2.COLOR_HSV2BGR)[0, 0])
+
+    frame = np.full((700, 900, 3), bgr(22, 60, 220), np.uint8)
+    quad = np.float32([[280, 240], [620, 240], [620, 460], [280, 460]])
+    # A finite, dense yellow-green wood patch passes the old fill/ROI-edge
+    # gates. Its inflated box is not the physical PCB edge.
+    wood = quad.mean(0) + 1.3 * (quad - quad.mean(0))
+    rotation = cv2.getRotationMatrix2D((450, 350), angle, 1)
+    quad = cv2.transform(quad[None], rotation)[0]
+    wood = cv2.transform(wood[None], rotation)[0]
+    cv2.fillConvexPoly(frame, np.int32(wood), bgr(27, 65, 205))
+    cv2.fillConvexPoly(frame, np.int32(quad), bgr(65, 155, 120))
+    obs = observation(quad, tuple(np.r_[wood.min(0), wood.max(0)]))
+    legacy = refine_board_corners_from_pcb(frame, obs)
+    assert legacy is not None
+    assert np.mean(np.linalg.norm(legacy.corners_px - quad, axis=1)) > 30
+
+    evidence = {}
+    refined = refine_board_corners_from_pcb(frame, obs, boundary_evidence=evidence)
+    assert refined is not None and not evidence.get('rejected')
+    assert np.max(np.linalg.norm(refined.corners_px - quad, axis=1)) < 3
+    store = ProfileStore(Path(__file__).resolve().parents[2] / 'profiles')
+    profile = store.profile('raspberry-pi-5')
+    actual, _ = _project_profile_on_observed_quad(profile, refined.corners_px, (900, 700), .9)
+    expected, _ = _project_profile_on_observed_quad(profile, quad, (900, 700), .9)
+    assert [p.pin_id for p in actual] == [p.pin_id for p in expected]
+    assert np.max(np.linalg.norm(np.array([[p.x, p.y] for p in actual])
+                                - np.array([[p.x, p.y] for p in expected]), axis=1)) < 3
+
+
+def test_yellow_wood_without_green_pcb_is_not_boundary_evidence():
+    frame = cv2.cvtColor(np.full((700, 900, 3), (27, 65, 205), np.uint8), cv2.COLOR_HSV2BGR)
+    evidence = {}
+    obs = observation([[280, 240], [620, 240], [620, 460], [280, 460]])
+    assert refine_board_corners_from_pcb(frame, obs, boundary_evidence=evidence) is None
+
+
 @pytest.mark.parametrize('case,quad,box', [
     ('S07-HC-moved-settled-01', [[1016.9106,468.1682],[1525.3893,611.0059],[1451.4877,909.5902],[932.3552,790.0446]],
      [868.2158,372.355,1617.4004,1021.9829]),

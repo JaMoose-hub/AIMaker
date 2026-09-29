@@ -31,19 +31,20 @@ test('Pi connection lives next to the model selector, not in deployment panel',a
   const top=await render('PiConnectionControl',status), panel=await render('PiDeployPanel',status);
   assert.equal((top.match(/pi-global-connect/g)||[]).length,1);
   assert.ok(!panel.includes('pi-connect-button'));
-  assert.ok(panel.includes('一次只執行一個程式'));
+  assert.ok(panel.includes('deploy-code-card') && panel.includes('deploy-output'));
   const offline=await render('PiDeployPanel',{...status,connected:false});
-  assert.ok(offline.includes('先按上方「連線 Pi」'));
+  assert.ok(offline.includes('先連線 Pi，才能部署程式'));
 });
 
-test('deployment starts with project actions; code and logs remain mounted in closed disclosures',async()=>{
+test('deployment keeps the editor on the left and output on the right',async()=>{
   const html=await render('PiDeployPanel',status,{draft:'print("preserve this draft")',onDebug(){}});
-  assert.ok(html.indexOf('class="pi-deploy-button"') < html.indexOf('id="pi-python-code"'));
-  assert.match(html,/<details class="workflow-details deploy-code"><summary>/);
-  assert.match(html,/<details class="workflow-details deploy-logs"><summary>/);
+  assert.ok(html.indexOf('class="pi-deploy-button deploy-code-deploy"') < html.indexOf('id="pi-python-code"'));
+  assert.match(html,/class="deploy-primary-column"/);
+  assert.match(html,/class="deploy-results-column"/);
+  assert.ok(html.indexOf('id="pi-python-code"') < html.indexOf('class="deploy-results-column"'));
   assert.match(html,/<textarea[^>]+id="pi-python-code"[\s\S]*preserve this draft/);
   assert.match(html,/沒有反應？幫我檢查/);
-  assert.match(html,/不代表這份作品已通過測試/);
+  assert.doesNotMatch(html,/功能通過|整合驗證通過/);
 });
 
 test('empty deployment view has no duplicate Pi connection card or badge',async()=>{
@@ -53,11 +54,11 @@ test('empty deployment view has no duplicate Pi connection card or badge',async(
     {...status,connected:false,program:'unknown',deployment:'idle',connection_error:'Connection refused'}]) {
     const html=await render('PiDeployPanel',candidate,{onDebug(){}});
     assert.doesNotMatch(html,/class="deploy-live|class="pi-connection|Pi 目前的狀態|還沒連上 Pi/);
-    assert.match(html,/class="deploy-launch workflow-surface"/);
-    assert.match(html,/class="workflow-details deploy-logs"/);
+    assert.match(html,/class="deploy-code-card workflow-surface"/);
+    assert.match(html,/class="deploy-output workflow-surface"/);
   }
   const css=readFileSync(new URL('../src/debug.css',import.meta.url),'utf8');
-  assert.match(css,/\.deploy-overview > \.deploy-launch:only-child\s*\{\s*grid-column:1 \/ -1/);
+  assert.match(css,/\.deploy-workspace\s*\{[^}]*grid-template-columns:minmax\(0,1\.05fr\) minmax\(0,\.95fr\)/);
 });
 
 test('program activity and diagnostic access survive connection loss without claiming it stopped',async()=>{
@@ -67,39 +68,40 @@ test('program activity and diagnostic access survive connection loss without cla
     [{...status,connected:false,program:'unknown',version:{run_id:'run-one',code_hash:'abc123'},logs:['last output']},{}],
   ]) {
     const html=await render('PiDeployPanel',candidate,{onDebug(){}},connection);
-    assert.match(html,/作品執行狀態/);
-    assert.match(html,/執行狀態待確認/);
-    assert.match(html,/程式可能仍在執行/);
+    assert.match(html,/輸出結果/);
+    assert.match(html,/Pi 狀態待確認/);
+    assert.match(html,/暫時無法更新狀態；恢復連線後會重新核對/);
     assert.match(html,/沒有反應？幫我檢查/);
     assert.doesNotMatch(html,/程式執行中|pi\.program\.stopped/);
-    assert.match(html,/class="pi-deploy-button" disabled=""/);
+    assert.match(html,/class="pi-deploy-button deploy-code-deploy" disabled=""/);
   }
   for(const candidate of [
     {...status,program:'unknown',deployment:'uploading'},
     {...status,program:'unknown',deployment:'idle',execution:{jobs:[job]}},
     {...status,program:'stopped',deployment:'succeeded'},
-  ]) assert.match(await render('PiDeployPanel',candidate,{onDebug(){}}),/class="deploy-live workflow-surface"/);
+  ]) assert.match(await render('PiDeployPanel',candidate,{onDebug(){}}),/class="deploy-output workflow-surface"/);
 });
 
 test('deployment blockers remain enforced in the friendly launch view',async()=>{
   for(const candidate of [{...status,connected:false},{...status,execution:undefined}]) {
-    assert.match(await render('PiDeployPanel',candidate),/class="pi-deploy-button" disabled=""/);
+    assert.match(await render('PiDeployPanel',candidate),/class="pi-deploy-button deploy-code-deploy" disabled=""/);
   }
-  assert.match(await render('PiDeployPanel',status,{draft:'   '}),/class="pi-deploy-button" disabled=""/);
+  assert.match(await render('PiDeployPanel',status,{draft:'   '}),/class="pi-deploy-button deploy-code-deploy" disabled=""/);
   const blocked={title:'Check power',component_ids:[],unresolved:['Confirm voltage'],requirements:{imports:[],devices:[]},code:'print(1)'};
   const html=await render('PiDeployPanel',status,{project:blocked});
-  assert.match(html,/class="pi-deploy-button" disabled=""/);
+  assert.match(html,/class="pi-deploy-button deploy-code-deploy" disabled=""/);
   assert.match(html,/Confirm voltage/);
 });
 
-test('runtime failure keeps raw error and version in details without inventing hardware success',async()=>{
+test('runtime failure keeps error, version and logs together in output without inventing hardware success',async()=>{
   const html=await render('PiDeployPanel',{...status,program:'failed',deployment:'failed',exit_code:1,error:'RuntimeError: test failure',version:{code_hash:'abc123',run_id:'run-one'},logs:['test log']});
-  assert.match(html,/程式需要檢查/);
-  const details=html.slice(html.indexOf('<details class="workflow-details deploy-logs">'));
+  assert.match(html,/需要檢查/);
+  const details=html.slice(html.indexOf('<section class="deploy-output workflow-surface"'));
   assert.match(details,/RuntimeError: test failure/);
   assert.match(details,/abc123/);
   assert.match(details,/test log/);
-  assert.doesNotMatch(html.slice(0,html.indexOf('<details class="workflow-details deploy-logs">')),/RuntimeError: test failure/);
+  assert.doesNotMatch(html.slice(0,html.indexOf('<section class="deploy-output workflow-surface"')),/RuntimeError: test failure/);
+  assert.doesNotMatch(html,/功能通過|整合驗證通過/);
 });
 
 test('handoff names next task and requires explicit confirmation; blocked is not running',async()=>{
@@ -113,16 +115,16 @@ test('handoff names next task and requires explicit confirmation; blocked is not
 
 test('active test permits queueing deployment; duplicate queued deployment is disabled',async()=>{
   const available=await render('PiDeployPanel',{...status,component_test_id:'run'});
-  assert.match(available,/class="pi-deploy-button">/);
+  assert.match(available,/class="pi-deploy-button deploy-code-deploy">/);
   const queued=await render('PiDeployPanel',{...status,execution:{jobs:[job]}});
-  assert.match(queued,/class="pi-deploy-button" disabled=""/);
-  assert.ok(queued.includes('已加入執行佇列'));
+  assert.match(queued,/class="pi-deploy-button deploy-code-deploy" disabled=""/);
+  assert.ok(queued.includes('已加入佇列'));
 });
 
 test('old backend cannot bypass FIFO, connection status polling is centralized',async()=>{
   const old=await render('PiDeployPanel',{...status,execution:undefined});
-  assert.match(old,/class="pi-deploy-button" disabled=""/);
-  assert.ok(old.includes('重新啟動 Board Vision'));
+  assert.match(old,/class="pi-deploy-button deploy-code-deploy" disabled=""/);
+  assert.ok(old.includes('重新啟動 Tinkro'));
   const panel=readFileSync(new URL('../src/components/PiDeployPanel.tsx',import.meta.url),'utf8');
   assert.ok(!panel.includes('fetchPiStatus') && !panel.includes('connectPi'));
   const connection=readFileSync(new URL('../src/lib/PiConnection.tsx',import.meta.url),'utf8');

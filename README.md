@@ -1,4 +1,7 @@
-# Board Vision — AI Maker 與視覺化接線引導
+# Tinkro — AI Maker 與視覺化接線引導
+
+Tinkro 是 Board Vision 的新品牌名稱；既有作品、接線紀錄與 Pi 執行流程保持相容。
+五階段介面與品牌規範、隔離預覽及驗證範圍見 [Tinkro 視覺設計](docs/tinkro-theme.md)。
 
 鏡頭即時辨識 Raspberry Pi 5、HC-SR04 與 MRD-TF240，顯示板框、GPIO／Pin、
 接線步驟，並整合 Codex 作品設計、零件功能測試與 Pi 部署。

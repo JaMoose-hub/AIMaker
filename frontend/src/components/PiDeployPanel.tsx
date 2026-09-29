@@ -37,7 +37,7 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { proj
   const deployNotice = !connected
     ? tr("先連線 Pi，才能部署程式。", "Connect Pi before deploying.")
     : !status?.execution
-      ? tr("請重新啟動 Board Vision 後端，再部署程式。", "Restart the Board Vision backend before deploying.")
+      ? tr("請重新啟動 Tinkro 後端，再部署程式。", "Restart the Tinkro backend before deploying.")
       : project?.unresolved.length
         ? tr("請先確認接線或規格問題，才能部署。", "Resolve the wiring or specification issues before deploying.")
         : !code.trim()

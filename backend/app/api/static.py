@@ -18,9 +18,9 @@ log = logging.getLogger(__name__)
 
 _INFO_PAGE = """<!doctype html>
 <html lang="zh-Hant">
-<head><meta charset="utf-8"><title>Board Vision</title></head>
+<head><meta charset="utf-8"><title>Tinkro</title></head>
 <body style="font-family: system-ui, sans-serif; margin: 3rem;">
-<h1>Board Vision backend</h1>
+<h1>Tinkro backend</h1>
 <p>Frontend not built - <code>frontend/dist</code> was not found.</p>
 <p>Build it with <code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code>,
 then restart the server.</p>

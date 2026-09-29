@@ -1,6 +1,6 @@
 """Single-Pi SSH deployer. Network work never runs on the ASGI event loop.
 
-Only the BoardVision user service is replaced. Closing the client does not
+Only the Tinkro user service is replaced. Closing the client does not
 stop the remote program; the service is deliberately not enabled at boot.
 """
 from __future__ import annotations
@@ -227,7 +227,7 @@ class PiDeployer:
     def assert_no_component_service(self):
         active = self._run("systemctl --user list-units --all --no-legend --plain --state=active,activating,deactivating 'boardvision-test-*.service'")
         if active.strip():
-            raise RemoteCommandError("A Board Vision component test is still active; reconnect and stop that test first")
+            raise RemoteCommandError("A Tinkro component test is still active; reconnect and stop that test first")
 
     def stop_program(self, expected_owner):
         with self._io_lock:
@@ -300,7 +300,7 @@ class PiDeployer:
                 self._write(version_dir + "/runner.py", (Path(__file__).parent / "runtime/project_runner.py").read_text(encoding="utf-8"))
                 self._write(version_dir + "/run-config.json", json.dumps(dict(run_id=run_id, code_hash=digest(code), source="observed.py", source_hash=digest(observed), structured=structured, duration=None)))
                 unit = (
-                    "[Unit]\nDescription=BoardVision Pi program\nStartLimitIntervalSec=0\n\n[Service]\nType=simple\n"
+                    "[Unit]\nDescription=Tinkro Pi program\nStartLimitIntervalSec=0\n\n[Service]\nType=simple\n"
                     f'WorkingDirectory={root}\nExecStart=/usr/bin/flock --nonblock --no-fork "{root}/component-tests/hardware.lock" "{python}" -u "{version_dir}/runner.py" "{version_dir}"\n'
                     "Environment=PYTHONUNBUFFERED=1\nEnvironment=GPIOZERO_PIN_FACTORY=lgpio\n"
                     "Restart=no\nKillMode=control-group\nTimeoutStopSec=5\n"

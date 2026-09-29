@@ -532,7 +532,7 @@ def build_app(
                 log.exception("detector.close() failed")
             broadcaster.unbind_loop()
 
-    app = FastAPI(title="Board Vision backend", lifespan=lifespan)
+    app = FastAPI(title="Tinkro backend", lifespan=lifespan)
 
     # Shared state (available to routes even before lifespan runs).
     app.state.config = config

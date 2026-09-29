@@ -68,7 +68,7 @@
   "pi.output": "Program output",
   "pi.outputLimit": "Updates every second · Last 1,000 lines",
   "pi.noOutput": "Program output will appear here after deployment.",
-  "pi.networkError": "BoardVision backend is unreachable. Status resumes when it returns.",
+  "pi.networkError": "Tinkro backend is unreachable. Status resumes when it returns.",
   "pi.actionFailed": "Operation failed. Reconnect and try again.",
   "pi.rebootHint": "Runs after the laptop disconnects. Deploy again after a Pi reboot. HIGH/LOW is not light intensity.",
   "runtime.toolbarLabel": "Runtime toolbar",
@@ -246,8 +246,8 @@
   "verification.reason.electrical_pass_visual_incomplete": "Electrical check passed; waiting for camera evidence",
   "verification.reason.stale_evidence": "Evidence expired; checking again",
   "verification.reason.awaiting_evidence": "Waiting for new verification evidence",
-  "app.title": "Board Vision",
-  "app.subtitle": "AI Maker Runtime · Live Board Vision",
+  "app.title": "Tinkro",
+  "app.subtitle": "Make your ideas work",
 
   "backend.down": "Backend offline",
   "backend.retrying": "retrying automatically…",
@@ -753,5 +753,5 @@
   ,"cameraTune.restore_failed": "Could not verify restoration. Press Undo to retry"
   ,"cameraTune.network": "Connection unavailable; the server will finish or roll back"
   ,"cameraTune.target_not_visible": "Could not consistently locate the Pi 5 region during this run; camera unchanged. Hold the board steady and retry"
-  ,"cameraTune.restart_required": "Restart the Board Vision backend to enable Pi 5-targeted tuning"
+  ,"cameraTune.restart_required": "Restart the Tinkro backend to enable Pi 5-targeted tuning"
 }

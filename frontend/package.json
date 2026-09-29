@@ -10,8 +10,10 @@
     "test:guides": "node --test tools/component_guides.test.mjs tools/pi_header_guide.test.mjs tools/pi_example.test.mjs tools/maker.test.mjs tools/maker_migration.test.mjs tools/circuit_layout.test.mjs tools/circuit_zoom.test.mjs tools/realtime_frame.test.mjs tools/studio_split.test.mjs tools/studio_compact.test.mjs tools/cloud_wiring.test.mjs tools/project_guide.test.mjs tools/glasses.test.mjs tools/display_mode.test.mjs",
     "test:headers": "node --test tools/component_header.test.mjs tools/camera_tuning.test.mjs tools/auto_calibration.test.mjs tools/camera_modes.test.mjs tools/status_layout.test.mjs tools/component_tests.test.mjs tools/pi_execution.test.mjs tools/debug.test.mjs tools/debug_session.test.mjs tools/runtime_config.test.mjs tools/responsive_layout.test.mjs",
     "test:pin-calibration": "node --test tools/pin_calibration.test.mjs",
-    "test": "npm run check:i18n && npm run test:guides && npm run test:headers && npm run test:pin-calibration && npm run build",
-    "preview": "vite preview"
+    "test:theme": "node --test tools/tinkro.test.mjs",
+    "test": "npm run check:i18n && npm run test:guides && npm run test:headers && npm run test:pin-calibration && npm run test:theme && npm run build",
+    "preview": "vite preview",
+    "preview:theme": "node tools/tinkro-preview.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
