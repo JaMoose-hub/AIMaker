@@ -4,9 +4,10 @@ import { componentComplete, componentTestKey, missingDependencyMessage, testReas
 import type { useComponentTests } from "../lib/useComponentTests";
 import type { ProjectDesign, ProjectGuideState } from "../lib/maker";
 
-export function ComponentTestCard({ design, session, tests, onViewWiring, onDebug, view = "all" }: {
+export function ComponentTestCard({ design, session, tests, onViewWiring, onDebug, view = "all", runId }: {
   design: ProjectDesign; session: ProjectGuideState; tests: ReturnType<typeof useComponentTests>;
   view?: "all" | "controls" | "results";
+  runId?: string;
   onViewWiring: () => void;
   onDebug?: (componentId: string, runId?: string, symptom?: string) => void;
 }) {
@@ -19,14 +20,16 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     && job.component_id === cid && job.guide_key === key && !["finished", "failed", "cancelled"].includes(job.state));
   const lastJob = tests.status.execution?.jobs.filter(job => job.kind === "test" && job.project_id === design.id
     && job.component_id === cid && job.guide_key === key).at(-1);
-  const failedJob = lastJob?.state === "failed" && (lastJob.created_at ?? 0) >= (last?.created_at ?? 0) ? lastJob : null;
+  const failedJob = !runId && lastJob?.state === "failed" && (lastJob.created_at ?? 0) >= (last?.created_at ?? 0) ? lastJob : null;
   const active = tests.status.active;
   const foreign = active && (active.project_id !== design.id || active.component_id !== cid);
-  const run = (view === "results" && foreign ? null : active) ?? (failedJob ? undefined : last);
+  const run = runId ? (active?.id === runId ? active : tests.status.results.find(item => item.id === runId && item.project_id === design.id && item.component_id === cid))
+    : (view === "results" && foreign ? null : active) ?? (failedJob ? undefined : last);
   const stale = Boolean(run && (run.invalidated || run.guide_key !== key || (foreign && run === active)));
   const [choice, setChoice] = useState<{runId:string; code:string; normal:boolean}>({runId:"",code:"",normal:false});
   const [copied, setCopied] = useState(false);
   const [openedAt] = useState(() => Date.now() / 1000);
+  if (runId && (!run || run.project_id !== design.id || run.component_id !== cid)) return <p role="status">{tr("正在取得這次測試紀錄；不會改用其他測試的確認選項。", "Loading this exact test; another run's confirmation options will not be substituted.")}</p>;
   if (!complete && !active && !last) return null;
   const reason = tests.error ?? failedJob?.reason ?? (stale && (!foreign || view === "results") ? "wiring_changed" : run?.reason);
   const detail = (reason === "missing_dependency" ? missingDependencyMessage(failedJob?.error ?? run?.detail ?? "", failedJob ? "preflight" : run?.failed_phase ?? run?.phase) : null)
@@ -37,7 +40,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
   const phase = run?.phase;
   const historical = Boolean(run && !run.reserved && (run.finished_at ?? run.created_at) < openedAt);
   const busy = tests.pending;
-  const canAct = run?.reserved && !stale && !tests.error && !["connection_lost", "remote_state_unknown"].includes(run.reason ?? "");
+  const canAct = run?.reserved && (!runId || active?.id === run.id) && !stale && !tests.error && !["connection_lost", "remote_state_unknown"].includes(run.reason ?? "");
   const name = cid === "hc-sr04" ? "HC-SR04+" : "MRD-TFT240";
   const phases: Record<string,string> = {
     preflight: tr("檢查 Pi 連線、套件與裝置權限", "Checking Pi connection, dependencies and devices"),
@@ -52,27 +55,29 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     awaiting_visual: tr("請選出實體螢幕上看到的四位數字，並確認三色正常。沒看到數字請勿猜選或勾選通過。", "Select the four digits you saw on the physical screen and confirm the colors. Do not guess or confirm a pass if no code was visible."),
     reconnecting: tr("重新查詢遠端測試，不會重複啟動", "Rechecking remote test without starting another"),
   };
+  const debugAction = onDebug && (reason || outcome === "failed" || outcome === "inconclusive")
+    ? <button type="button" className="component-test-debug-action" onClick={() => onDebug(cid, run?.id, reason ?? undefined)}>{tr("前往除錯", "Troubleshoot")}</button> : null;
   return <section className="component-test-card" aria-label={tr("零件功能測試", "Component function test")}>
     {view === "controls" && foreign ? <p role="status">{tr("其他零件仍在測試；下方停止按鈕會停止該次測試。新測試須經上方執行管理確認交接。", "Another component is testing; Stop below stops that run. Confirm handoff in Execution before the next test.")}</p> : null}
-    {onDebug && (reason || outcome === "failed" || outcome === "inconclusive") ? <button type="button" onClick={() => onDebug(cid, run?.id, reason ?? undefined)}>{tr("前往除錯", "Troubleshoot")}</button> : null}
+    {view === "controls" ? debugAction : null}
     {view !== "controls" ? <><header><span>{tr("零件功能測試", "COMPONENT TEST")} · {view !== "results" && foreign ? run?.component_id : name}</span>
-      <strong className={`test-outcome ${outcome ?? "untested"}`} role="status">{outcome ? labels[outcome] : tr("未測試", "Not tested")}</strong></header>
+      <div className="component-test-result-row"><strong className={`test-outcome ${outcome ?? "untested"}`} role="status">{outcome ? labels[outcome] : tr("未測試", "Not tested")}</strong>{debugAction}</div></header>
     {foreign ? <p>{tr("另一個零件仍在測試。可以將本零件加入佇列，並在上方「執行管理」確認停止與交接。", "Another component is testing. Queue this module and confirm handoff in Execution above.")}</p> : null}
     {queued && queued.state !== "running" ? <p className="guide-caution" role="status">{tr("本零件已加入執行佇列；請看上方「執行管理」的交接提示。", "This module is queued. Check Execution above for the handoff prompt.")}</p> : null}
     {failedJob ? <p role="alert">{tr("本次未能啟動測試", "This test could not start")}: {failedJob.error}</p> : null}
-    {run && !run.reserved ? <small>{historical ? tr("上次測試紀錄", "Last test record") : tr("本次測試結果", "This test result")} · {new Date((run.finished_at ?? run.created_at)*1000).toLocaleString()}{historical ? tr("（先前保存，非目前接線證據）", " (saved history, not current wiring evidence)") : ""}</small> : null}
+    {run && !run.reserved ? <small>{historical ? tr("上次測試紀錄", "Last test record") : tr("本次測試結果", "This test result")} · {new Date((run.finished_at ?? run.created_at)*1000).toLocaleString(tr("zh-TW", "en"))}{historical ? tr("（先前保存，非目前接線證據）", " (saved history, not current wiring evidence)") : ""}</small> : null}
     {outcome === "passed" && run?.evidence === "user_visual_confirmation" ? <small>{tr("判定依據：本次測試碼及顏色由使用者目視確認。", "Evidence: the user visually confirmed this run's code and colors.")}</small> : null}
     </> : null}
     {view !== "results" ? <div className="test-next-step" role="status">{detail ? tr(...detail) : tests.error ? tr("狀態更新失敗，請查看診斷或重新連線。", "Status update failed. Check diagnostics or reconnect.") : run?.reserved ? phases[phase ?? ""] ?? tr("等待本次測試回報", "Waiting for test progress") : historical ? tr("這是先前紀錄；可重新測試確認目前接線。", "This is a saved record. Retest to check the current wiring.") : outcome === "passed" ? tr("本次功能測試通過，可以繼續下一個零件。", "This function test passed. Continue to the next component.") : tr("接好並核對供電後，可執行一次零件測試。", "After wiring and checking power ratings, run a component test.")}</div> : null}
     {view !== "controls" ? <>
     {run?.component_id === "hc-sr04" && run.reserved ? <p className="test-reading">{run.latest && !tests.error && !stale && Date.now()/1000-run.latest.at < 2 ? run.latest.cm.toFixed(1) : "—"} <small>cm</small></p> : null}
     {run && (run.reserved || Object.keys(run.samples).length > 0) ? <div className="test-facts">
-      {run.reserved ? <span>{tr("最後回報時間", "Last report time")}: {run.heartbeat_at ? new Date(run.heartbeat_at*1000).toLocaleString() : tr("等待首次回報", "Waiting for first report")}</span> : null}
+      {run.reserved ? <span>{tr("最後回報時間", "Last report time")}: {run.heartbeat_at ? new Date(run.heartbeat_at*1000).toLocaleString(tr("zh-TW", "en")) : tr("等待首次回報", "Waiting for first report")}</span> : null}
       {Object.entries(run.samples).map(([phase, sample]) => <span key={phase}>{phase === "near" ? tr("近", "Near") : tr("遠", "Far")}: {sample.count} {tr("筆", "samples")} · {sample.median_cm ?? "—"} cm</span>)}</div> : null}
     </> : null}
     {view !== "results" ? <><div className="test-actions">
       {!tests.status.connected ? <small>{tr("請使用上方「連線 Pi」", "Use Connect Pi at the top")}</small> : null}
-      {complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
+      {!runId && complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
       {canAct && phase === "awaiting_stop_consent" ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, "stop_project")}>{tr("確認停止原作品，開始測試", "Stop original project and test")}</button> : null}
       {canAct && (phase === "awaiting_near" || phase === "awaiting_far") ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, phase === "awaiting_near" ? "near" : "far")}>{tr("準備好了，取樣 5 秒", "Ready · sample for 5 seconds")}</button> : null}
       {run?.reserved ? <button disabled={busy} onClick={() => void tests.action(run, "stop")}>{tr("停止本次測試", "Stop this test")}</button> : null}
@@ -88,7 +93,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     </> : null}
     {view !== "controls" ? <details><summary>{tr("診斷與環境設定", "Diagnostics and setup")}</summary>
       <p>{tr("Pi 需先準備 gpiozero、lgpio；TFT 另需 spidev、Pillow、luma.lcd 2.13.0 與 SPI0。沿用部署頁的環境設定，不會自動安裝。", "Prepare gpiozero/lgpio on Pi; TFT also needs spidev, Pillow, luma.lcd 2.13.0 and SPI0. Use the deployment setup instructions; nothing is installed automatically.")}</p>
-      <p>{tr("缺套件：到「05 部署與執行 → 執行環境與硬體準備」，依指定部署目錄建立虛擬環境並手動安裝套件。SPI：在 Pi 執行 sudo raspi-config → Interface Options → SPI。權限：用 id 與 ls -l /dev/gpiochip* /dev/spidev0.0 核對群組與裝置權限，調整後重新登入。", "Dependencies: open 05 Deploy & run → Runtime prerequisites and prepare the configured virtual environment manually. SPI: sudo raspi-config → Interface Options → SPI. Permissions: compare id with ls -l /dev/gpiochip* /dev/spidev0.0 and log in again after correcting groups.")}</p>
+      <p>{tr("缺套件：到「03 部署與執行 → 執行環境與硬體準備」，依指定部署目錄建立虛擬環境並手動安裝套件。SPI：在 Pi 執行 sudo raspi-config → Interface Options → SPI。權限：用 id 與 ls -l /dev/gpiochip* /dev/spidev0.0 核對群組與裝置權限，調整後重新登入。", "Dependencies: open 03 Deploy & run → Runtime prerequisites and prepare the configured virtual environment manually. SPI: sudo raspi-config → Interface Options → SPI. Permissions: compare id with ls -l /dev/gpiochip* /dev/spidev0.0 and log in again after correcting groups.")}</p>
       <pre>{JSON.stringify(run ? {id:run.id,target:run.target_id,phase:run.phase,failed_phase:run.failed_phase,reason:run.reason,error:tests.error,detail:run.detail,exit_code:run.exit_code,latest_valid_at:run.latest_valid_at,template:run.template_version,samples:run.samples,logs:run.logs} : {error:tests.error},null,2)}</pre>
       <button onClick={() => { void navigator.clipboard.writeText(JSON.stringify({run,error:tests.error},null,2)).then(()=>setCopied(true)).catch(()=>setCopied(false)); }}>{tr(copied ? "已複製" : "複製診斷", copied ? "Copied" : "Copy diagnostics")}</button>
     </details> : null}

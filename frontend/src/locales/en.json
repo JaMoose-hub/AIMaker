@@ -260,6 +260,11 @@
   "status.locked": "LOCKED",
   "status.stale": "STALE",
   "status.confidence": "Confidence",
+  "status.showTools": "Show camera info & tools",
+  "status.tools": "Camera tools",
+  "status.toolsTitle": "Camera info & tools",
+  "status.videoControls": "Image & orientation",
+  "status.hideTools": "Hide camera info & tools",
   "status.poseConfidenceTooltip": "Current-frame board and GPIO pose confidence; wiring correctness still needs separate verification.",
   "status.bodyConfidenceTooltip": "Current-frame board-body candidate confidence only; GPIO pins are not located and wiring is not verified.",
   "status.connected": "Connected",
@@ -397,7 +402,7 @@
   "camera.mirrorLabel": "Mirror",
   "camera.realtime": "Live tracking (trial)",
   "camera.realtimeWaiting": "Waiting for frame",
-  "camera.trackingPartial": "Partial tracking; only image-supported pins shown",
+  "camera.trackingPartial": "Partial tracking; GPIO may be projected from board position",
   "camera.trackingConfirming": "Confirming pose; pins paused",
   "camera.trackingObstructed": "Tracking interrupted; pins paused",
   "camera.trackingBoundaryUnverified": "PCB boundary unverified; GPIO paused. Keep the whole board clearly in view",
@@ -422,7 +427,7 @@
   "camera.pinCalibrationLeft": "Move left",
   "camera.pinCalibrationRight": "Move right",
   "camera.pinCalibrationReset": "Reset calibration"
-  ,"wiring.title": "Wiring candidates"
+  ,"wiring.candidatesTitle": "Wiring candidates"
   ,"wiring.geometricOnly": "Geometry only"
   ,"wiring.guidance": "Guide"
   ,"wiring.reason.board_not_tracked": "Board pose is not locked"
@@ -754,4 +759,6 @@
   ,"cameraTune.network": "Connection unavailable; the server will finish or roll back"
   ,"cameraTune.target_not_visible": "Could not consistently locate the Pi 5 region during this run; camera unchanged. Hold the board steady and retry"
   ,"cameraTune.restart_required": "Restart the Tinkro backend to enable Pi 5-targeted tuning"
+  ,"overlay.motion_prediction": "Predicted position · not detected"
+  ,"runtime.languageZh": "Traditional Chinese"
 }

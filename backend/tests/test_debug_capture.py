@@ -179,3 +179,163 @@ def test_sampler_stops_on_source_or_mode_change_before_next_phase(change):
     sampler.tick()
     assert sampler.error == "camera_changed" and sampler.done.is_set()
     assert len(sampler.stop()) == 1
+
+
+def wiring_setup(monkeypatch):
+    from app.debug_diagrams import resolve_wiring_target
+    from app.designs import demo_design
+    import app.cloud_wiring as cloud
+    state, clock, _ = setup()
+    image = np.random.default_rng(8).integers(20, 230, (600, 1000, 3), dtype=np.uint8)
+    target = resolve_wiring_target(demo_design(["hc-sr04"]),
+                                  dict(component_id="hc-sr04", wire_id="hc-sr04:trig"))
+    source = [None]
+    def frame(**_):
+        number = round(clock()*1000)
+        source[0] = FrameSlot(image, number, clock()*1000, number)
+        return source[0]
+    def pose(pin, x):
+        return dict(frame_id=source[0].frame_id, ts_ms=source[0].ts_ms, tracking="locked",
+                    video_size=[1000, 600], pose_quality={},
+                    pins=[dict(id=pin, x=x, y=300, v=True), dict(id="neighbor", x=x+30, y=300, v=True)])
+    def pair():
+        slot = source[0]
+        packet = dict(frame_id=slot.frame_id, seq=slot.seq, ts_ms=slot.ts_ms, runtime_revision=3,
+                      board_id="raspberry-pi-5", detection=pose("GPIO17", 220),
+                      components=[dict(**pose("TRIG", 760), component_id="hc-sr04")])
+        return packet, slot
+    state.config.realtime_tracking = True
+    state.frame_bus.get_latest = frame
+    state.motion_frame_state = NS(get_capture=pair)
+    monkeypatch.setattr(cloud, "time", NS(monotonic=clock))
+    return state, clock, image, target
+
+
+@pytest.mark.parametrize("mode", ["fast", "thorough"])
+def test_multiview_raw_crops_are_lossless_bound_to_target_and_source(monkeypatch, mode):
+    state, clock, original, target = wiring_setup(monkeypatch)
+    images, metadata = capture_debug_evidence(state, "module_header", wiring_target=target, response_mode=mode,
+                                             clock=clock, sleep=clock.sleep)
+    assert metadata["wiring_target"] == target and metadata["locator"] == "same_frame_raw_tracking"
+    assert metadata["same_frame"] and metadata["capture_skew_ms"] == 0
+    assert set(images) == ({"overview", "pi_pins", "component_pins"} |
+                          ({"pi_reading", "component_reading", "pi_contact", "component_contact"} if mode == "thorough" else set()))
+    for view in metadata["views"]:
+        assert view["ts_ms"] >= metadata["selection"]["requested_ts_ms"]
+        assert view["sha256"] and view["mime_type"] == ("image/jpeg" if view["name"] == "overview" else "image/png")
+        if view["name"].endswith("_pins"):
+            x0, y0, x1, y1 = view["crop"]
+            pixels = cv2.imdecode(np.frombuffer(images[view["name"]], np.uint8), 1)
+            assert np.array_equal(pixels, original[y0:y1, x0:x1])
+    original[:] = 0
+    target["board_pin"] = "changed"
+    assert metadata["wiring_target"]["board_pin"] == "GPIO17"
+    assert cv2.imdecode(np.frombuffer(images["component_pins"], np.uint8), 1).mean() > 50
+
+
+@pytest.mark.parametrize("reason", ["pre_request", "held", "predicted", "partial", "frame_mismatch", "display_only"])
+def test_untrusted_pose_produces_only_fresh_overview(monkeypatch, reason):
+    state, clock, _, target = wiring_setup(monkeypatch)
+    read = state.motion_frame_state.get_capture
+    def bad_pair():
+        packet, slot = read()
+        if reason == "pre_request":
+            packet["ts_ms"] = 99000.
+            slot = FrameSlot(slot.frame, slot.frame_id, 99000., slot.seq)
+        elif reason == "frame_mismatch":
+            slot = FrameSlot(slot.frame, slot.frame_id+1, slot.ts_ms, slot.seq)
+        else:
+            packet["detection"]["pose_quality"] = {
+                "held": {"stability": "occlusion_hold"}, "predicted": {"predicted": True},
+                "partial": {"partial": True}}.get(reason, {})
+        return packet, slot
+    state.motion_frame_state.get_capture = bad_pair
+    if reason == "display_only":
+        state.motion_frame_state = NS(get=lambda **_: read()[0])
+    images, metadata = capture_debug_evidence(state, wiring_target=target, clock=clock, sleep=clock.sleep)
+    assert list(images) == ["overview"] and metadata["mode"] == "overview"
+    assert metadata["ts_ms"] >= metadata["selection"]["requested_ts_ms"]
+
+
+@pytest.mark.parametrize("skew", [150, 251])
+def test_paired_detector_crops_use_each_own_new_source_and_reject_excess_skew(monkeypatch, skew):
+    from app.component_worker import ComponentPoseResult, ComponentPinPosition
+    from app.vision.interface import DetectionResult, PinDetection
+    state, clock, board_image, target = wiring_setup(monkeypatch)
+    module_image = np.full_like(board_image, (30, 100, 200))
+    state.config.realtime_tracking = False
+    def board():
+        timestamp = clock()*1000
+        return FrameSlot(board_image, 10, timestamp, 10), DetectionResult("raspberry-pi-5", 10, timestamp,
+                "locked", .9, pins=[PinDetection("GPIO17", 220, 300, .9)])
+    def module(_):
+        timestamp = clock()*1000-skew
+        return FrameSlot(module_image, 11, timestamp, 11), ComponentPoseResult("hc-sr04", 11, timestamp,
+                "locked", .9, (1000, 600), None, (ComponentPinPosition("TRIG", 760, 300, .9),), "locked")
+    state.detection_state = NS(get_synchronized=board)
+    state.component_pose_state = NS(get_synchronized=module)
+    images, metadata = capture_debug_evidence(state, wiring_target=target, clock=clock, sleep=clock.sleep)
+    if skew > 250:
+        assert list(images) == ["overview"]
+    else:
+        assert "component_overview" in images and not metadata["same_frame"]
+        assert metadata["capture_skew_ms"] == skew
+        pixels = cv2.imdecode(np.frombuffer(images["component_pins"], np.uint8), 1)
+        assert np.all(pixels == (30, 100, 200))
+        assert all(view["ts_ms"] >= metadata["selection"]["requested_ts_ms"] for view in metadata["views"])
+
+
+def test_camera_mode_change_while_obtaining_crop_sources_rejected(monkeypatch):
+    state, clock, _, target = wiring_setup(monkeypatch)
+    read = state.motion_frame_state.get_capture
+    def changed():
+        result = read()
+        state.source.capture_mode["fps"] = 15
+        return result
+    state.motion_frame_state.get_capture = changed
+    with pytest.raises(DebugCaptureError, match="camera_changed"):
+        capture_debug_evidence(state, wiring_target=target, clock=clock, sleep=clock.sleep)
+
+
+def test_invented_wiring_pin_rejected_before_capture(monkeypatch):
+    state, clock, _, target = wiring_setup(monkeypatch)
+    target["board_pin"] = "GPIO22"
+    with pytest.raises(DebugCaptureError, match="invalid_wiring_target"):
+        capture_debug_evidence(state, wiring_target=target, clock=clock, sleep=clock.sleep)
+
+
+def test_thorough_wiring_hook_uses_budget_callback_and_returns_localized_views(monkeypatch):
+    from pathlib import Path
+    from app.debug_capture import inspect_debug_wiring
+    from test_cloud_connectors import endpoint, route
+    state, clock, _, target = wiring_setup(monkeypatch)
+    state.motion_frame_state = NS(get_capture=lambda: None)
+    images, metadata = capture_debug_evidence(state, wiring_target=target, clock=clock, sleep=clock.sleep)
+    replies = iter([
+        {"pi": {"source_view": "pi_overview", "x0": 100, "y0": 250, "x1": 350, "y1": 750, "evidence": "board header"},
+         "component": {"source_view": "pi_overview", "x0": 600, "y0": 250, "x1": 900, "y1": 750, "evidence": "sensor header"}},
+        endpoint("component"), endpoint("board"), route()])
+    paths, calls = [], []
+    def budgeted(prompt, schema, **kwargs):
+        assert len(calls) < 4
+        calls.append(prompt)
+        paths.extend(kwargs["image_paths"])
+        assert all(Path(path).is_file() for path in kwargs["image_paths"])
+        return next(replies)
+    result = inspect_debug_wiring(target, images, metadata, generate=budgeted, model="fixture", effort="low")
+    assert len(calls) == 4 and result["opinion"]["authority"] == "visual_advisory"
+    assert {"pi_pins", "component_pins", "pi_reading", "component_reading"} <= set(result["images"])
+    assert all(not Path(path).exists() for path in paths)
+    assert all(view["sha256"] and view["mime_type"] for view in result["metadata"]["views"])
+    assert all(view["name"] != "pi_overview" for view in result["metadata"]["views"])
+
+
+def test_thorough_hook_rejects_a_different_valid_wire_without_model_call(monkeypatch):
+    from app.debug_capture import inspect_debug_wiring
+    state, clock, _, target = wiring_setup(monkeypatch)
+    images, metadata = capture_debug_evidence(state, wiring_target=target, clock=clock, sleep=clock.sleep)
+    other = {**target, "wire_id": "hc-sr04:echo", "component_pin": "ECHO", "board_pin": "GPIO18"}
+    def must_not_call(*_, **__):
+        pytest.fail("changed target reached cloud")
+    with pytest.raises(DebugCaptureError, match="capture_wiring_target_changed"):
+        inspect_debug_wiring(other, images, metadata, generate=must_not_call, model="fixture", effort="low")

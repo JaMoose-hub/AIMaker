@@ -7,7 +7,7 @@ import time
 import uuid
 
 from app.component_testing import ComponentTests
-from app.debug_support import DEBUG_VERSION, digest, identity, observed_source, sanitize, validate_project
+from app.debug_support import DEBUG_VERSION, build_runtime_bundle, digest, identity, sanitize, validate_project
 
 
 class IntegrationTrials(ComponentTests):
@@ -57,12 +57,12 @@ class IntegrationTrials(ComponentTests):
         directory, python = self._paths(run)
         root = PurePosixPath(self.pi.config.remote_dir)
         self.pi._run(f"mkdir -p {shlex.quote(directory)} {shlex.quote(str(root / 'component-tests'))}")
-        source, structured = observed_source(run["code"])
+        bundle = build_runtime_bundle(run["code"])
         self.pi._write(directory + "/snapshot.py", run["code"])
-        self.pi._write(directory + "/observed.py", source)
-        self.pi._write(directory + "/runner.py", (Path(__file__).parent / "runtime/project_runner.py").read_text(encoding="utf-8"))
+        self.pi._write(directory + "/observed.py", bundle.source)
+        self.pi._write(directory + "/runner.py", bundle.runner)
         self.pi._write(directory + "/run-config.json", json.dumps(dict(run_id=run["id"], code_hash=run["binding"]["code_hash"],
-            source="observed.py", source_hash=digest(source), structured=structured, duration=60)))
+            source="observed.py", source_hash=digest(bundle.source), structured=bundle.structured, duration=60)))
         if run.get("pending") == "stop":
             self._finish(run, "inconclusive", "cancelled")
             return

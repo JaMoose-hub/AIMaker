@@ -21,7 +21,6 @@ export function RuntimeToolbar({
   onLocaleChange,
 }: RuntimeToolbarProps) {
   const { locale, t, tx } = useI18n();
-  const active = controllers.find((item) => item.board_id === activeBoardId);
 
   return (
     <div className="runtime-toolbar" aria-label={t("runtime.toolbarLabel")}>
@@ -40,22 +39,6 @@ export function RuntimeToolbar({
           ))}
         </select>
       </label>
-      <span
-        className={`runtime-model-state${active?.model.fallback_active ? " fallback" : " ready"}`}
-        title={
-          active?.model.fallback_active
-            ? t("runtime.modelFallbackTooltip")
-            : t("runtime.modelReadyTooltip")
-        }
-      >
-        {busy
-          ? t("runtime.switching")
-          : active?.model.fallback_active
-            ? t("runtime.model4ptFallback")
-            : active?.model.keypoint_count === 8
-              ? t("runtime.model8pt")
-              : t("runtime.model4pt")}
-      </span>
       <label className="runtime-select locale-select">
         <span>{t("runtime.languageLabel")}</span>
         <select
@@ -63,7 +46,7 @@ export function RuntimeToolbar({
           aria-label={t("runtime.languageAria")}
           onChange={(event) => onLocaleChange(event.target.value as Locale)}
         >
-          <option value="zh-TW">繁體中文</option>
+          <option value="zh-TW">{t("runtime.languageZh")}</option>
           <option value="en">English</option>
         </select>
       </label>

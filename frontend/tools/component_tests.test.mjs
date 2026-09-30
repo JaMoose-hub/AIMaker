@@ -17,6 +17,21 @@ function runFor(design, session, overrides={}) {
 }
 const state = run => ({status:{connected:true,test_busy:run.reserved,active:run.reserved?run:null,results:[run]}});
 
+test('troubleshooting sits beside the result without duplicating or hiding controls-only actions',async()=>{
+  const design=designFor(),session=complete(design);
+  for(const outcome of ['failed','inconclusive']){
+    const tests=state(runFor(design,session,{outcome})),before=structuredClone(tests);
+    for(const view of ['all','results','controls']){
+      const html=await renderTestCard({design,session,tests,view,onDebug(){throw Error('Rendering must not start debugging');}});
+      assert.equal((html.match(/class="component-test-debug-action"/g)??[]).length,1);
+      if(view==='controls')assert.doesNotMatch(html,/component-test-result-row/);
+      else assert.match(html,/<header>[\s\S]*<div class="component-test-result-row"><strong[^>]*>[\s\S]*?<\/strong><button[^>]*class="component-test-debug-action"[^>]*>前往除錯<\/button><\/div><\/header>/);
+    }
+    assert.deepEqual(tests,before,'layout does not mutate test history');
+  }
+  assert.doesNotMatch(await renderTestCard({design,session,tests:state(runFor(design,session,{outcome:'passed',reason:null})),onDebug(){}}),/component-test-debug-action/);
+});
+
 test('split test controls never duplicate result facts or hide the stop action',async()=>{
   const design=designFor(),session=complete(design);
   const tests=state(runFor(design,session,{reserved:true,outcome:'running',phase:'sampling_near',samples:{near:{count:8,median_cm:12.3}}}));
@@ -303,7 +318,7 @@ test('active tests show a fixed report timestamp, including stalled and disconne
         Date.now=()=>90000000;
         const later=await renderGuide({design,session,locale,tests});
         assert.equal(later,first,'heartbeat display must not be an elapsed counter');
-        assert.ok(first.includes(new Date(run.heartbeat_at*1000).toLocaleString()));
+        assert.ok(first.includes(new Date(run.heartbeat_at*1000).toLocaleString(locale)));
         assert.ok(first.includes(locale==='zh-TW'?'最後回報時間':'Last report time'));
         assert.ok(first.includes(locale==='zh-TW'?'停止本次測試':'Stop this test'));
       }

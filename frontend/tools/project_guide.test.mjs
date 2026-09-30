@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {board, piGuide, designFor, maker, renderGuide} from './project_guide_fixture.mjs';
+import {board, piGuide, designFor, maker, componentTests, renderGuide} from './project_guide_fixture.mjs';
 import {resultFixture} from './cloud_wiring_fixture.mjs';
 
 const checkButtons = html => [...html.matchAll(/<button[^>]*class="cloud-wiring-button"[^>]*>/g)];
@@ -173,4 +173,96 @@ test('start, review, next module and restart show steps only during active wirin
     assert.equal(html.includes('guide-module-review'),state.phase==='review');
     assert.deepEqual(state,before);
   }
+});
+
+function completeModule(design, componentIndex = 0, mode = 'camera') {
+  let session = {...maker.startProjectGuide(maker.emptyGuide()), componentIndex, mode, run:3, restored:true, checks:['saved']};
+  while (session.phase === 'active') session = maker.confirmProjectWire(design, session);
+  return session;
+}
+
+test('back from a completed module returns to its last step without changing confirmations or test keys', () => {
+  const design = designFor(['hc-sr04', 'mrd-tf240-8p-cs']);
+  for (const [componentIndex, cid] of design.component_ids.entries()) for (const mode of ['camera', '2d']) {
+    const session = completeModule(design, componentIndex, mode), before = structuredClone(session);
+    const steps = design.wiring.filter(w => w.componentId === cid);
+    const back = maker.previousProjectWire(design, session);
+    assert.deepEqual(session, before);
+    assert.deepEqual(back, {...session, phase:'active'});
+    assert.equal(back.index, steps.length - 1);
+    assert.equal(back.confirmed, session.confirmed);
+    assert.notEqual(back.inspection, true);
+    assert.equal(componentTests.componentTestKey(design, back, cid), componentTests.componentTestKey(design, session, cid));
+    assert.deepEqual(maker.confirmProjectWire(design, back), session);
+  }
+});
+
+test('back and next on a confirmed step preserve its timestamp and other modules', () => {
+  const design = designFor(['hc-sr04', 'mrd-tf240-8p-cs']);
+  const hc = completeModule(design), tft = completeModule(design, 1, '2d');
+  const session = {...tft, phase:'active', index:2, confirmed:{...hc.confirmed, ...tft.confirmed}};
+  const back = maker.previousProjectWire(design, session);
+  assert.deepEqual(back, {...session, index:1});
+  const forward = maker.confirmProjectWire(design, back);
+  assert.deepEqual(forward, session);
+  for (const cid of design.component_ids) {
+    assert.equal(componentTests.componentTestKey(design, back, cid), componentTests.componentTestKey(design, session, cid));
+  }
+  for (const [id, confirmation] of Object.entries(session.confirmed)) assert.equal(forward.confirmed[id], confirmation);
+});
+
+test('back resumes the displayed paused step or the last restored completed step', () => {
+  const design = designFor();
+  const partial = maker.confirmProjectWire(design, maker.startProjectGuide(maker.emptyGuide()));
+  const paused = {...partial, phase:'review'};
+  assert.deepEqual(maker.previousProjectWire(design, paused), {...paused, phase:'active'});
+  const saved = {...completeModule(design), phase:'prepare', index:0};
+  assert.deepEqual(maker.previousProjectWire(design, saved), {...saved, phase:'active', index:design.wiring.length - 1});
+});
+
+test('back cannot start unprepared wiring, leave the first step or edit an AI inspection', () => {
+  const design = designFor();
+  for (const session of [maker.emptyGuide(), maker.startProjectGuide(maker.emptyGuide()),
+    {...maker.emptyGuide(), confirmed:{[design.wiring[0].id]:{signature:'obsolete', at:'old', mode:'camera'}}}]) {
+    assert.equal(maker.previousProjectWire(design, session), session);
+  }
+  const completed = completeModule(design);
+  assert.equal(maker.previousProjectWire({...design, wiring:[]}, completed), completed);
+  const inspection = maker.reviewProjectWire(design, completed, 'hc-sr04', undefined, 'debug');
+  assert.equal(maker.previousProjectWire(design, inspection), inspection);
+  assert.equal(maker.confirmProjectWire(design, inspection), inspection);
+  assert.deepEqual(maker.resumeProjectGuide(inspection), {...completed, inspection:false});
+});
+
+test('normal back is labelled as a previous step, while confirmed steps can go straight to next', async () => {
+  const design = designFor(), session = completeModule(design);
+  for (const locale of ['zh-TW', 'en']) {
+    const overview = await renderGuide({design, session, locale});
+    const footer = overview.match(/<footer class="guide-panel-footer">([\s\S]*?)<\/footer>/)[1];
+    assert.ok(footer.includes(locale === 'en' ? '>Back</button>' : '>上一步</button>'));
+    assert.ok(!footer.includes(locale === 'en' ? '>Review</button>' : '>回看</button>'));
+    const active = await renderGuide({design, session:maker.previousProjectWire(design, session), locale});
+    assert.match(active, /guide-connection-card/);
+    assert.ok(active.includes(locale === 'en' ? '>Next →</button>' : '>下一步 →</button>'));
+    for (const copy of ['Connected · Next', '我已接好，下一步', 'Resume wiring', '返回接線', 'Edit this component wiring', '我要修改此零件接線']) assert.ok(!active.includes(copy), copy);
+    const fresh = await renderGuide({design, session:maker.startProjectGuide(maker.emptyGuide()), locale});
+    assert.ok(fresh.includes(locale === 'en' ? '>Connected · Next →</button>' : '>我已接好，下一步 →</button>'));
+  }
+});
+
+test('navigating confirmed steps keeps the matching passed test result available', async () => {
+  const design = designFor(), session = completeModule(design);
+  const result = {id:'navigation-test', component_id:'hc-sr04', project_id:design.id, revision:design.revision,
+    guide_key:componentTests.componentTestKey(design, session, 'hc-sr04'), outcome:'passed', phase:'finished',
+    invalidated:false, reserved:false, samples:{}, logs:[], created_at:1700000000};
+  const tests = {status:{connected:true, active:null, results:[result], test_busy:false}};
+  const before = structuredClone(tests);
+  const back = maker.previousProjectWire(design, session);
+  for (const state of [session, back, maker.previousProjectWire(design, back), maker.confirmProjectWire(design, back)]) {
+    assert.equal(result.guide_key, componentTests.componentTestKey(design, state, 'hc-sr04'));
+    const html = await renderGuide({design, session:state, tests});
+    assert.match(html, /功能通過/);
+    assert.doesNotMatch(html, /稍後測試，前往部署/);
+  }
+  assert.deepEqual(tests, before);
 });

@@ -204,7 +204,7 @@ export function ComponentPinOverlay({
           strokeDasharray={pose.pose_quality?.stability === 'motion_prediction' ? '6 5' : undefined}
         />
       )}
-      {outline && pose.pose_quality?.stability === 'motion_prediction' && <text x={displayOutline?.[0].x} y={(displayOutline?.[0].y ?? 0) - 10} fill="#64cfff" fontSize="13">預測補位 · 非辨識</text>}
+      {outline && pose.pose_quality?.stability === 'motion_prediction' && <text x={displayOutline?.[0].x} y={(displayOutline?.[0].y ?? 0) - 10} fill="#64cfff" fontSize="13">{t("overlay.motion_prediction")}</text>}
       {points.map((pin) => {
         const active = targetPinId === pin.id;
         const color = PIN_COLORS[pin.id] ?? "#61dafb";

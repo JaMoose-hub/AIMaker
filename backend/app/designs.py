@@ -91,14 +91,16 @@ class WorkflowContext(BaseModel):
 
 class AssistantReply(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    answer: str = Field(min_length=1, max_length=4000)
+    answer: str = Field(min_length=1, max_length=4000,
+                        description="User-facing concise chat reply: default to a short plain paragraph; use a list only for multiple actionable steps, options or comparisons. Keep relevant safety caveats; omit project recaps.")
 
 
 class ConversationReply(BaseModel):
     """One conversation, with explicit non-executing proposal boundaries."""
     model_config = ConfigDict(extra="forbid")
     action: Literal["answer", "revise", "redesign"]
-    answer: str = Field(min_length=1, max_length=4000)
+    answer: str = Field(min_length=1, max_length=4000,
+                        description="Actual concise chat reply, not the proposal summary. Default to a short plain paragraph; use a list only when steps or options need it. For a design action use at most two short sentences about the change and what to review; preserve essential safety caveats.")
     proposal: DesignProposal | None
 
     @model_validator(mode="after")
@@ -314,7 +316,8 @@ with FreshDistanceSensor(echo=PINS["hc-sr04"]["ECHO"], trigger=PINS["hc-sr04"]["
 '''
 
 
-def compile_design(proposal: DesignProposal, prompt: str, *, source="ai", current: dict | None = None) -> dict:
+def compile_design(proposal: DesignProposal, prompt: str, *, source="ai", current: dict | None = None, locale="zh-TW") -> dict:
+    from app.reply_language import system_text
     ids = list(proposal.component_ids)
     wiring = wiring_for(ids)
     unresolved = [MODULES[cid]["runtime"]["reason"] for cid in ids if not MODULES[cid]["runtime"]["supported"]]
@@ -327,6 +330,9 @@ def compile_design(proposal: DesignProposal, prompt: str, *, source="ai", curren
     if has_divider:
         bom += [{"id": "breadboard", "name": "麵包板 / Breadboard", "quantity": 1, "price": 50, "purpose": "共地與分壓 / Divider wiring"}]
         bom += [{"id": f"resistor-{ohms}", "name": f"{ohms}Ω 電阻 / resistor", "quantity": 1, "price": 1, "purpose": "ECHO 分壓保護 / Voltage divider"} for ohms in (330, 470)]
+    for item in bom:
+        item["name"] = MODULES[item["id"]]["name"][locale] if item["id"] in MODULES else system_text(item["name"], {"locale": locale})
+        item["purpose"] = system_text(item["purpose"], {"locale": locale})
     code = render_code(wiring, params, proposal.logic, unresolved)
     compile(code, "main.py", "exec")
     return {
@@ -342,10 +348,11 @@ def compile_design(proposal: DesignProposal, prompt: str, *, source="ai", curren
     }
 
 
-def demo_design(ids=None):
+def demo_design(ids=None, locale="zh-TW"):
+    from app.reply_language import system_text
     sensor_only = ids == ["hc-sr04"]
     has_sensor = "hc-sr04" in (ids or MODULES)
-    return compile_design(DesignProposal(
+    design = compile_design(DesignProposal(
         title="桌上型距離警告器" if sensor_only else "桌上型距離與顯示監測器" if has_sensor else "ILI9341 顯示測試",
         summary="示範子作品：以 Pi 5 與 HC-SR04+（3.3V 供電）讀取真實距離，每 200 毫秒輸出，低於 20 公分時警告。" if sensor_only else "ILI9341 顯示 RGB 測試圖；搭配 HC-SR04+ 時顯示真實距離與警告。供電相容性及背光狀態仍需實機核對。",
         features=(["距離低於門檻時輸出警告"] if has_sensor else []) + ["依模組提供逐腳接線引導"] + ([] if sensor_only else ["ILI9341 RGB 色塊與文字測試", "BLK 本輪留空，背光狀態待實測"]),
@@ -356,4 +363,8 @@ def demo_design(ids=None):
         tests=(["移動物體，觀察距離變化；沒有有效回波顯示 UNAVAILABLE。", "將物體移至 20 公分內確認 WARNING；移遠後恢復 OK。"] if has_sensor else [])
         + ([] if sensor_only else ["螢幕先顯示紅、綠、藍色塊與 ILI9341 文字；背光亮不等於通過。", "BLK 留空時若不亮，先核對背光電路，不接 5V 或任意 GPIO。"]),
         logic='def on_sample(readings, settings):\n    distance = readings["distance_cm"]\n    state = "WARNING" if distance < settings["distance_cm"] else "OK"\n    return f"distance_cm={distance} {state}"',
-    ), "內建示範作品（非 AI 生成）", source="demo")
+    ), "內建示範作品（非 AI 生成）", source="demo", locale=locale)
+    for key in ("title", "summary", "prompt", "features", "instructions", "tests"):
+        value = design[key]
+        design[key] = [system_text(text, {"locale": locale}) for text in value] if isinstance(value, list) else system_text(value, {"locale": locale})
+    return design

@@ -107,3 +107,16 @@ test("camera guidance overrides selection with the selected variant's direct ECH
   assert.equal(result.filter, 'hc-sr04');
   assert.equal(result.focus.connectionKind, 'direct');
 });
+
+test("historical diagrams use their frozen pin order and header edge without borrowing live profiles", () => {
+  const d = design(['hc-sr04']);
+  const frozen = {modules:[{id:'hc-sr04', pins:[{id:'ECHO',x_norm:0,y_norm:0},{id:'GND',x_norm:1,y_norm:0}],
+    pin_order:['GND','ECHO'],header_at_top:true,unresolved:[]}]};
+  const before=JSON.stringify(frozen);
+  const diagram=circuitLayout(d,undefined,frozen);
+  assert.deepEqual(diagram.modules[0].pins.map(pin=>pin.id),['GND','ECHO']);
+  assert.equal(diagram.modules[0].headerAtTop,true);
+  assert.equal(diagram.modules[0].routes.length,2,'only pins in the historical profile are rendered');
+  assert.equal(JSON.stringify(frozen),before);
+  assert.equal(circuitLayout(d,undefined,{modules:[]}).modules.length,0,'a missing archived profile must not render a modern pin layout');
+});

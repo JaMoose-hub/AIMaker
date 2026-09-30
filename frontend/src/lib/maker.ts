@@ -1,7 +1,8 @@
 import catalog from "../../../profiles/component-catalog.json";
 import type { ComponentGuideStep, GuidedComponentId } from "./componentWiringGuides";
 
-export type MakerStage = "design" | "blueprint" | "guide" | "debug" | "deploy";
+export type MakerStage = "design" | "guide" | "deploy";
+export type DesignView = "concept" | "blueprint";
 export type GuideMode = "camera" | "2d";
 export type DesignMode = "fixed" | "free";
 export interface ProjectWire extends ComponentGuideStep { componentId: GuidedComponentId }
@@ -32,22 +33,24 @@ export interface ProjectGuideState {
   mode: GuideMode; checks: string[]; confirmed: Record<string, Confirmation>; restored: boolean;
   run?: number;
   inspection?: boolean;
+  inspectionSource?: "guide" | "debug";
+  inspectionReturn?: { componentIndex: number; index: number; phase: "prepare" | "active" | "review"; mode: GuideMode };
 }
 export interface MakerState {
   aiModel: string; aiEffort: string; aiExpectedOutputTokens: number | null;
   aiIntent: "auto" | "design" | "ask"; aiJobId: string | null;
   designMode: DesignMode;
   standalone: boolean;
-  stage: MakerStage; prompt: string; selected: GuidedComponentId[];
+  stage: MakerStage; designView: DesignView; prompt: string; selected: GuidedComponentId[];
   design: ProjectDesign | null; candidate: ProjectDesign | null; code: string;
   guide: ProjectGuideState; conversation: { role: "user" | "assistant"; text: string }[];
   hardware: Record<string, string>;
-  debug?: { caseId?: string; componentId?: string; selectedComponentId?: string; runId?: string; source?: "guide" | "deploy"; symptom?: string;
+  debug?: { panelOpen?: boolean; intent?: "wiring" | "debug"; caseId?: string; componentId?: string; selectedComponentId?: string; runId?: string; trialId?: string; wireId?: string; source?: "guide" | "deploy"; symptom?: string;
     deployment?: {invocation_id?:string;code_hash?:string;run_id?:string;exit_code:number|null;logs?:string[];captured_at?:number} };
 }
 export const makerCatalog = catalog;
 export const emptyGuide = (): ProjectGuideState => ({ componentIndex: 0, index: 0, phase: "prepare", mode: "camera", checks: [], confirmed: {}, restored: false });
-export const defaultPrompt = `我想做一個桌上型距離監測器。
+const previousDefaultPrompt = `我想做一個桌上型距離監測器。
 
 需求：
 - 可以偵測前方物體的距離
@@ -57,13 +60,54 @@ export const defaultPrompt = `我想做一個桌上型距離監測器。
 - 整體大小適合放在桌面上
 
 請根據以上需求，幫我決定需要哪些電子零件、感測器、控制板、螢幕與其他必要元件，並規劃如何組裝與接線。`;
+const previousDefaultPromptEn = `I want to build a desktop distance monitor.
+
+Requirements:
+- Detect the distance to objects in front of it
+- Display the current distance and status on a screen
+- Warn below 20 cm and show a small car approaching an obstacle on the screen
+- Use two stacked circular acrylic plates held together by standoffs
+- Keep the overall size suitable for a desktop
+
+Based on these requirements, help me choose the electronic components, sensors, controller, display and other necessary parts, and plan the assembly and wiring.`;
+
+export const defaultPrompt = `我想做一個桌上型距離監測器。
+
+需求：
+- 可以偵測前方物體的距離
+- 螢幕即時顯示目前距離與狀態
+- 當距離小於 20 cm 時，顯示警告，並在螢幕上顯示一台靠近障礙物的小車圖示
+- 裝置使用上下兩層圓形壓克力圓盤組成，並使用支柱固定
+- 底部加裝三個輪胎，形成可手動推動的三輪底座
+- 整體大小適合放在桌面上
+
+請直接依照以上需求生成完整作品設計與組裝圖片，並規劃所需零件、組裝方式與接線。已提供的需求不要重複詢問，其餘造型與結構細節請自行採用合理配置。`;
+export const defaultPromptEn = `I want to build a desktop distance monitor.
+
+Requirements:
+- Detect the distance to objects in front of it
+- Display the current distance and status on a screen
+- Warn below 20 cm and show a small car approaching an obstacle on the screen
+- Use two stacked circular acrylic plates held together by standoffs
+- Add three wheels underneath to form a manually movable three-wheel base
+- Keep the overall size suitable for a desktop
+
+Generate the complete project design and assembly image directly from these requirements, including the parts, assembly and wiring plan. Do not ask me to repeat or reconfirm requirements already provided. Choose reasonable defaults for the remaining appearance and structural details.`;
+
+/** Only built-in starter text follows language; empty/custom/in-flight drafts stay intact. */
+export function localizeStarterPrompt(state: MakerState, locale: string): MakerState {
+  if (state.aiJobId || ![defaultPrompt, defaultPromptEn].includes(state.prompt)) return state;
+  const prompt = locale === "en" ? defaultPromptEn : defaultPrompt;
+  return state.prompt === prompt ? state : { ...state, prompt };
+}
 // Upgrade only known starters, ignoring surrounding whitespace from textarea input.
 // Custom drafts (including a deliberately cleared input) must stay untouched.
 const previousStarterPrompts = new Set([
+  previousDefaultPrompt, previousDefaultPromptEn,
   "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與警告狀態，距離小於 20 公分時顯示警告。",
   "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與顯示狀態，距離小於 20 公分時顯示警告的小車車",
 ]);
-export const initialMaker = (): MakerState => ({ standalone: false, stage: "design", prompt: defaultPrompt,
+export const initialMaker = (): MakerState => ({ standalone: false, stage: "design", designView: "concept", prompt: defaultPrompt,
   aiModel: "", aiEffort: "low", aiExpectedOutputTokens: null,
   aiIntent: "auto", aiJobId: null, designMode: "free",
   selected: ["hc-sr04", "mrd-tf240-8p-cs"], design: null, candidate: null,
@@ -80,11 +124,59 @@ export const restartProjectGuide = (session: ProjectGuideState): ProjectGuideSta
 export function confirmProjectWire(design: ProjectDesign, session: ProjectGuideState): ProjectGuideState {
   const steps = design.wiring.filter(w => w.componentId === design.component_ids[session.componentIndex]);
   const step = steps[session.index];
-  if (session.phase !== "active" || !step) return session;
-  return { ...session, confirmed: { ...session.confirmed, [step.id]: {
+  if (session.phase !== "active" || !step || session.inspection) return session;
+  const existing = session.confirmed[step.id];
+  return { ...session, confirmed: { ...session.confirmed, [step.id]: existing?.signature === wireSignature(step) ? existing : {
     signature: wireSignature(step), mode: session.mode, at: new Date().toISOString(),
   } }, index: session.index === steps.length - 1 ? session.index : session.index + 1,
   phase: session.index === steps.length - 1 ? "review" : "active" };
+}
+
+/** Move through wiring instructions without undoing confirmations or test bindings. */
+export function previousProjectWire(design: ProjectDesign, session: ProjectGuideState): ProjectGuideState {
+  if (session.inspection) return session;
+  const steps = design.wiring.filter(w => w.componentId === design.component_ids[session.componentIndex]);
+  if (!steps.length) return session;
+  if (session.phase === "prepare" && !steps.every(w => session.confirmed[w.id]?.signature === wireSignature(w))) return session;
+  if (session.phase === "active" && session.index <= 0) return session;
+  const index = session.phase === "prepare" ? steps.length - 1
+    : session.phase === "active" ? session.index - 1 : session.index;
+  return { ...session, phase: "active", index: Math.max(0, Math.min(index, steps.length - 1)) };
+}
+
+/** Browsing never rewrites confirmations or the cursor to resume after review. */
+export function reviewProjectWire(design: ProjectDesign, session: ProjectGuideState, componentId: string, pin?: string,
+  source: "guide" | "debug" = "guide"): ProjectGuideState {
+  const componentIndex = design.component_ids.findIndex(id => id === componentId);
+  if (componentIndex < 0) return session;
+  const steps = design.wiring.filter(w => w.componentId === componentId);
+  const index = pin ? steps.findIndex(w => w.componentPin === pin) : 0;
+  if (index < 0 || !steps.length) return session;
+  return { ...session, inspection: true, inspectionSource: session.inspectionSource ?? source,
+    inspectionReturn: session.inspectionReturn ?? { componentIndex: session.componentIndex, index: session.index, phase: session.phase, mode: session.mode },
+    phase: "active", componentIndex, index };
+}
+
+export function resumeProjectGuide(session: ProjectGuideState): ProjectGuideState {
+  const { inspectionReturn, inspectionSource: _source, inspection: _inspection, ...rest } = session;
+  return { ...rest, ...inspectionReturn, inspection: false };
+}
+
+/** Only called after stopping/reconciling related hardware work. */
+export function editProjectComponent(design: ProjectDesign, session: ProjectGuideState): ProjectGuideState {
+  const cid = design.component_ids[session.componentIndex];
+  const confirmed = { ...session.confirmed };
+  for (const wire of design.wiring.filter(w => w.componentId === cid)) delete confirmed[wire.id];
+  const { inspectionReturn: _return, inspectionSource: _source, ...rest } = session;
+  return { ...rest, inspection: false, confirmed, phase: "active", index: 0, checks: [] };
+}
+
+export function enterDebug(state: MakerState, componentId?: string, runId?: string, symptom?: string): MakerState {
+  const newIssue = runId !== undefined || symptom !== undefined;
+  return { ...state, stage: "guide", standalone: false, guide: resumeProjectGuide(state.guide),
+    debug: { ...state.debug, panelOpen: true, intent: state.guide.inspection && !newIssue ? state.debug?.intent ?? "debug" : "debug", selectedComponentId: componentId ?? state.debug?.selectedComponentId,
+      ...(newIssue ? { componentId: componentId ?? state.debug?.componentId, runId, symptom,
+        deployment: undefined, source: state.stage === "deploy" ? "deploy" as const : "guide" as const } : {}) } };
 }
 
 export const needsDraftConsent = (state: MakerState): boolean => Boolean(state.candidate && state.design
@@ -92,8 +184,14 @@ export const needsDraftConsent = (state: MakerState): boolean => Boolean(state.c
 export function confirmConcept(state: MakerState, replaceManual = false): MakerState {
   if (state.candidate && (state.candidate.image_required || state.candidate.source === "ai") && !state.candidate.image) return state;
   if (needsDraftConsent(state) && !replaceManual) return state;
-  return state.candidate ? applyDesign(state, state.candidate, "blueprint")
-    : state.design ? { ...state, standalone: false, stage: "blueprint" } : state;
+  return state.candidate ? { ...applyDesign(state, state.candidate, "design"), designView: "blueprint" }
+    : state.design ? { ...state, standalone: false, stage: "design", designView: "blueprint" } : state;
+}
+
+/** Discard only this preview; never the approved project or an in-flight result. */
+export function discardConcept(state: MakerState, expectedPreview = state.candidate): MakerState {
+  if (state.aiJobId || !state.candidate || state.candidate !== expectedPreview) return state;
+  return { ...state, candidate: null };
 }
 
 export function applyDesign(state: MakerState, design: ProjectDesign, stage: MakerStage): MakerState {
@@ -112,14 +210,15 @@ export function applyDesign(state: MakerState, design: ProjectDesign, stage: Mak
 /** Candidate remains a preview until explicit confirmation, including on follow-up turns. */
 export function designRequest(state: MakerState, locale: string, model: string | null) {
   const fresh = state.aiIntent === "design" && state.designMode === "free";
+  const viewingBlueprint = state.stage === "design" && state.designView === "blueprint";
   return { prompt: state.prompt, component_ids: state.selected,
-    current: state.aiIntent !== "design" && state.stage !== "design" ? state.design : state.candidate ?? state.design,
+    current: state.aiIntent !== "design" && (state.stage !== "design" || viewingBlueprint) ? state.design : state.candidate ?? state.design,
     locale, model, effort: state.aiEffort, expected_output_tokens: state.aiExpectedOutputTokens,
     intent: state.aiIntent, design_mode: state.designMode, generate_image: state.aiIntent !== "ask",
     conversation: fresh ? [] : state.conversation.slice(-20).map(m => ({ ...m, text: m.text.slice(0, 4000) })),
-    workflow: { stage: state.stage, active_wire: state.design && state.guide.phase === "active" ? currentWire(state.design, state.guide)?.id ?? null : null,
+    workflow: { stage: viewingBlueprint ? "blueprint" : state.stage, active_wire: state.design && state.guide.phase === "active" ? currentWire(state.design, state.guide)?.id ?? null : null,
       manual_confirmations: Object.keys(state.guide.confirmed).length,
-      code_draft: state.stage === "deploy" || state.stage === "debug" ? state.code.slice(0, 16000) : "" } };
+      code_draft: state.stage === "deploy" || state.stage === "guide" ? state.code.slice(0, 16000) : "" } };
 }
 
 /** Conversation is independent of the approved project, draft, and live tests. */
@@ -127,10 +226,17 @@ export function clearMakerConversation(state: MakerState): MakerState {
   return state.aiJobId ? state : {...state, conversation: []};
 }
 
+/** A new project drops project context, keeping only AI/parts preferences. */
+export function newMakerProject(state: MakerState): MakerState {
+  if (state.aiJobId) return state;
+  return { ...initialMaker(), aiModel: state.aiModel, aiEffort: state.aiEffort,
+    aiExpectedOutputTokens: state.aiExpectedOutputTokens, selected: [...state.selected] };
+}
+
 /** Demo is a local preview, never a deployment or implicit project replacement. */
 export function previewDemo(state: MakerState, demo: ProjectDesign): MakerState {
   if (state.aiJobId || !validDesign(demo) || demo.source !== "demo") return state;
-  return {...state, candidate: demo, stage: "design", standalone: false};
+  return {...state, candidate: demo, stage: "design", designView: "concept", standalone: false};
 }
 
 export function validDesign(value: unknown): value is ProjectDesign {
@@ -164,7 +270,9 @@ export function validDesign(value: unknown): value is ProjectDesign {
 export function restoreMaker(raw: string | null): MakerState {
   if (!raw) return initialMaker();
   try {
-    const stored = JSON.parse(raw) as MakerState;
+    const stored = JSON.parse(raw) as Omit<MakerState, "stage" | "designView"> & {
+      stage: MakerStage | "blueprint" | "debug"; designView?: DesignView;
+    };
     const base = initialMaker();
     if (stored.design && !validDesign(stored.design)) return base;
     if (stored.candidate && !validDesign(stored.candidate)) stored.candidate = null;
@@ -178,15 +286,22 @@ export function restoreMaker(raw: string | null): MakerState {
       return record && record.signature === wireSignature(w) && ["camera", "2d"].includes(record.mode) && typeof record.at === "string" ? [[w.id, record]] : [];
     }));
     guide.index = 0;
+    const legacyDebug = stored.stage === "debug";
     return { ...base, ...stored, design, guide,
-      prompt: typeof stored.prompt !== "string" || (!stored.aiJobId && previousStarterPrompts.has(stored.prompt.trim())) ? defaultPrompt : stored.prompt,
+      debug: legacyDebug ? { ...stored.debug, panelOpen: true, intent: "debug" } : stored.debug,
+      prompt: typeof stored.prompt !== "string" ? defaultPrompt
+        : !stored.aiJobId && previousStarterPrompts.has(stored.prompt.trim())
+          ? stored.prompt.trim() === previousDefaultPromptEn ? defaultPromptEn : defaultPrompt
+          : stored.prompt,
       aiModel: typeof stored.aiModel === "string" && stored.aiModel.length <= 150 ? stored.aiModel : "",
       aiEffort: ["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(stored.aiEffort) ? stored.aiEffort : "low",
       aiExpectedOutputTokens: Number.isInteger(stored.aiExpectedOutputTokens) && stored.aiExpectedOutputTokens! >= 256 && stored.aiExpectedOutputTokens! <= 128000 ? stored.aiExpectedOutputTokens : null,
       aiIntent: "auto",
       designMode: stored.designMode === "fixed" ? "fixed" : "free",
       aiJobId: typeof stored.aiJobId === "string" && /^[\w-]{1,80}$/.test(stored.aiJobId) ? stored.aiJobId : null,
-      stage: ["design", "blueprint", "guide", "debug", "deploy"].includes(stored.stage) && (design || stored.stage === "design" || stored.stage === "debug" || stored.standalone) ? stored.stage : "design",
+      stage: stored.stage === "blueprint" ? "design" : legacyDebug ? "guide"
+        : ["design", "guide", "deploy"].includes(stored.stage) && (design || stored.stage === "design" || stored.standalone || stored.stage === "guide" && stored.debug?.panelOpen) ? stored.stage as MakerStage : "design",
+      designView: design && (stored.stage === "blueprint" || stored.designView === "blueprint") ? "blueprint" : "concept",
       hardware: {},
       conversation: Array.isArray(stored.conversation) ? stored.conversation.filter(m => m && ["user", "assistant"].includes(m.role) && typeof m.text === "string").slice(-20) : [],
       selected: Array.isArray(stored.selected) ? [...new Set(stored.selected.filter(id => catalog.modules.some(m => m.id === id)))] : base.selected,

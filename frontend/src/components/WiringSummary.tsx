@@ -34,7 +34,7 @@ export function WiringSummary() {
   return (
     <section className={`wiring-summary${hasRows ? "" : " empty"}`} aria-live="polite">
       <div className="wiring-summary-head">
-        <span>{t("wiring.title")}</span>
+        <span>{t("wiring.candidatesTitle")}</span>
         <span className="wiring-summary-note">{t("wiring.geometricOnly")}</span>
       </div>
       <div className="wiring-summary-body">

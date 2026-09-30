@@ -6,7 +6,8 @@ import ts from "typescript";
 const { outputText } = ts.transpileModule(readFileSync(new URL("../src/lib/studioSplit.ts", import.meta.url), "utf8"), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 });
-const { parseSplitRatio, splitStorageKey, studioSplitGeometry, splitRatioForLeft, dragSplitRatio, keySplitRatio } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+const { parseSplitRatio, splitStorageKey, studioSplitGeometry, splitRatioForLeft, dragSplitRatio, keySplitRatio,
+  GUIDE_SPLIT_STORAGE_KEY, guideSplitGeometry, guideRatioForRight, dragGuideRatio, keyGuideRatio } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 
 test("split preferences are separate by stage and corrupted storage is ignored", () => {
   assert.notEqual(splitStorageKey("design"), splitStorageKey("blueprint"));
@@ -47,4 +48,34 @@ test("keyboard arrows, coarse adjustment and bounds do not consume unrelated key
   assert.equal(leftFor("Home"), 300);
   assert.equal(leftFor("End"), width - 18 - 360);
   assert.equal(keySplitRatio("Tab", false, 500, width), null);
+});
+
+test("camera/guide resizing has a separate preference, stable defaults and safe bounds", () => {
+  assert.notEqual(GUIDE_SPLIT_STORAGE_KEY, splitStorageKey("design"));
+  const defaultLayout = guideSplitGeometry(1600, null);
+  assert.equal(defaultLayout.right, 400);
+  assert.equal(defaultLayout.left + defaultLayout.right + 18, 1600);
+  for (const width of [0, 10, 600, 960, 1600, 3000, NaN]) {
+    for (const ratio of [null, .01, .3, .9, NaN]) {
+      const geometry = guideSplitGeometry(width, ratio);
+      assert(Number.isFinite(geometry.right));
+      assert(geometry.right >= geometry.minRight && geometry.right <= geometry.maxRight);
+      assert(geometry.left >= 0);
+      if (width >= 960) { assert(geometry.right >= 280); assert(geometry.left >= 480); }
+    }
+  }
+});
+
+test("camera/guide pointer and keyboard resizing clamp both sides", () => {
+  const width = 1600;
+  const original = guideSplitGeometry(width, null).right;
+  assert.equal(guideSplitGeometry(width, dragGuideRatio(original, 700, 800, width)).right, 300);
+  assert.equal(guideSplitGeometry(width, dragGuideRatio(original, 700, -5000, width)).right, 700);
+  assert.equal(guideSplitGeometry(width, dragGuideRatio(original, 700, 9999, width)).right, 280);
+  assert.equal(guideSplitGeometry(width, keyGuideRatio("ArrowLeft", false, original, width)).right, 424);
+  assert.equal(guideSplitGeometry(width, keyGuideRatio("ArrowRight", true, original, width)).right, 320);
+  assert.equal(guideSplitGeometry(width, keyGuideRatio("Home", false, original, width)).right, 700);
+  assert.equal(guideSplitGeometry(width, keyGuideRatio("End", false, original, width)).right, 280);
+  assert.equal(keyGuideRatio("Tab", false, original, width), null);
+  assert.equal(guideRatioForRight(NaN, 0), .5);
 });

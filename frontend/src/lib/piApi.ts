@@ -8,6 +8,12 @@ export interface ExecutionJob {
 export interface PiExecutionStatus { jobs: ExecutionJob[]; policy: string }
 export const executionPending = (job: ExecutionJob) => !["finished", "failed", "cancelled"].includes(job.state);
 
+export function programOwner(status: PiStatus | null): string | null {
+  if (!status || !["running", "starting", "stopping"].includes(status.program)) return null;
+  const identity = status.invocation_id || (status.pid && status.pid > 0 ? String(status.pid) : null);
+  return identity ? `program:${identity}` : null;
+}
+
 export interface PiStatus {
   host: string;
   username: string;
@@ -53,3 +59,4 @@ export const fetchPiStatus = (signal?: AbortSignal): Promise<PiStatus> => reques
 export const connectPi = (): Promise<PiResponse> => request("connect", {});
 export const deployPi = (code: string, project?: { id?: string; component_ids: string[]; catalog_version: string; profile_versions?: Record<string, { version: string; sha256: string }> }, requestId = crypto.randomUUID()): Promise<PiResponse> => request("deploy", { code, request_id: requestId, ...(project ? { project } : {}) });
 export const executionAction = (id: string, action: "confirm" | "cancel", owner?: string | null): Promise<PiResponse> => request(`execution/${encodeURIComponent(id)}/action`, {action, owner});
+export const stopPiProgram = (owner: string): Promise<PiResponse> => request("stop", {owner});

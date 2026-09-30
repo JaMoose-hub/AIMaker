@@ -18,6 +18,50 @@ class PinRegions:
         self.reference, self.in_bounds = self._sample(gray, self.grid)
         self.align_header = align_header and len(pins) == 40
         self.offset_px = np.zeros(2)
+        self._board_reference = None
+        self._board_reference_energy = None
+        self._board_reference_lowpass = None
+
+    @staticmethod
+    def _rectified_board(gray, quad):
+        target = np.float32([[0, 0], [149, 0], [149, 149], [0, 149]])
+        matrix = cv2.getPerspectiveTransform(np.asarray(quad, np.float32), target)
+        return cv2.warpPerspective(gray, matrix, (150, 150))
+
+    @staticmethod
+    def _tile_energy(board):
+        laplacian = cv2.Laplacian(board, cv2.CV_32F)
+        return np.asarray([
+            laplacian[y*50:(y+1)*50, x*50:(x+1)*50].var()
+            for y in range(3) for x in range(3)
+        ])
+
+    def global_motion_blur(self, gray, quad, scale):
+        """Only distinguish whole-board blur from a local hand/cable change.
+
+        This does not independently locate GPIO or verify electrical contact.
+        The caller must also require current-frame distributed optical flow.
+        """
+        if not self.align_header:
+            return False
+        if self._board_reference is None:
+            self._board_reference = self._rectified_board(self.gray, self.quad)
+            self._board_reference_energy = self._tile_energy(self._board_reference)
+            self._board_reference_lowpass = cv2.GaussianBlur(self._board_reference, (11, 11), 0)
+        textured = self._board_reference_energy >= 40
+        if int(textured.sum()) < 8:
+            return False
+        current = self._rectified_board(gray, np.asarray(quad, np.float32) * scale)
+        energy = self._tile_energy(current)
+        widespread_loss = (energy[textured] < self._board_reference_energy[textured] * .65).sum()
+        if widespread_loss < 8:
+            return False
+        # A hand can also remove texture, but unlike motion blur it changes
+        # the large-scale board image. Keep this check strict and fail closed.
+        lowpass = cv2.GaussianBlur(current, (11, 11), 0)
+        difference = np.abs(lowpass.astype(np.float32)
+                            - self._board_reference_lowpass.astype(np.float32)).mean()
+        return bool(difference <= 12)
 
     def _score(self, current, bounds):
         a = self.reference - self.reference.mean(axis=1, keepdims=True)

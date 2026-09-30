@@ -1,4 +1,4 @@
-/* Shared five-stage workspace layout. Loaded after component styles.
+/* Shared three-stage workspace layout. Loaded after component styles.
    Resizing is CSS-only: no remounts, draft resets or hardware actions.
    Do not apply these rules to the independent glasses/HUD presentation. */
 .app.maker-layout:not(.display-mode-active) {
@@ -83,15 +83,55 @@
   }
 }
 @media (min-width: 961px) {
-  .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) {
+  /* Flatten only the guide's layout wrapper: the camera's measured .video-shell
+     remains intact, while both tool groups share the same first grid row. */
+  .maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage {
+    display: grid;
     grid-template-rows: auto minmax(0, 1fr);
   }
-  .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) > .video-shell {
+  .maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage > .video-workspace {
+    display: contents;
+  }
+  .maker-layout.maker-stage-guide:not(.display-mode-active) .video-workspace > .video-control-toolbar {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
+    max-width: calc(100% - 168px);
+  }
+  .maker-layout.maker-stage-guide:not(.display-mode-active) .video-workspace > :is(.video-shell, .maker-2d-main) {
+    grid-column: 1;
     grid-row: 2;
+  }
+  .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) {
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .maker-layout:not(.display-mode-active) .video-guide-stage:not(.maker-2d) > .compact-guide {
     grid-row: 1 / 3;
   }
+}
+.guide-resize-handle { display: none; }
+@media (min-width: 961px) and (min-height: 601px) {
+  .maker-layout:not(.display-mode-active) .video-guide-stage.guide-resizable:not(.maker-2d):has(> .compact-guide:not([hidden])) {
+    grid-template-columns: minmax(0, 1fr) 18px var(--guide-column-width);
+    column-gap: 0;
+    row-gap: 8px;
+  }
+  .maker-layout:not(.display-mode-active) .video-guide-stage.guide-resizable > .compact-guide { grid-column: 3; }
+  .maker-layout:not(.display-mode-active) .video-guide-stage.guide-resizable > .guide-resize-handle {
+    display: grid;
+    grid-column: 2;
+    grid-row: 1 / 3;
+    place-items: center;
+    min-height: 0;
+    cursor: col-resize;
+    touch-action: none;
+    user-select: none;
+    border-radius: 8px;
+  }
+  .guide-resize-handle > span { width: 4px; height: 54px; border-radius: 4px; background: var(--line-strong, var(--border-strong)); }
+  .guide-resize-handle:hover, .guide-resize-handle:focus-visible, .guide-resizable.is-resizing > .guide-resize-handle { background: var(--bg-elev); }
+  .guide-resize-handle:hover > span, .guide-resize-handle:focus-visible > span, .guide-resizable.is-resizing > .guide-resize-handle > span { background: var(--accent); }
+  .guide-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 }
 
 /* Keep the guide toggle outside the live camera rectangle; it must never
@@ -107,8 +147,6 @@
   flex: none;
 }
 .maker-layout:not(.display-mode-active) .video-guide-stage:not(:has(> .compact-guide:not([hidden]))) { gap: 10px; }
-.maker-layout:not(.display-mode-active) .video-guide-stage.maker-2d { overflow: auto; gap: 12px; }
-.maker-layout:not(.display-mode-active) .maker-2d-main { min-height: 360px; padding: 16px; flex: none; }
 .maker-layout:not(.display-mode-active) .maker-2d > .compact-guide { height: auto; max-height: none; flex: none; }
 
 /* Toolbar: keep every stage visible; connection remains next to model controls. */
@@ -122,7 +160,7 @@
   .maker-workflow-toolbar .maker-nav {
     flex-basis: 100%;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     overflow: visible;
   }
   .maker-workflow-toolbar .maker-nav button {
@@ -137,10 +175,11 @@
 @media (max-width: 960px), (max-height: 600px) {
   body:has(.maker-layout:not(.display-mode-active)) { overflow: auto; }
   .app.maker-layout:not(.display-mode-active) { height: auto; min-height: 100dvh; }
-  .maker-layout:not(.display-mode-active) .main > :is(.maker-design-container, .maker-deploy-main, .debug-page) {
+  .maker-layout:not(.display-mode-active) .main > :is(.maker-design-stage, .maker-deploy-main, .debug-page) {
     flex: none;
     overflow: visible;
   }
+  .maker-layout .maker-design-stage > .maker-studio { flex: none; }
   .maker-layout .maker-studio.maker-resizable > :is(.maker-assistant, .maker-preview) {
     position: static;
     height: auto;
@@ -156,6 +195,7 @@
   }
   .maker-layout .maker-assistant .maker-conversation { flex: none; height: clamp(180px, 36dvh, 340px); min-height: 0; }
   .maker-layout:not(.display-mode-active) .video-guide-stage { flex: none; }
+  .maker-layout:not(.display-mode-active) .video-workspace { flex: none; }
   .maker-layout:not(.display-mode-active) .video-shell { min-height: 300px; }
   .maker-layout:not(.display-mode-active) .video-guide-stage > .photo-guide.component-guide.compact-guide {
     height: auto;
@@ -201,6 +241,7 @@
   .maker-layout:not(.display-mode-active) .video-shell { flex: none; height: 420px; }
 }
 @media (max-width: 600px) {
+  .maker-layout:not(.display-mode-active) .maker-2d-main { min-height: 360px; flex: none; }
   .app.maker-layout:not(.display-mode-active) {
     padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
       max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
@@ -210,7 +251,7 @@
   .maker-layout .maker-header { gap: 8px; }
   .maker-layout .brand-subtitle { font-size: 10px; }
   .maker-layout .maker-save-status { margin-left: 0; text-align: left; }
-  .maker-layout .maker-workflow-toolbar .maker-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+  .maker-layout .maker-workflow-toolbar .maker-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
   .maker-layout .maker-nav button { padding: 7px 4px; font-size: 11px; }
   .maker-layout .maker-workflow-toolbar > :is(.maker-model-menu, .pi-global-control) { flex: 1 1 100%; }
   .maker-layout .maker-workflow-toolbar .runtime-toolbar {
@@ -221,7 +262,6 @@
   }
   .maker-layout .runtime-select.locale-select { grid-column: 2; grid-row: 1; }
   .maker-layout .runtime-select select { padding-inline: 7px 20px; }
-  .maker-layout .runtime-model-state { grid-column: 1 / -1; justify-self: start; min-height: 26px; }
   .maker-layout :is(.maker-preview, .maker-assistant, .debug-page, .pi-deploy-panel) { padding: 12px; }
   .maker-layout :is(.maker-preview-heading, .blueprint-actions) { width: 100%; }
   .maker-layout .blueprint-actions > button { flex: 1 1 120px; }
@@ -246,29 +286,22 @@
   .maker-layout .statusbar { padding: 8px; }
   .maker-layout .status-actions { gap: 8px; }
   .maker-layout .status-actions > button { flex: 1 1 110px; justify-content: center; }
-  .maker-layout .mirror-controls { top: 8px; right: 8px; left: 8px; justify-content: flex-end; gap: 5px; }
+  .maker-layout .video-control-toolbar { justify-content: flex-start; }
+  .maker-layout .mirror-controls { justify-content: flex-start; gap: 5px; }
   .maker-layout .mirror-controls .realtime-toggle {
-    top: 50px;
-    left: 0;
-    right: auto;
     min-width: 0;
-    width: calc(100% - 96px);
-    max-width: calc(100% - 96px);
-    height: 44px;
-    justify-content: center;
     white-space: normal;
     font-size: 10px;
     line-height: 1.3;
   }
-  .maker-layout .pin-calibration-controls { top: 58px; right: 8px; }
-  .maker-layout .pin-calibration-toggle { width: 88px; font-size: 10px; line-height: 1.3; }
+  .maker-layout .pin-calibration-toggle { font-size: 10px; line-height: 1.3; }
 }
 @media (max-width: 380px) {
   .maker-layout .debug-status-grid { grid-template-columns: minmax(0, 1fr); }
   .maker-layout .debug-page section > button { display: block; width: 100%; margin-inline: 0; }
 }
 
-/* Stage 04 uses shared row tracks: camera/chat toolbars and both content panes
+/* Stage 03 uses shared row tracks: camera/chat toolbars and both content panes
    stay aligned even when camera controls wrap. Keep the shared VideoView mounted. */
 @media (min-width: 961px) and (min-height: 601px) {
   .maker-layout.maker-stage-debug:not(.display-mode-active) .main:has(> .debug-chat-page) {

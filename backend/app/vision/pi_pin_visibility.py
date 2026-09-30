@@ -3,6 +3,8 @@
 Partial board support plus local appearance loss is suspected obstruction.
 Require three consecutive frames for hiding or recovery. The caller still
 enforces whole-pose validity, lease and image bounds.
+Confirmed whole-board blur pauses visibility transitions; it does not reveal
+previously hidden pins.
 """
 
 
@@ -10,11 +12,18 @@ class PiPinVisibility:
     def __init__(self):
         self.states = {}
 
-    def supported(self, pins, regions, partial):
+    def supported(self, pins, regions, partial, *, ambiguous_blur=False):
         visible = set()
         for pin in pins:
             key = pin['id']
             hidden, pending, count = self.states.get(key, (False, None, 0))
+            if ambiguous_blur:
+                # Broad motion blur is not evidence that a particular socket
+                # became covered (or that a previously hidden one cleared).
+                self.states[key] = hidden, None, 0
+                if not hidden:
+                    visible.add(key)
+                continue
             suspect = bool(partial and not regions.get(key, {}).get('supported', False))
             if suspect == hidden:
                 pending, count = None, 0

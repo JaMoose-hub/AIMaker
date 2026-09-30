@@ -1,0 +1,178 @@
+/* Legacy/no-project fallback; project views use the docked workspace below. */
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .main:has(> .guide-ai-workspace) {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* One right-hand workspace, two persistent views. Only the bodies scroll;
+   changing tabs never changes the measured camera/overlay coordinate tree. */
+.app.maker-layout .wiring-workspace {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  height: 100%; overflow: hidden; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--bg-panel); box-shadow: var(--shadow-card);
+}
+.app.maker-layout .wiring-workspace[hidden],
+.app.display-mode-active .wiring-workspace,
+.wiring-workspace .wiring-workspace-view[hidden] { display: none; }
+.wiring-workspace-tabs { display: flex; flex: none; gap: 4px; padding: 8px; background: var(--bg-elev); }
+.wiring-workspace-tabs > button {
+  display: flex; align-items: center; justify-content: center; gap: 6px; flex: 1;
+  min-width: 0; min-height: 36px; padding: 6px 8px; border: 1px solid transparent;
+  border-radius: 8px; background: transparent; color: var(--text-dim); font: inherit; font-size: 13px; cursor: pointer;
+}
+.app.maker-layout .wiring-workspace-tabs > button[aria-selected="true"] { background: var(--brand-navy, #203065); color: #fff; }
+.app.maker-layout .wiring-workspace .wiring-workspace-tabs > button[aria-selected="true"]:hover { background: var(--brand-navy, #203065); color: #fff; }
+.wiring-workspace button:focus-visible { outline: 2px solid var(--brand-blue, #417abe); outline-offset: 2px; }
+.wiring-tab-notice { padding: 2px 5px; border-radius: 8px; background: var(--surface-teal, #dcefe5); color: #17695b; font-size: 10px; white-space: nowrap; }
+.wiring-workspace-context { display: flex; flex: none; align-items: center; gap: 8px; padding: 8px 12px; }
+.wiring-workspace-context > div { flex: 1; min-width: 0; }
+.wiring-workspace-context strong { display: block; font-size: 14px; }
+.wiring-workspace-context small { display: block; margin-top: 3px; color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wiring-workspace-count { color: var(--text-dim); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wiring-workspace-close { flex: none; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text); font-size: 18px; cursor: pointer; }
+.wiring-workspace-progress { flex: none; display: block; width: calc(100% - 24px); height: 3px; margin: 0 12px; border: 0; background: var(--bg-elev); accent-color: var(--brand-teal, #16b9a6); }
+.wiring-workspace-progress::-webkit-progress-bar { background: var(--bg-elev); }
+.wiring-workspace-progress::-webkit-progress-value { background: var(--brand-teal, #16b9a6); }
+.wiring-workspace-progress::-moz-progress-bar { background: var(--brand-teal, #16b9a6); }
+.wiring-workspace-view { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.app.maker-layout .wiring-workspace .compact-guide {
+  position: static; display: flex; flex-direction: column; align-items: stretch;
+  grid-template: none; inset: auto; transform: none; flex: 1; width: 100%; height: 100%;
+  min-width: 0; min-height: 0; max-height: 100%; overflow: hidden; padding: 0; gap: 0;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none;
+}
+.app.maker-layout .wiring-workspace .guide-panel-header-embedded { align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.wiring-workspace .guide-panel-header-embedded .guide-panel-progress { padding: 0; border: 0; }
+.wiring-workspace .guide-panel-header-embedded :is(.guide-progress-label, progress) { display: none; }
+.wiring-workspace .guide-module-track { gap: 4px; }
+.wiring-workspace .guide-module-track > button { padding: 4px; }
+.wiring-workspace .guide-restart-action { min-height: 28px; padding: 4px 6px; font-size: 11px; }
+.app.maker-layout .wiring-workspace .compact-guide > .guide-panel-body { flex: 1; min-height: 0; max-height: none; overflow: auto; padding: 12px; }
+/* Manual progress is a compact record, not a large success/result hero. */
+.app.maker-layout .guide-module-review { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 10px 12px; }
+.app.maker-layout .guide-module-review > strong { font-size: 18px; line-height: 1.35; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.app.maker-layout .guide-module-review > p { grid-column: 1 / -1; font-size: 12px; line-height: 1.5; }
+.app.maker-layout .guide-panel-body > .component-test-card { margin: 10px 0; padding: 12px; gap: 10px; }
+.wiring-workspace .guide-panel-footer { padding: 10px 12px; gap: 6px; }
+.wiring-workspace .guide-ai-help { display: flex; align-items: center; justify-content: space-between; min-height: 30px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.wiring-workspace .guide-ai-help:hover { background: var(--surface-blue, var(--bg-elev)); }
+.app.maker-layout .wiring-workspace .debug-page.is-docked { display: flex; flex: 1; min-height: 0; height: 100%; margin: 0; padding: 10px; overflow: hidden; border: 0; border-radius: 0; background: transparent; }
+.app.maker-layout .wiring-workspace .debug-page.is-docked > .debug-page-content { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: hidden; scrollbar-gutter: auto; }
+.wiring-workspace .guide-ai-mode-picker { flex: none; margin: 0 0 8px; }
+.app.maker-layout .wiring-workspace .guide-ai-mode-picker > button { min-height: 28px; padding: 4px 9px; border-radius: 999px; font-size: 11px; }
+.app.maker-layout .wiring-workspace .guide-ai-mode-picker > button[aria-pressed="true"] { color: var(--brand-navy, #203065); background: var(--surface-blue, var(--bg-elev)); border-color: var(--brand-blue, #417abe); }
+.wiring-workspace .debug-chat-view { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.app.maker-layout .wiring-workspace .is-docked .ai-debug-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.wiring-workspace .ai-debug-head { flex: none; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.app.maker-layout .wiring-workspace .is-docked .ai-debug-head h3 { font-size: 14px; margin-bottom: 4px; }
+.wiring-workspace .ai-debug-head > div:first-child { flex: 1 1 150px; }
+.wiring-workspace .ai-debug-head small { font-size: 10px; }
+.wiring-workspace .ai-debug-conversation { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.app.maker-layout .wiring-workspace .ai-debug-chat { flex: 1; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; padding: 8px 6px 8px 0; }
+.wiring-workspace .ai-debug-entry { flex: none; margin-top: 8px; }
+.app.maker-layout .wiring-workspace .debug-manual-tools,
+.wiring-workspace .ai-debug-records { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.wiring-workspace .debug-tool-heading { gap: 6px; margin-bottom: 8px; }
+.wiring-workspace .debug-tool-heading h3 { font-size: 14px; }
+.wiring-workspace .debug-tool-heading button { min-height: 30px; padding: 4px 7px; font-size: 11px; }
+/* Keep hidden chat/tools out of flex layout even when their contents are mounted. */
+.wiring-workspace :is(.debug-chat-view, .debug-tool-view, .ai-debug-conversation)[hidden] { display: none; }
+@media (min-width: 961px) and (min-height: 601px) {
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage:has(> .wiring-workspace:not([hidden])) {
+    display: grid; grid-template-columns: minmax(0, 1fr) var(--guide-column-width, clamp(320px, 30%, 400px));
+    grid-template-rows: auto minmax(0, 1fr); column-gap: 12px; row-gap: 8px; overflow: hidden;
+  }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage > .wiring-workspace { grid-column: 2; grid-row: 1 / 3; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage.guide-resizable:has(> .wiring-workspace:not([hidden])) { grid-template-columns: minmax(0, 1fr) 18px var(--guide-column-width); column-gap: 0; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage.guide-resizable > .wiring-workspace { grid-column: 3; }
+}
+@media (max-width: 960px), (max-height: 600px) {
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage:has(> .wiring-workspace) { display: flex; flex-direction: column; gap: 10px; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage > .wiring-workspace { flex: none; width: 100%; height: clamp(520px, 78dvh, 760px); }
+  /* Wrapped tools and a long draft must not squeeze the conversation away. */
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage > .wiring-workspace:has(.wiring-workspace-tabs > button:last-child[aria-selected="true"]) { height: auto; min-height: clamp(520px, 78dvh, 760px); }
+  .app.maker-layout .wiring-workspace .ai-debug-chat { flex: 0 0 clamp(180px, 32dvh, 320px); min-height: 180px; }
+}
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .main:has(> .guide-ai-workspace) > .video-guide-stage {
+  flex: 1 0 min(620px, calc(100dvh - 220px));
+  min-height: 340px;
+}
+.app.maker-layout .debug-page.guide-ai-workspace {
+  flex: none;
+  min-height: 0;
+  margin-top: 12px;
+  padding: 10px;
+  overflow: visible;
+}
+.guide-ai-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.guide-ai-heading small { color: var(--text-muted); }
+.guide-ai-heading button { text-align: start; font-weight: 700; }
+.guide-ai-heading-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.debug-page .guide-ai-heading-actions button { min-height:32px; margin:0; padding:6px 9px; font-size:11px; }
+.guide-ai-mode-picker { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
+.debug-page .guide-ai-mode-picker button { min-height:34px; margin:0; padding:6px 11px; font-size:12px; }
+.guide-ai-mode-picker button[aria-pressed=true] { background:var(--surface-subtle,#193831); border-color:var(--brand-teal,#73cbbb); }
+.guide-ai-mode-picker small { margin-left:auto; color:var(--text-dim); font-size:11px; }
+.guide-ai-workspace > .debug-page-content { margin-top: 10px; }
+.guide-ai-workspace > .debug-page-content[hidden] { display: none; }
+/* The merged workspace grows with manual tools instead of inheriting the
+   old full-height debug column's zero flex basis. */
+.app.maker-layout .guide-ai-workspace:not(.is-docked) .debug-manual-tools { flex: none; min-height: 0; overflow: visible; }
+.app.maker-layout .guide-ai-workspace:not(.is-docked) .ai-debug-panel { height: min(700px, 78dvh); min-height: 340px; }
+.app.maker-layout .guide-ai-workspace:not(.is-docked) .ai-debug-chat { min-height: 130px; }
+.app.maker-layout .guide-ai-workspace[data-open="false"] > .debug-page-content { display: none; }
+@media (max-width: 960px), (max-height: 600px) {
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .main:has(> .guide-ai-workspace) > .video-guide-stage {
+    flex: none;
+    min-height: 0;
+  }
+  .app.maker-layout .guide-ai-workspace:not(.is-docked) .ai-debug-panel { height: min(680px, 85dvh); }
+}
+
+/* Only the current-step canvas fills the camera body. Blueprint, AI cards and
+   expanded diagrams retain their original tools and readable scrolling. */
+.app.maker-layout:not(.display-mode-active) #current-step-diagram {
+  display: flex; flex-direction: column; padding: 0; overflow: hidden;
+}
+#current-step-diagram > .circuit-workspace {
+  flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column;
+  margin: 0; padding: 0; border: 0; border-radius: 0; overflow: hidden;
+}
+#current-step-diagram .circuit-workspace > .circuit-inspector {
+  flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  margin: 0; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--border);
+  border-radius: 0; background: var(--bg-panel); min-width: 0;
+}
+#current-step-diagram .circuit-workspace > .circuit-inspector > small { font-size: 11px; }
+#current-step-diagram .circuit-inspector h2 { margin: 0; font-size: 18px; line-height: 1.35; color: var(--accent); overflow-wrap: anywhere; }
+#current-step-diagram .circuit-inspector .maker-warning { font-size: 12px; }
+#current-step-diagram .circuit-workspace > .circuit-zoom-fill {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+}
+#current-step-diagram .circuit-zoom-fill > .circuit-zoom-toolbar {
+  flex: none; gap: 5px; margin: 0; padding: 6px 10px; min-width: 0;
+}
+#current-step-diagram .circuit-step-module { margin-right: auto; padding: 4px 8px; border-radius: 5px; background: var(--surface-blue, #1b3141); color: var(--accent); font-size: 12px; font-weight: 650; }
+#current-step-diagram .circuit-zoom-fill > .circuit-zoom-toolbar > small { display: none; }
+#current-step-diagram .circuit-zoom-fill > .circuit-zoom-toolbar .maker-expand { float: none; margin: 0; }
+#current-step-diagram .circuit-zoom-fill .circuit-module-tabs { margin: 0 auto 0 0; }
+#current-step-diagram .circuit-zoom-fill > .circuit-viewport {
+  flex: 1; min-height: 0; height: auto; border: 0; border-radius: 0;
+  scrollbar-gutter: auto;
+}
+#current-step-diagram .circuit-workspace > .circuit-workspace-notes { flex: none; min-width: 0; border-top: 1px solid var(--border); }
+#current-step-diagram .circuit-workspace-notes summary { padding: 6px 12px; font-size: 11px; color: var(--text-dim); cursor: pointer; }
+#current-step-diagram .circuit-workspace-notes > div { max-height: 130px; overflow: auto; padding: 0 12px 8px; font-size: 12px; line-height: 1.5; }
+#current-step-diagram .circuit-workspace-notes :is(p, .circuit-legend) { margin: 6px 0; }
+#current-step-diagram .step-diagram-capture-notice { flex: none; margin: 0; padding: 7px 12px; font-size: 12px; color: var(--text); background: var(--surface-teal, #17332a); border-bottom: 1px solid var(--border); }
+#current-step-diagram > .diagram-inspection-heading { flex:none; display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; padding:7px 10px; border-bottom:1px solid var(--border); }
+.diagram-inspection-heading > div { flex:1; min-width:140px; display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; font-size:12px; }
+.diagram-inspection-heading span { font-size:11px; color:var(--text-dim); }
+.diagram-inspection-heading button { padding:5px 8px; border:1px solid var(--border); border-radius:7px; background:var(--bg-elev); color:var(--text); cursor:pointer; font:inherit; font-size:11px; }
+.diagram-inspection-heading button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media (max-width: 960px), (max-height: 600px) {
+  .app.maker-layout:not(.display-mode-active) #current-step-diagram { flex: none; height: clamp(390px, 62dvh, 560px); min-height: 0; }
+  #current-step-diagram .circuit-inspector h2 { font-size: 16px; }
+  #current-step-diagram .circuit-zoom-fill > .circuit-zoom-toolbar { gap: 4px; padding: 6px; }
+  #current-step-diagram .circuit-zoom-fill > .circuit-zoom-toolbar button { padding-inline: 6px; font-size: 11px; }
+}

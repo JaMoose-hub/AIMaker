@@ -407,6 +407,7 @@ class MotionTrack:
         self.pin_regions = None
         self.confirmation_debug = {}
         self.source_absent_ts = None
+        self.source_absent_since_ts = None
         self.pi_visibility = PiPinVisibility()
         self.fresh_recovery_enabled = False
 
@@ -416,6 +417,7 @@ class MotionTrack:
         self.message = None
         self.confirmation_debug = {}
         self.source_absent_ts = None
+        self.source_absent_since_ts = None
         self.pin_regions = None
         self.history.clear()
         self.recovering = False
@@ -459,7 +461,13 @@ class MotionTrack:
         if frame_id <= self.seen_seed:
             return
         self.seen_seed = frame_id
-        self.source_absent_ts = (message['ts_ms'] if message.get('tracking') == 'searching' else None)
+        if message.get('tracking') == 'searching':
+            self.source_absent_ts = message['ts_ms']
+            if self.source_absent_since_ts is None:
+                self.source_absent_since_ts = message['ts_ms']
+        else:
+            self.source_absent_ts = None
+            self.source_absent_since_ts = None
         if message.get('pose_quality', {}).get('reason') == 'pin_orientation_unverified':
             self.reset()
             self.failure_reason = 'pin_orientation_unverified'
@@ -631,17 +639,34 @@ class MotionTrack:
         lease_valid = ts_ms - self.confirmed_ts <= self.lease_ms
         regions = self.pin_regions.check(gray, self.message['outline'], self.scale) if self.pin_regions else {}
         supported = {key for key, value in regions.items() if value['supported']}
+        pi_geometry = self.message.get('board_id') == 'raspberry-pi-5' and len(self.message['pins']) == 40
+        # Moving a clear Pi can blur every GPIO patch at once. That is not a
+        # localized occlusion when the same-frame board flow remains broad,
+        # accurate, and its low-frequency appearance still matches the seed.
+        ambiguous_blur = bool(
+            pi_geometry and self.pin_regions is not None
+            and self.flow.partial and len(supported) < 20
+            and self.flow.support >= 32 and self.flow.support_ratio >= .4
+            and self.flow.support_cells >= 8 and self.flow.support_quadrants == 4
+            and self.flow.error_px / self.scale <= 1.5
+            and self.pin_regions.global_motion_blur(gray, self.message['outline'], self.scale)
+        )
         if (self.message.get('board_id') == 'raspberry-pi-5' and regions and not supported
                 and self.source_absent_ts is not None
-                and 0 <= ts_ms - self.source_absent_ts <= 750):
+                and 0 <= ts_ms - self.source_absent_ts <= 750
+                and not (ambiguous_blur and lease_valid
+                         and self.source_absent_since_ts is not None
+                         and 0 <= ts_ms - self.source_absent_since_ts <= 300)):
             # Background texture can sustain flow after removal. Neither a
             # current semantic detection nor any J8 region supports this pose.
+            # Brief full-board blur is the sole bounded exception; a repeated
+            # searching result cannot restart its 300 ms grace interval.
             self.reset()
             self.failure_reason = 'source_absent_no_pin_support'
             return None
-        pi_geometry = self.message.get('board_id') == 'raspberry-pi-5' and len(self.message['pins']) == 40
         if pi_geometry:
-            supported = self.pi_visibility.supported(self.message['pins'], regions, self.flow.partial)
+            supported = self.pi_visibility.supported(self.message['pins'], regions, self.flow.partial,
+                                                     ambiguous_blur=ambiguous_blur)
         dx, dy = self.pin_regions.offset_px if self.pin_regions is not None else (0., 0.)
         height, width = gray.shape
         visible = [p for p in self.message['pins'] if p.get('v') and p['id'] in supported
@@ -666,7 +691,9 @@ class MotionTrack:
             'visible_pin_count': len(visible), 'hidden_pin_count': hidden_count,
             'pin_regions': regions,
             'pin_evidence': 'projected_geometry_not_contact_verification' if pi_geometry else 'local_appearance_not_contact_verification',
-            'pin_visibility_policy': 'pi_geometry_debounced_partial_support' if pi_geometry else 'local_appearance',
+            'pin_visibility_policy': ('pi_geometry_motion_blur_provisional' if ambiguous_blur else
+                                      'pi_geometry_debounced_partial_support' if pi_geometry else 'local_appearance'),
+            'motion_blur_ambiguous': ambiguous_blur,
             'reason': ('awaiting_model_confirmation' if not lease_valid else
                        'partial_support' if self.flow.partial else 'pin_region_changed') if outline_only else
                       ('partial_pin_support' if partial else None),

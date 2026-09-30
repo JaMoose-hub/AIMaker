@@ -7,6 +7,7 @@ router = APIRouter(prefix="/api/debug", tags=["debug"])
 
 
 class Context(BaseModel):
+    locale: Literal["zh-TW", "en"] = "zh-TW"
     project: dict | None = None
     code: str = Field(default="", max_length=200000)
     test_keys: dict[str, str] = Field(default_factory=dict)

@@ -1,5 +1,6 @@
+import { useRef, useState } from "react";
 import { usePiConnection } from "../lib/PiConnection";
-import { executionPending } from "../lib/piApi";
+import { executionPending, programOwner, stopPiProgram } from "../lib/piApi";
 import { useMakerText } from "../lib/useMaker";
 
 export function PiConnectionControl() {
@@ -9,6 +10,35 @@ export function PiConnectionControl() {
   const jobs = status?.execution?.jobs ?? [];
   const pending = jobs.filter(executionPending);
   const question = pending.find(j => j.state === "awaiting_confirmation");
+  const [stopConsent, setStopConsent] = useState<string | null>(null);
+  const stopping = useRef(false);
+  const owner = programOwner(status);
+  const canStop = connected && Boolean(status?.execution) && Boolean(owner) && !pi.pending && !status?.busy
+    && !status?.component_test_id && !pending.length && status?.program !== "stopping";
+  const inactive = connected && !status?.pid && ["stopped", "exited", "failed", "not_deployed"].includes(status?.program ?? "unknown");
+  const stopHint = !connected || status?.program === "unknown"
+    ? tr("先連線並核對 Pi 狀態。", "Connect and verify the Pi state first.")
+    : !status?.execution ? tr("請重啟 Tinkro 後端後再操作。", "Restart the Tinkro backend first.")
+    : status.component_test_id ? tr("硬體測試仍在進行，請先在測試卡停止。", "Stop the active hardware test from its test card first.")
+    : pending.length ? tr("請先取消下方排隊工作，避免停止後自動啟動。", "Cancel the queued jobs below first so they cannot start after stopping.")
+    : status.busy ? tr("目前操作進行中，請稍候。", "An operation is in progress. Please wait.")
+    : inactive ? tr("作品已停止，可以回接線引導重新開始。", "Project stopped. You can restart the wiring guide.")
+    : !owner ? tr("無法確認作品程序，請重新連線。", "Cannot identify the project process. Reconnect first.") : null;
+  const stopError = pi.error === "stop_queue_active" ? tr("有排隊工作，請先取消再停止作品。", "Cancel queued jobs before stopping the project.")
+    : pi.error === "stop_test_active" ? tr("測試仍在進行，請先在測試卡停止。", "Stop the active test from its test card first.")
+    : pi.error === "stop_owner_changed" ? tr("執行中的作品已變更，請重新確認停止。", "The running project changed. Confirm stopping again.")
+    : pi.error === "stop_program_busy" ? tr("Pi 正在處理其他操作，請稍候。", "The Pi is handling another operation. Please wait.")
+    : pi.error === "stop_state_unknown" ? tr("無法確認 Pi 作品程序，請重新連線再核對。", "Cannot verify the Pi project process. Reconnect and check again.")
+    : pi.error === "stop_backend_restart_required" || pi.error === "Pi API: HTTP 404" ? tr("請重啟 Tinkro 後端，以啟用停止作品功能。", "Restart the Tinkro backend to enable Stop project.")
+    : pi.error || pi.networkError ? tr("操作未確認成功，請核對 Pi 狀態後再試。", "Action not confirmed. Verify the Pi state before retrying.") : null;
+  async function confirmStop() {
+    if (!canStop || !stopConsent || stopConsent !== owner || stopping.current) return;
+    stopping.current = true;
+    const approved = stopConsent;
+    setStopConsent(null);
+    try { await pi.perform(() => stopPiProgram(approved)); }
+    finally { stopping.current = false; }
+  }
   const labels = {
     queued: tr("排隊中", "Queued"), preflight: tr("檢查環境", "Preflight"), awaiting_confirmation: tr("等待交接確認", "Confirm handoff"),
     stopping: tr("確認停止中", "Stopping"), blocked: tr("等待連線／核對", "Waiting for reconciliation"), running: tr("執行中", "Running"),
@@ -26,7 +56,22 @@ export function PiConnectionControl() {
         <summary aria-label={tr("Pi 執行佇列", "Pi execution queue")}>{question ? tr("確認交接", "Handoff") : tr("執行管理", "Execution")} <span>{pending.length}</span></summary>
         <div className="pi-execution-popover">
           <strong>{tr("一次執行一個，依序交接", "One program at a time · FIFO")}</strong>
-          <p className="pi-current-owner" role="status">{tr("目前", "Current")}: {status?.component_test_id ? tr("硬體測試／整合試跑", "Hardware test / trial") : status?.program === "running" ? tr("作品程式執行中", "Project running") : connected ? tr("沒有執行中的作品", "No running project") : tr("尚未連線／狀態未知", "Disconnected / unknown")}</p>
+          <section className="pi-project-control" aria-label={tr("作品執行控制", "Project runtime control")}>
+            <p className="pi-current-owner" role="status">{tr("目前", "Current")}: {!connected ? tr("尚未連線／狀態未知", "Disconnected / unknown") : status?.component_test_id ? tr("硬體測試／整合試跑", "Hardware test / trial") : status?.program === "running" ? tr("作品程式執行中", "Project running") : status?.program === "starting" ? tr("作品啟動中", "Project starting") : status?.program === "stopping" ? tr("確認停止中", "Stopping") : inactive ? tr("作品已停止", "Project stopped") : tr("Pi 狀態待確認", "Pi state unconfirmed")}</p>
+            <button type="button" className="pi-project-stop" disabled={!canStop} onClick={() => setStopConsent(owner)}>
+              {tr("停止作品", "Stop project")}
+            </button>
+            {stopHint ? <small>{stopHint}</small> : null}
+            {stopConsent ? <div className="pi-stop-confirmation" role="group" aria-label={tr("確認停止作品", "Confirm stopping project")}>
+              <strong>{tr("停止目前的作品程式？", "Stop the current project program?")}</strong>
+              <p>{tr("只停止 Pi 上的作品；保留程式、接線與 AI 紀錄，不關閉 Pi 或相機。", "Stops only the project on the Pi. Code, wiring and AI history are kept; the Pi and camera stay on.")}</p>
+              {stopConsent !== owner ? <p role="alert">{tr("作品程序已變更，請取消後重新確認。", "The project process changed. Cancel and confirm again.")}</p> : null}
+              <div><button type="button" className="pi-project-stop" disabled={!canStop || stopConsent !== owner} onClick={() => void confirmStop()}>{tr("確認停止", "Confirm stop")}</button>
+                <button type="button" onClick={() => setStopConsent(null)}>{tr("取消", "Cancel")}</button></div>
+            </div> : null}
+            <small>{tr("停止程式不等於斷電；改接線前仍需關閉硬體電源。", "Stopping a program does not power off hardware. Turn off power before rewiring.")}</small>
+            {stopError ? <p role="alert" title={pi.error ?? undefined}>{stopError}</p> : null}
+          </section>
           <small>{tr("先確認停止目前程式，再執行下一個；不自動恢復舊作品。", "Confirm stopping the current program before the next; no automatic restore.")}</small>
           {jobs.slice(-8).map(job => <div className="pi-queue-job" key={job.id}>
             <div><strong>{job.label}</strong><span>{job.kind === "test" && job.state === "finished"

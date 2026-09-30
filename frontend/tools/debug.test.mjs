@@ -23,21 +23,42 @@ function debugFunction(name, bindings) {
   return new Function(...Object.keys(bindings),`${js};return ${name};`)(...Object.values(bindings));
 }
 
-function renderDebug({record=null,connected=true,trial=null,locale='zh-TW',selected='hc-sr04',design=designFor(['hc-sr04','mrd-tf240-8p-cs']),checkFeedback=null,assistant}={}) {
+function renderDebug({record=null,connected=true,trial=null,trialResults=[],selectedTrialId,sessionRecord,locale='zh-TW',selected='hc-sr04',design=designFor(['hc-sr04','mrd-tf240-8p-cs']),checkFeedback=null,assistant,variant,assistantOpen,assistantIntent,manualOpen=false}={}) {
   const state={...maker.initialMaker(),design,code:'',debug:{source:'guide',componentId:'hc-sr04',selectedComponentId:selected,runId:'technical-run-id',symptom:'no_echo'}};
   let stateCall=0;
   const Page=debugFunction('DebugPage',{
     React,useMakerText:()=> (zh,en)=>locale==='zh-TW'?zh:en,
-    useState:value=>[stateCall++===7?checkFeedback:value,()=>{}],useEffect(){},useLayoutEffect(){},useMemo:fn=>fn(),useRef:()=>({current:null}),
+    useI18n:()=>({locale}),
+    useState:value=>{const index=stateCall++;return [index===7?checkFeedback:index===8?manualOpen:index===11?selectedTrialId:value,()=>{}];},useEffect(){},useLayoutEffect(){},useMemo:fn=>fn(),useRef:()=>({current:null}),
     usePiConnection:()=>({status:{connected},networkError:false,pending:false}),
-    useDebug:()=>({record,pending:false,error:'',trials:{active:trial,results:[]},action(){throw Error('Render cannot run an action');}}),
+    useDebug:()=>({record,pending:false,error:'',trials:{active:trial,results:trialResults},action(){throw Error('Render cannot run an action');}}),
     componentTestKey:componentTests.componentTestKey,componentComplete:componentTests.componentComplete,testReasons:componentTests.testReasons,sameDebugTestKeys,
     TargetedTest:({before,after,report})=>React.createElement('div',{className:'debug-workspace'},before,React.createElement('section',{'data-testid':'targeted-test'}),after,React.createElement('aside',{className:'debug-results'},report)),codeHash:()=>Promise.resolve(''),
   });
-  return renderToStaticMarkup(React.createElement(Page,{state,onCase(){},onCode(){},onWiring(){},onDeploy(){},onSelect(){},assistant}));
+  return renderToStaticMarkup(React.createElement(Page,{state,onCase(){},onCode(){},onWiring(){},onDeploy(){},onSelect(){},assistant,sessionRecord,variant,assistantOpen,assistantIntent}));
 }
 
 const freshRecord={id:'case',status:'ready',progress:'finished',rounds:0,binding:{code_hash:'',project_id:'layout-fixture',test_keys:Object.fromEntries(['hc-sr04','mrd-tf240-8p-cs'].map(id=>[id,componentTests.componentTestKey(designFor(['hc-sr04','mrd-tf240-8p-cs']),maker.initialMaker().guide,id)]))},evidence:{tests:[],pi:{program:'stopped'}}};
+
+test('inline trial confirmation uses the current AI run after viewing an older manual trial',()=>{
+  const trial={id:'new-trial',project_id:'layout-fixture',binding:freshRecord.binding,outcome:'awaiting_confirmation',created_at:1,logs:[]};
+  const html=renderDebug({trial,trialResults:[{...trial,id:'old-trial'}],selectedTrialId:'old-trial',
+    sessionRecord:{status:'awaiting_trial_visual',trial_result:{id:'new-trial'}},
+    assistant:({operationCard})=>React.createElement('section',null,operationCard)});
+  assert.match(html,/new-trial/);assert.doesNotMatch(html,/old-trial|正在取得本次試跑紀錄/);
+  assert.match(html,/送出本次目視確認/);
+});
+
+test('session repair analysis goes through the shared budget and the inline card has no duplicate analyser',async()=>{
+  const calls=[];
+  const analyse=debugFunction('agent',{record:freshRecord,context:{code:'draft'},state:{aiModel:'model',aiEffort:'low'},
+    sessionRecord:{status:'awaiting_repair',diagnosis:{case_id:'case'}},onSessionAnalyse:context=>calls.push(context),
+    debug:{action(){throw Error('Must use the session budget');}}});
+  await analyse();assert.deepEqual(calls,[{code:'draft'}]);
+  const html=renderDebug({record:freshRecord,sessionRecord:{status:'awaiting_repair',diagnosis:{case_id:'case'}},
+    assistant:({operationCard})=>React.createElement('section',null,operationCard)});
+  assert.match(html,/還是沒解決/);assert.doesNotMatch(html,/請 AI 幫我分析/);
+});
 
 test('a hash from the previous draft is hidden immediately while the new draft is hashing',()=>{
   const source=readFileSync(new URL('../src/components/DebugPage.tsx',import.meta.url),'utf8');
@@ -51,7 +72,7 @@ test('a hash from the previous draft is hidden immediately while the new draft i
   assert.equal(currentHash({code:'new draft',hash:'new-sha'},{code:'new draft'}),'new-sha');
 });
 
-test('manual tools are mounted but hidden outside the conversation until explicitly opened',()=>{
+test('manual tool region stays outside chat and remembers which controls to reveal after mounting',()=>{
   const html=renderDebug({assistant:()=>React.createElement('button',{'data-visual-check':true},'幫我檢查')});
   const manualIndex=html.indexOf('<div id="debug-manual-tools"');
   assert.ok(manualIndex>html.indexOf('data-visual-check'));
@@ -61,18 +82,51 @@ test('manual tools are mounted but hidden outside the conversation until explici
   assert.doesNotMatch(html,/<details id="debug-manual-tools"|需要自行操作零件測試/);
   class Element {}
   const trigger=new Element();
-  const manualReturnFocus={current:null},manualFocusTarget={current:null};
-  let opened=false;
-  const open=debugFunction('openManual',{manualReturnFocus,manualFocusTarget,document:{activeElement:trigger},HTMLElement:Element,setManualOpen:value=>{opened=value;}});
+  const manualReturnFocus={current:null},manualFocusKind={current:null};
+  let opened=false,assistantOpened=false;
+  const open=debugFunction('openManual',{manualReturnFocus,manualFocusKind,document:{activeElement:trigger},HTMLElement:Element,setManualOpen:value=>{opened=value;},setGuideAssistantOpen:value=>{assistantOpened=value;}});
   open();
   assert.equal(opened,true);
+  assert.equal(assistantOpened,true,'manual tools also reveal the merged workspace');
   assert.equal(manualReturnFocus.current,trigger);
-  assert.equal(manualFocusTarget.current,null);
-  const summary=new Element();
-  const details={open:false,querySelector:()=>summary};
-  open(details);
-  assert.equal(details.open,true,'targeted trial/repair details are revealed inside the tool view');
-  assert.equal(manualFocusTarget.current,summary);
+  assert.equal(manualFocusKind.current,null);
+  open('trial');
+  assert.equal(manualFocusKind.current,'trial','target is retained until the tool view mounts');
+  open('repair');
+  assert.equal(manualFocusKind.current,'repair');
+});
+
+test('merged wiring workspace defaults closed and restores its controlled chat intent without an action',()=>{
+  const renderAssistant=({intent})=>React.createElement('section',{'data-intent':intent},'shared conversation');
+  const closed=renderDebug({variant:'wiring',assistant:renderAssistant});
+  assert.match(closed,/data-open="false"/);
+  assert.match(closed,/id="guide-ai-content" hidden=""/);
+  assert.match(closed,/data-intent="wiring"/);
+  assert.match(closed,/前往 03 部署/);
+  assert.doesNotMatch(closed,/03 · 測試|04 · 部署/);
+  const restored=renderDebug({variant:'wiring',assistant:renderAssistant,assistantOpen:true,assistantIntent:'debug'});
+  assert.match(restored,/data-open="true"/);
+  assert.match(restored,/data-intent="debug"/);
+  assert.match(restored,/<button type="button" aria-pressed="true">測試與除錯<\/button>/);
+  assert.doesNotMatch(restored,/id="guide-ai-content" hidden/);
+  const returnToWire=renderDebug({variant:'wiring',assistant:renderAssistant,assistantOpen:false,manualOpen:true});
+  assert.match(returnToWire,/data-open="false"/);
+  assert.match(returnToWire,/id="guide-ai-content" hidden=""/,'returning to the wire closes a previously visible manual tool');
+});
+
+test('choosing the merged assistant focus only updates view state and opens the panel',()=>{
+  const calls=[];
+  const choose=debugFunction('chooseAssistantIntent',{assistantIntent:'wiring',
+    setLocalAssistantIntent(){throw Error('controlled intent must stay authoritative');},
+    onAssistantIntentChange:value=>calls.push(['intent',value]),
+    setGuideAssistantOpen:value=>calls.push(['open',value]),setManualOpen:value=>calls.push(['manual',value])});
+  choose('debug');
+  assert.deepEqual(calls,[['intent','debug'],['open',true],['manual',false]]);
+  const open=debugFunction('setGuideAssistantOpen',{assistantOpen:false,
+    setLocalAssistantOpen(){throw Error('controlled visibility must stay authoritative');},
+    onAssistantOpenChange:value=>calls.push(['controlled-open',value])});
+  open(true);
+  assert.deepEqual(calls.at(-1),['controlled-open',true]);
 });
 
 test('chat toolbar and content have separate layout tracks without changing the manual workflow',()=>{
@@ -282,14 +336,15 @@ test('trial stop and physical confirmation stay visible, outside collapsed AI an
 });
 
 test('retest navigation responds again for the already selected module without starting tests',()=>{
-  const selected=[]; let request=0;
+  const selected=[], runs=[]; let request=0;
   const open=debugFunction('openRetest',{
     state:{design:designFor(['hc-sr04','mrd-tf240-8p-cs'])},
-    onSelect:id=>selected.push(id),setProgramSelected(){},setRetestFocusRequest:update=>{request=update(request);},
+    onSelect:id=>selected.push(id),setProgramSelected(){},setSelectedRunId:id=>runs.push(id),setRetestFocusRequest:update=>{request=update(request);},
   });
-  open('hc-sr04');open('hc-sr04');open('mrd-tf240-8p-cs');open('unknown');
+  open('hc-sr04');open('hc-sr04');open('mrd-tf240-8p-cs','tft-run');open('unknown');
   assert.deepEqual(selected,['hc-sr04','hc-sr04','mrd-tf240-8p-cs']);
   assert.equal(request,3);
+  assert.deepEqual(runs,[undefined,undefined,'tft-run']);
 });
 
 test('retest card focuses after selection; initial render and telemetry polls never steal focus',()=>{
@@ -313,21 +368,34 @@ test('retest card focuses after selection; initial render and telemetry polls ne
   render('mrd-tf240-8p-cs',3);assert.equal(calls.length,3);
 });
 
-test('five-stage debug navigation restores old deploy and no-project debug',()=>{
-  for(const stage of ['design','blueprint','guide','debug','deploy']) {
+test('three-stage navigation migrates old debug to the integrated assistant without losing its work',()=>{
+  for(const stage of ['design','guide','deploy']) {
     const state={...maker.initialMaker(),design:designFor(),stage};
     assert.equal(maker.restoreMaker(JSON.stringify(state)).stage,stage);
   }
-  assert.equal(maker.restoreMaker(JSON.stringify({...maker.initialMaker(),stage:'debug'})).stage,'debug');
+  const oldBlueprint=maker.restoreMaker(JSON.stringify({...maker.initialMaker(),design:designFor(),stage:'blueprint'}));
+  assert.equal(oldBlueprint.stage,'design');
+  assert.equal(oldBlueprint.designView,'blueprint');
+  const debug={caseId:'case-old',runId:'run-old',trialId:'trial-old',symptom:'no echo',source:'deploy',deployment:{run_id:'deploy-old',exit_code:1}};
+  for(const design of [null,designFor()]) {
+    const migrated=maker.restoreMaker(JSON.stringify({...maker.initialMaker(),design,stage:'debug',debug}));
+    assert.equal(migrated.stage,'guide');
+    assert.deepEqual(migrated.debug,{...debug,panelOpen:true,intent:'debug'});
+    assert.deepEqual(maker.restoreMaker(JSON.stringify(migrated)).debug,migrated.debug);
+    assert.equal(maker.restoreMaker(JSON.stringify(migrated)).stage,'guide');
+  }
   const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
-  assert.match(app,/\["design", "blueprint", "guide", "debug", "deploy"\]/);
+  assert.match(app,/\["design", "guide", "deploy"\]/);
+  assert.doesNotMatch(app,/makerStage === "debug"|stage:"debug"/);
+  assert.doesNotMatch(app,/className="maker-design-views"/);
+  assert.match(readFileSync(new URL('../src/components/DesignViewSwitch.tsx',import.meta.url),'utf8'),/className="maker-design-views"/);
   assert.match(app,/onDebug=\{openDebug\}/);
 });
 
 test('logic-only draft changes preserve component test bindings and debug context',()=>{
   const state={...maker.initialMaker(),design:designFor(),debug:{caseId:'case',componentId:'hc-sr04',runId:'run',source:'guide'}};
   const before=componentTests.testBindings(state);
-  const changed={...state,code:'new application logic',stage:'debug'};
+  const changed={...state,code:'new application logic',stage:'guide'};
   assert.deepEqual(componentTests.testBindings(changed),before);
   assert.deepEqual(maker.restoreMaker(JSON.stringify(changed)).debug,state.debug);
 });
@@ -344,10 +412,10 @@ test('retest selection is separate from the original diagnostic evidence',()=>{
 
 test('inspect wiring shows return/edit actions without consuming confirmations',async()=>{
   const design=designFor();
-  const guide={...maker.emptyGuide(),phase:'active',inspection:true};
+  const guide={...maker.emptyGuide(),phase:'active',inspection:true,inspectionSource:'debug'};
   const before=JSON.stringify(guide);
   const html=await renderGuide({design,session:guide});
-  assert.match(html,/返回除錯/);assert.match(html,/我要修改此零件接線/);
+  assert.match(html,/返回 AI 對話/);assert.match(html,/我要修改此零件接線/);
   assert.doesNotMatch(html,/我已接好，下一步/);
   assert.equal(JSON.stringify(guide),before);
 });

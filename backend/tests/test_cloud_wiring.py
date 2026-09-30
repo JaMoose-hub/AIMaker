@@ -110,7 +110,7 @@ def test_crops_are_exact_source_location_with_context_neighbors_and_no_overlay()
     assert "password" not in prompt and "192.168.50.174" not in prompt
 
 
-@pytest.mark.parametrize("cid,order", [("hc-sr04", ["VCC", "GND"]), ("hw-123", ["VCC", "INT"]), ("mrd-tf240-8p-cs", ["GND", "BLK"])])
+@pytest.mark.parametrize("cid,order", [("hc-sr04", ["VCC", "GND"]), ("mrd-tf240-8p-cs", ["GND", "BLK"])])
 @pytest.mark.parametrize("turns,delta", [(0, (20, 0)), (1, (0, 20)), (2, (-20, 0)), (3, (0, -20))])
 def test_reading_copies_are_lossless_rotations_of_original_pixels_using_shared_profiles(cid, order, turns, delta):
     # Pixel pattern, not a synthetic wiring verdict.
@@ -166,7 +166,7 @@ def test_unusable_local_pose_sends_fresh_overview_without_old_pin_hints(change):
     assert not state.design_service.busy and not state.cloud_wiring_service.busy
 
 
-@pytest.mark.parametrize("cid", ["hc-sr04", "hw-123", "mrd-tf240-8p-cs"])
+@pytest.mark.parametrize("cid", ["hc-sr04", "mrd-tf240-8p-cs"])
 def test_supported_module_names_are_not_confused_by_same_pin_name(cid):
     body = request(cid, 0)
     body, packet, state, _, _ = setup(body)
@@ -176,6 +176,15 @@ def test_supported_module_names_are_not_confused_by_same_pin_name(cid):
     packet["components"][0]["component_id"] = "not-the-target"
     images, capture = capture_images(state, body)
     assert list(images) == ["pi_overview"] and capture["anchors"] == {}
+
+
+def test_retired_module_cannot_be_used_as_a_current_capture_target():
+    body, _, state, client, bridge = setup()
+    payload = {**body.model_dump(), "component_id": "hw-123", "wire_id": "hw-123:gnd"}
+    response = client.post("/api/guidance/cloud-checks", json=payload)
+    assert response.status_code in {409, 422}
+    assert not state.cloud_wiring_service.jobs
+    bridge.generate.assert_not_called()
 
 
 @pytest.mark.parametrize("field,value", [("board_pin", "GPIO18"), ("component_pin", "GND"), ("connection_kind", "divider"),

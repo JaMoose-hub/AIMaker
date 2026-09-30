@@ -933,9 +933,12 @@ def test_context_change_and_camera_switch_cancel_owned_work(setup):
     changed = deepcopy(context)
     changed["code"] += "\n# edit"
     response = service.action(sid, "context_changed", "changed-1", context=changed)
-    assert response["status"] == "paused"
+    assert response["status"] == "awaiting_capture"
+    assert response["phase"] == "awaiting_user"
+    assert response["evidence"][0]["current"] is False
     assert state.pi_execution.jobs[0]["state"] == "cancelled"
-    assert service.action(sid, "context_changed", "changed-1", context=changed)["status"] == "paused"
+    assert service.action(sid, "context_changed", "changed-1", context=changed)["status"] == "awaiting_capture"
+    service.action(sid, "stop", "explicit-stop")
     fresh = service.create(changed, "new symptom", request_id="create-new")
     assert fresh["id"] != sid
     state.source.current_index = 1

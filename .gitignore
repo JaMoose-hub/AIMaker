@@ -31,6 +31,8 @@ __pycache__/
 coverage/
 .coverage*
 htmlcov/
+# Local browser QA screenshots and generated preview artifacts.
+/frontend/tools/*-artifacts/
 .arduino-user/
 .DS_Store
 Thumbs.db

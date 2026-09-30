@@ -61,3 +61,10 @@ test('An obsolete refresh cannot overwrite configuration after its effect is rep
   assert.deepEqual(h.commits, []);
   assert.deepEqual(h.prepared, []);
 });
+
+test('top toolbar keeps controller and language controls without a Pose badge', () => {
+  const toolbar = readFileSync(new URL('../src/components/RuntimeToolbar.tsx', import.meta.url), 'utf8');
+  assert.match(toolbar, /runtime\.controllerLabel/);
+  assert.match(toolbar, /runtime\.languageLabel/);
+  assert.doesNotMatch(toolbar, /runtime-model-state|runtime\.model(?:4pt|8pt)/);
+});

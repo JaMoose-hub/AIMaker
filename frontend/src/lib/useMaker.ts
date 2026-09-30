@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "./i18n";
-import { initialMaker, restoreMaker, type MakerState } from "./maker";
+import { initialMaker, restoreMaker, localizeStarterPrompt, type MakerState } from "./maker";
 import { MAKER_STORAGE } from "./makerMigration";
 import { testBindings, changedTestBindings, invalidateEditedBindings } from "./componentTests";
 
@@ -10,10 +10,12 @@ export function useMakerText() {
   return (zh: string, en: string): string => locale === "en" ? en : zh;
 }
 export function useMaker() {
+  const { locale } = useI18n();
   const [state, setState] = useState<MakerState>(() => {
     try { return restoreMaker(localStorage.getItem(STORAGE)); } catch { return initialMaker(); }
   });
   const [saved, setSaved] = useState(true);
+  useEffect(() => { setState(s => localizeStarterPrompt(s, locale)); }, [locale, state.prompt, state.aiJobId]);
   const previousBindings = useRef(testBindings(state));
   useEffect(() => {
     const next = testBindings(state);

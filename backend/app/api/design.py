@@ -2,6 +2,7 @@
 import copy
 import threading
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -90,7 +91,7 @@ class DesignService:
             proposal = DesignProposal.model_validate(raw)
             if not set(proposal.component_ids).issubset(body.component_ids):
                 raise ValueError("AI selected a module outside the available parts")
-            design = compile_design(proposal, body.prompt, current=body.current)
+            design = compile_design(proposal, body.prompt, current=body.current, locale=body.locale)
             design["generation"] = {"model": body.model, "effort": body.effort, "design_mode": body.design_mode}
             if body.generate_image:
                 self._render_image(job_id, design, body.model, body.effort, body.current)
@@ -226,8 +227,8 @@ def catalog():
 
 
 @router.get("/design/demo")
-def demo(sensor_only: bool = False):
-    return demo_design(["hc-sr04"] if sensor_only else None)
+def demo(sensor_only: bool = False, locale: Literal["zh-TW", "en"] = "zh-TW"):
+    return demo_design(["hc-sr04"] if sensor_only else None, locale=locale)
 
 
 @router.post("/design/migrate-retired")

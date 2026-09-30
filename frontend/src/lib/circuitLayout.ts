@@ -5,6 +5,12 @@ import type { ProjectDesign, ProjectWire } from "./maker";
 import type { GuidedComponentId } from "./componentWiringGuides";
 
 const visions = { "hc-sr04": ultrasonic, "mrd-tf240-8p-cs": display };
+export interface FrozenCircuitProfile {
+  modules: { id: string; name: { "zh-TW": string; en: string }; safety: { "zh-TW": string; en: string };
+    unresolved: { pin: string; reason: { "zh-TW": string; en: string } }[];
+    pins: { id: string; x_norm: number; y_norm: number }[]; pin_order: string[];
+    header_at_top: boolean; canonical_orientation?: string }[];
+}
 export const CIRCUIT_WIDTH = 840;
 export const PI_TERMINAL_X = 235;
 export const MODULE_X = 452;
@@ -32,14 +38,19 @@ export function circuitSelection(design: ProjectDesign, state: {
 }
 
 /** Pin order and header edge come from camera profiles. Spacing is illustrative. */
-export function circuitLayout(design: ProjectDesign, only?: GuidedComponentId) {
+export function circuitLayout(design: ProjectDesign, only?: GuidedComponentId, frozenProfile?: FrozenCircuitProfile) {
   let top = 112;
   const modules: DiagramModule[] = [];
   for (const id of design.component_ids.filter(cid => !only || cid === only)) {
-    const vision = visions[id];
-    const guide = catalog.modules.find(m => m.id === id)!;
-    const physicalPins = [...vision.pins].sort((a, b) => a.x_norm - b.x_norm);
-    const headerAtTop = physicalPins.reduce((sum, p) => sum + p.y_norm, 0) / physicalPins.length < .5;
+    const frozen = frozenProfile?.modules.find(m => m.id === id);
+    // Historical diagrams must never silently borrow a newer pin profile.
+    if (frozenProfile && !frozen) continue;
+    const vision = frozen ?? visions[id];
+    const guide = frozen ?? catalog.modules.find(m => m.id === id)!;
+    const physicalPins = frozen ? frozen.pin_order.flatMap(pinId => frozen.pins.filter(pin => pin.id === pinId))
+      : [...vision.pins].sort((a, b) => a.x_norm - b.x_norm);
+    if (!physicalPins.length) continue;
+    const headerAtTop = frozen?.header_at_top ?? physicalPins.reduce((sum, p) => sum + p.y_norm, 0) / physicalPins.length < .5;
     const wires = physicalPins.flatMap(p => design.wiring.filter(w => w.componentId === id && w.componentPin === p.id));
     const headerY = headerAtTop ? top + 88 + (wires.length - 1) * 34 : top + 208;
     const bodyY = headerAtTop ? headerY + 14 : top + 66;

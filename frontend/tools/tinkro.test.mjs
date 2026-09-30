@@ -128,7 +128,8 @@ test('primary action, semantic outcomes and keyboard focus remain distinguishabl
 test('isolated visual preview cannot proxy production or contact Pi/cloud', () => {
   const server = read('./tinkro-preview.mjs');
   assert.match(server, /connect-src 'none'/);
-  assert.match(server, /listen\(18770,'127\.0\.0\.1'/);
+  assert.match(server, /startPreview\(port=18770\)/);
+  assert.match(server, /server\.listen\(port,'127\.0\.0\.1'/);
   assert.match(server, /No API in this preview/);
   assert.match(read('./tinkro-preview.tsx'), /window.fetch=async\(\)=>\{throw Error/);
   assert.match(read('./tinkro-preview.tsx'), /window.WebSocket=class \{constructor\(\)\{throw Error/);

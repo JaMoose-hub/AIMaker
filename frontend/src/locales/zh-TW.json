@@ -260,6 +260,11 @@
   "status.locked": "已鎖定",
   "status.stale": "訊號凍結",
   "status.confidence": "信心度",
+  "status.showTools": "顯示相機資訊與工具",
+  "status.tools": "相機工具",
+  "status.toolsTitle": "相機資訊與工具",
+  "status.videoControls": "影像與方向",
+  "status.hideTools": "收起相機資訊與工具",
   "status.poseConfidenceTooltip": "目前影格的板卡與 GPIO 定位信心；接線正確性仍需另外驗證。",
   "status.bodyConfidenceTooltip": "僅為目前影格的板身候選信心，GPIO 尚未定位；不是接線正確率。",
   "status.connected": "已連線",
@@ -397,7 +402,7 @@
   "camera.mirrorLabel": "鏡像",
   "camera.realtime": "即時追蹤（試用）",
   "camera.realtimeWaiting": "等待畫面",
-  "camera.trackingPartial": "局部追蹤，僅顯示有影像支持的 Pin",
+  "camera.trackingPartial": "局部追蹤，GPIO 可能僅依板卡位置推估",
   "camera.trackingConfirming": "確認定位中，Pin 暫停",
   "camera.trackingObstructed": "定位中斷，腳位暫停",
   "camera.trackingBoundaryUnverified": "板緣未確認，GPIO 暫停；請讓整塊板清楚入鏡",
@@ -422,7 +427,7 @@
   "camera.pinCalibrationLeft": "向左移動",
   "camera.pinCalibrationRight": "向右移動",
   "camera.pinCalibrationReset": "重設校正"
-  ,"wiring.title": "接線候選"
+  ,"wiring.candidatesTitle": "接線候選"
   ,"wiring.geometricOnly": "僅幾何證據"
   ,"wiring.guidance": "導引"
   ,"wiring.reason.board_not_tracked": "尚未鎖定板子位置"
@@ -754,4 +759,6 @@
   ,"cameraTune.network": "無法連線；請稍候，伺服器仍會保留或還原設定"
   ,"cameraTune.target_not_visible": "這次無法持續取得可靠的 Pi 5 區域，未調整相機；請保持板子穩定後重試"
   ,"cameraTune.restart_required": "請重新啟動 Tinkro 後端，再使用 Pi 5 定向優化"
+  ,"overlay.motion_prediction": "預測補位 · 非辨識"
+  ,"runtime.languageZh": "繁體中文"
 }

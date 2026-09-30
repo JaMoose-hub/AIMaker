@@ -26,7 +26,7 @@ function supportedLocale(value: string | null | undefined): Locale | null {
   return null;
 }
 
-function initialLocale(): { locale: Locale; preferred: boolean } {
+export function initialLocale(): { locale: Locale; preferred: boolean } {
   if (typeof window === "undefined") return { locale: DEFAULT_LOCALE, preferred: false };
   try {
     const stored = supportedLocale(window.localStorage.getItem(LOCALE_STORAGE_KEY));

@@ -8,10 +8,17 @@ import {
 import { pinDisplayNameWithNumber } from "../lib/capabilities";
 import type { AccuracySummary, Pin } from "../lib/types";
 import { CameraAutoTune } from "./CameraAutoTune";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { cameraToolsPlacement } from "../lib/cameraTools";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 interface StatusBarProps {
+  /** A toolbar trigger with an out-of-flow panel instead of a footer row. */
+  compact?: boolean;
+  active?: boolean;
   webcamTuningVisible?: boolean;
+  /** Controlled by the original VideoView; closing tools never resets them. */
+  videoControls?: ReactNode;
   /** Opens the "新增/校正板型" admin panel. */
   onOpenCalibrate: () => void;
   /** True while there's no loaded board profile to calibrate against (or the backend is down). */
@@ -38,7 +45,10 @@ interface StatusBarProps {
 }
 
 export function StatusBar({
+  compact = false,
+  active = true,
   webcamTuningVisible = false,
+  videoControls = null,
   onOpenCalibrate,
   calibrateDisabled,
   onOpenCameraPicker,
@@ -55,12 +65,59 @@ export function StatusBar({
 }: StatusBarProps) {
   const { t } = useI18n();
   const [cameraTuningBusy, setCameraTuningBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(Date.now);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [portalHost, setPortalHost] = useState<Element | null>(null);
+  const [placement, setPlacement] = useState<ReturnType<typeof cameraToolsPlacement> | null>(null);
   useEffect(() => {
-    if (!webcamTuningVisible) return;
+    // Portal past the clipped video stage, but keep the app's theme variables.
+    if (compact) setPortalHost(triggerRef.current?.closest(".app") ?? null);
+  }, [compact]);
+  useEffect(() => { if (!active) setExpanded(false); }, [active]);
+  useLayoutEffect(() => {
+    if (!compact || !expanded) return;
+    const position = () => {
+      const anchor = triggerRef.current?.getBoundingClientRect();
+      if (anchor) setPlacement(cameraToolsPlacement(anchor, { width: window.innerWidth, height: window.innerHeight }));
+    };
+    position();
+    panelRef.current?.focus({ preventScroll: true });
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [compact, expanded, portalHost]);
+  useEffect(() => {
+    if (!compact || !expanded) return;
+    const outside = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && !triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) setExpanded(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setExpanded(false);
+      triggerRef.current?.focus({ preventScroll: true });
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("focusin", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [compact, expanded]);
+  const openTool = (action: () => void) => { if (compact) setExpanded(false); action(); };
+  useEffect(() => {
+    if (!webcamTuningVisible || !expanded) return;
     const timer = window.setInterval(() => setNow(Date.now()), 500);
     return () => window.clearInterval(timer);
-  }, [webcamTuningVisible]);
+  }, [webcamTuningVisible, expanded]);
   const ws = useDetections();
   const motion = useSyncExternalStore(subscribeMotionDisplay, getMotionDisplay, getMotionDisplay);
   const expectedBoard = boardId ?? ws.runtime?.board_id ?? ws.detection?.board_id;
@@ -119,8 +176,20 @@ export function StatusBar({
     ? pinDisplayNameWithNumber(pinsById.get(ws.guidance.expected_pin_id)) || ws.guidance.expected_pin_id
     : null;
 
-  return (
-    <div className="statusbar">
+  const content = (
+      <div id="camera-status-details" ref={panelRef} className={`statusbar-content${compact ? " camera-tools-popover" : ""}`} hidden={!expanded || !active}
+        role={compact ? "dialog" : undefined} aria-label={compact ? t("status.toolsTitle") : undefined}
+        tabIndex={compact ? -1 : undefined} style={compact && placement ? placement : undefined}>
+      {compact && <div className="camera-tools-heading">
+        <strong>{t("status.toolsTitle")}</strong>
+        <button type="button" aria-label={t("status.hideTools")} onClick={() => {
+          setExpanded(false); triggerRef.current?.focus({ preventScroll: true });
+        }}>×</button>
+      </div>}
+      {videoControls ? <section className="camera-tools-video-controls" aria-label={t("status.videoControls")}>
+        <strong>{t("status.videoControls")}</strong>
+        {videoControls}
+      </section> : null}
       <div className="status-metrics">
       <span className={`pill ${pillClass}`}>
         <span className="pill-dot" aria-hidden="true" />
@@ -165,7 +234,7 @@ export function StatusBar({
       <button
         type="button"
         className="calibrate-trigger"
-        onClick={onOpenCalibrate}
+        onClick={() => openTool(onOpenCalibrate)}
         disabled={calibrateDisabled || cameraTuningBusy}
         title={t("calibrate.triggerTooltip")}
       >
@@ -175,7 +244,7 @@ export function StatusBar({
         <button
           type="button"
           className="camera-trigger"
-          onClick={onOpenCameraPicker}
+          onClick={() => openTool(onOpenCameraPicker)}
           disabled={cameraPickerDisabled || cameraTuningBusy}
           title={t("camera.triggerTooltip")}
         >
@@ -209,7 +278,7 @@ export function StatusBar({
       <button
         type="button"
         className="smart-glasses-trigger"
-        onClick={onEnterSmartGlassesDemo}
+        onClick={() => openTool(onEnterSmartGlassesDemo)}
         disabled={smartGlassesDemoDisabled || cameraTuningBusy}
         title={t("smartGlasses.enterTooltip")}
       >
@@ -218,13 +287,24 @@ export function StatusBar({
       <button
         type="button"
         className="optical-hud-trigger"
-        onClick={onEnterOpticalHud}
+        onClick={() => openTool(onEnterOpticalHud)}
         disabled={opticalHudDisabled || cameraTuningBusy}
         title={t("opticalHud.enterTooltip")}
       >
         {t("opticalHud.enter")}
       </button>
       </div>
+      </div>
+  );
+  return (
+    <div className={`statusbar${compact ? " camera-tools-menu" : ""}${expanded ? " expanded" : ""}`} hidden={!active}>
+      <button ref={triggerRef} type="button" className="statusbar-toggle" aria-expanded={expanded} aria-controls="camera-status-details"
+        aria-haspopup={compact ? "dialog" : undefined}
+        onClick={() => { setNow(Date.now()); setExpanded(open => !open); }}>
+        <span aria-hidden="true">{compact ? "⚙" : expanded ? "▾" : "▴"}</span>
+        {t(compact ? "status.tools" : expanded ? "status.hideTools" : "status.showTools")}
+      </button>
+      {compact && typeof document !== "undefined" ? portalHost ? createPortal(content, portalHost) : null : content}
     </div>
   );
 }

@@ -1,4 +1,31 @@
-# C920 重啟時的設定一致性
+# 相機重啟時的設定一致性
+
+## MX Brio 預設啟動（2026-09-30）
+
+本機 `backend/config.yaml`、`scripts/camera.ps1` 與 `scripts/camera-yolo.ps1`
+均預設使用 MX Brio；FFmpeg 以裝置名稱選取，索引 0 只代表當次的 DShow
+枚舉順序。直接啟動後端、demo 與 dev 入口沿用這份本機設定；通用的
+`config.example.yaml` 不覆寫本機工作設定。明確指定其他相機的參數仍保留。
+
+保留原本 1920×1080、30 FPS 設定與 FFmpeg MJPEG 傳輸。切換前先唯讀取得
+MX Brio 本身的 UVC 值：焦距 40、曝光 -5、增益 0、白平衡 5000、亮度 133、
+對比／飽和度／銳利度 128、背光補償 1，均為 manual；新啟動設定重用這些值，
+不是沿用 C920 的焦距 10 或亮度 128，也不是重新做智慧調整／焦距掃描。
+未量測 MX Brio 的專用鏡頭校正，因此 `calibration_path`／`horizontal_fov_deg`
+設為 null，不挪用 C920 的校正檔或視角；不代表幾何精度已經驗收。
+
+本輪直接重啟後端後，`/api/cameras` 回報 MX Brio 為 `is_current=true`、
+`available=true`、`signal_status=live`，尺寸 1920×1080。`/frame.jpg` 為 HTTP 200，
+已查看實拍；即時追蹤 seq 1804→1805，來源尺寸也是 1920×1080。
+`/api/camera/focus` 的九項 UVC 設定全部 `Verified=true`，另一次唯讀控制讀回
+也確認焦距、曝光、亮度與白平衡保留。啟動日誌為
+`mx-brio-startup-20260930-165444.err.log`；舊設定備份及實拍位於
+`.tmp-mx-brio-startup-20260930/`，未刪除舊校正資料。
+
+兩個 PowerShell 入口語法解析無錯誤；相機啟動預設、裝置辨識／切換、原生 UVC、
+模式、智慧調整及相機模型共 82 項集中測試通過。未重跑全量測試，沒有啟動 Pi
+作品或雲端模型，也不將單次重啟／影像確認當成長時間 FPS、GPIO／電氣或
+辨識精度驗收。以下 C920 紀錄保留為歷史說明，不是目前啟動設定。
 
 ## 已觀察的問題
 

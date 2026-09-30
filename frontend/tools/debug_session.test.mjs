@@ -4,13 +4,23 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
+import {systemText} from './system_text_fixture.mjs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+const makerCatalog = JSON.parse(read('../../profiles/component-catalog.json'));
 const sessionHelpers = {};
 new Function('require', 'exports', ts.transpileModule(read('../src/lib/debugSessions.ts'), {
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
 }).outputText)(() => ({}), sessionHelpers);
 const {sameDebugTestKeys} = sessionHelpers;
+const evidenceHelpers = {};
+new Function('require', 'exports', ts.transpileModule(read('../src/lib/debugEvidence.ts'), {
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
+}).outputText)(() => ({}), evidenceHelpers);
+const photoModule = {};
+new Function('React', 'require', 'exports', ts.transpileModule(read('../src/components/PhotoEvidenceCard.tsx'), {
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React},
+}).outputText)(React, name => name === 'react' ? React : name.includes('debugEvidence') ? evidenceHelpers : {useMakerText:()=>zh=>zh}, photoModule);
 const source = read('../src/components/AiDebugPanel.tsx');
 const tree = ts.createSourceFile('AiDebugPanel.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let declaration;
@@ -23,9 +33,10 @@ assert.ok(declaration);
 const js = ts.transpileModule(declaration.getText(tree).replace(/^export\s+/, ''), {
   compilerOptions: {target:ts.ScriptTarget.ES2022, jsx:ts.JsxEmit.React},
 }).outputText;
-const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys',
+const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys','PhotoEvidenceCard','DiagramEvidenceCard','debugEvidenceUrl','evidenceSessionId','makerCatalog','systemText',
   `${js}; return AiDebugPanel;`)(React, () => (zh) => zh, value => [value, () => {}], effect, effect, value => ({current:value}),
-    status => ['complete','stopped','error'].includes(status), value => String(value), (_, guide) => guide.complete, sameDebugTestKeys);
+    status => ['complete','stopped','error'].includes(status), value => String(value), (_, guide) => guide.complete, sameDebugTestKeys,
+    photoModule.PhotoEvidenceCard,()=>null,evidenceHelpers.debugEvidenceUrl,evidenceHelpers.evidenceSessionId,makerCatalog,systemText);
 const AiDebugPanel = makePanel();
 
 const context = {project:{id:'project'}, code:'draft', test_keys:{'hc-sr04':'hc-key','mrd-tf240-8p-cs':'tft-key'}, entry:{}}; // gitleaks:allow -- synthetic wiring signatures, not credentials
@@ -39,11 +50,11 @@ const base = {
   current_target:true,camera:{source:'device',runtime_revision:4},updated_at:1,
 };
 function render(record=base, options={}) {
-  const session = {record,pending:false,error:'',create(){throw Error('render must not create')},action(){throw Error('render must not act')},contextChanged(){if(options.onContextChanged)options.onContextChanged();else throw Error('render must not mutate')}};
+  const session = {record,conversation:options.conversation,pending:false,error:'',create(){throw Error('render must not create')},action(){throw Error('render must not act')},async contextChanged(){if(options.onContextChanged)options.onContextChanged();else throw Error('render must not mutate')}};
   const Panel = options.effects ? makePanel(effect => options.effects.push(effect)) : AiDebugPanel;
   return renderToStaticMarkup(React.createElement(Panel,{state:{...state,guide:{complete:options.wired??true},debug:{symptom:options.symptom??''}},context,currentCodeHash:options.hash??'hash',repairCaseId:options.repairCaseId??null,repairAppliedHash:options.repairAppliedHash??null,repairCandidateReady:options.repairCandidateReady??false,session,
     webcamReady:options.webcamReady??true,eyeActive:options.eyeActive??false,cameraSource:options.cameraSource??'device',cameraRuntimeRevision:options.revision??4,
-    onReturnWebcam(){},onCase(){},onRetest(){},onTrial(){},onReviewRepair(){},onManual(){},onWiring(){}}));
+    variant:options.variant??'debug',onReturnWebcam(){},onCase(){},onRetest(){},onTrial(){},onReviewRepair(){},onManual(){},onWiring(){}}));
 }
 
 test('Check for me sends a visual session request with the selected cloud model and current context',async()=>{
@@ -53,7 +64,7 @@ test('Check for me sends a visual session request with the selected cloud model 
   const code=ts.transpileModule(sendNode.getText(tree),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   for(const entry of ['', '螢幕有亮但距離不動']) {
     const calls=[];
-    const bindings={entry,active:false,canStart:true,canAct:false,record:null,responseMode:'fast',context,state,tr:zh=>zh,setEntry(){},session:{pending:false,
+    const bindings={entry,active:false,canStart:true,canAct:false,canMessage:false,wiringMode:false,record:null,responseMode:'fast',context,actionContext:context,state,tr:zh=>zh,setEntry(){},session:{pending:false,
       create:async(...args)=>{calls.push(args);return {id:'new-session'};},
       action(){throw Error('Fresh checks must create a visual session');}}};
     const send=new Function(...Object.keys(bindings),`${code};return send;`)(...Object.values(bindings));
@@ -127,7 +138,7 @@ test('AI can inspect the camera before wiring confirmation and without a symptom
   assert.match(html,/<button[^>]*>幫我檢查<\/button>/);
   assert.doesNotMatch(html,/<button[^>]*disabled=""[^>]*>幫我檢查<\/button>/);
   const blocked=render({...base,status:'paused',phase:'wiring_required'},{wired:false});
-  assert.match(blocked,/完成 03 接線確認/);
+  assert.match(blocked,/完成 02 接線確認/);
   assert.doesNotMatch(blocked,/重新檢查後繼續|手動拍照|已調整，讓 AI 再看/);
 });
 
@@ -248,19 +259,19 @@ test('stopped sessions keep read-only evidence without stale stop requests or ol
   assert.match(html,/本次 AI 協作除錯已停止/);
   assert.match(html,/看到紅色畫面/);
   assert.match(html,/sessions\/session\/evidence\/photo/);
-  assert.doesNotMatch(html,/請停止舊工作階段|請回到 03 完成逐腳接線確認|class="pi-error"/);
+  assert.doesNotMatch(html,/請停止舊工作階段|請回到 02 完成逐腳接線確認|class="pi-error"/);
   const failed=render({...base,status:'error',phase:'error',error:'camera_frame_unavailable'});
   assert.match(failed,/尚未收到鏡頭畫面/);
 });
 
-test('04 reuses the same VideoView and does not mount another component test owner',()=>{
+test('merged wiring and debug reuse the same VideoView and component test owner',()=>{
   const app=read('../src/App.tsx');
   const page=read('../src/components/DebugPage.tsx');
   const video=read('../src/components/VideoView.tsx');
   assert.equal((app.match(/<VideoView\b/g)??[]).length,1);
-  assert.match(app,/makerStage !== "guide" && makerStage !== "debug"/);
-  assert.match(app,/project && makerStage === "guide" && maker\.guide\.mode === "2d"/);
-  assert.equal((page.match(/useComponentTests\(/g)??[]).length,1);
+  assert.match(app,/<GuidePaneLayout[\s\S]*?visible=\{makerStage === "guide"\}/);
+  assert.match(app,/Boolean\(projectWire \|\| diagramInspection\) && makerStage === "guide" && maker\.guide\.mode === "2d"/);
+  assert.match(read('../src/lib/useComponentTests.ts'), /componentTestStore/, 'component controls share the project store');
   assert.match(video,/toDisplay\(baseLetterbox, x \* videoWidth/);
   assert.match(video,/!debugView && !glassesLeaving/);
   assert.match(app,/debugCaptureTask=\{debugCaptureSession\?\.capture_task\}/);
@@ -268,6 +279,49 @@ test('04 reuses the same VideoView and does not mount another component test own
   assert.match(app,/debugFramingFeedback=\{debugCaptureSession\?\.framing_feedback\}/);
   assert.match(video,/low_edge_detail/);
   assert.match(video,/exposure_clipping/);
+});
+
+test('capture guidance remains available with original Pin overlays and respects camera source and mirrors',()=>{
+  const videoTree=ts.createSourceFile('VideoView.tsx',read('../src/components/VideoView.tsx'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let callback;
+  function find(node) {
+    if(ts.isVariableDeclaration(node)&&node.name.getText(videoTree)==='debugCaptureBox') callback=node.initializer.arguments[0];
+    ts.forEachChild(node,find);
+  }
+  find(videoTree);assert.ok(callback);
+  const body=ts.transpileModule(`return (${callback.getText(videoTree)})();`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const box=new Function('debugView','debugCaptureTask','config','glassesLeaving','baseLetterbox','videoWidth','videoHeight','toDisplay',body);
+  const geometry={};new Function('require','exports',ts.transpileModule(read('../src/lib/geometry.ts'),{
+    compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
+  }).outputText)(()=>({}),geometry);
+  const task={target:'overview',instruction:'Keep the target in view'};
+  for(const mx of [false,true]) for(const my of [false,true]) {
+    const transform=geometry.computeLetterbox([1920,1080],800,600,mx,my);
+    const selected=box(false,task,{camera_source:'device'},false,transform,1920,1080,geometry.toDisplay);
+    assert.ok(selected,'Wiring mode must display the requested capture region');
+    for(const [key,value] of Object.entries({left:32,top:102,width:736,height:396})) assert.ok(Math.abs(selected[key]-value)<0.001);
+    for(const [capture,source,leaving] of [[null,'device',false],[task,'xreal',false],[task,'device',true]]) {
+      assert.equal(box(false,capture,{camera_source:source},leaving,transform,1920,1080,geometry.toDisplay),null);
+    }
+  }
+  assert.match(read('../src/components/VideoView.tsx'),/debugCaptureBox \? <div className="debug-capture-feedback"/);
+});
+
+test('2D preference resumes after capture without hiding the requested shared camera',()=>{
+  const appTree=ts.createSourceFile('App.tsx',read('../src/App.tsx'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let initializer;
+  function find(node) {
+    if(ts.isVariableDeclaration(node)&&node.name.getText(appTree)==='showWiringDiagram') initializer=node.initializer;
+    ts.forEachChild(node,find);
+  }
+  find(appTree);assert.ok(initializer);
+  const show=new Function('projectWire','makerStage','maker','displayModeActive','debugCaptureSession','diagramCaptureOverride','diagramCaptureKey','calibrateOpen = false','diagramInspection = null',`return ${initializer.getText(appTree)};`);
+  const maker={guide:{mode:'2d'}};
+  assert.equal(show({},'guide',maker,false,null),true);
+  assert.equal(show({},'guide',maker,false,{capture_task:{target:'pi_header'}},null,'new-capture'),false);
+  assert.equal(show({},'guide',maker,false,null),true);
+  assert.equal(maker.guide.mode,'2d');
+  assert.equal(show({},'guide',maker,true,null),false);
 });
 
 test('camera guidance clears when a session is stopped, stale or awaiting a text answer',()=>{
@@ -282,16 +336,16 @@ test('camera guidance clears when a session is stopped, stale or awaiting a text
   assert.ok(initializer);
   const select=new Function('makerStage','aiDebug',`return ${initializer.getText(appTree)};`);
   const capturing={...base,status:'awaiting_capture',phase:'guided_observation',capture_task:{target:'hc_target',instruction:'靠近接頭'}};
-  assert.equal(select('debug',{record:capturing}),capturing);
+  assert.equal(select('guide',{record:capturing}),capturing);
   const observing={...capturing,phase:'observing_photo',model_busy:true};
-  assert.equal(select('debug',{record:observing}),observing);
+  assert.equal(select('guide',{record:observing}),observing);
   for(const record of [null,
     ...['stopped','complete','error','paused','testing'].map(status=>({...capturing,status})),
     ...['awaiting_user','context_changed','camera_changed','backend_restarted'].map(phase=>({...capturing,phase})),
     {...capturing,current_target:false},{...capturing,camera_current:false}]) {
-    assert.equal(select('debug',{record}),null);
+    assert.equal(select('guide',{record}),null);
   }
-  assert.equal(select('guide',{record:capturing}),null);
+  assert.equal(select('deploy',{record:capturing}),null, 'capture overlays stay in the merged wiring workspace');
 });
 
 test('persisted conversation renders once in chronological order with only its own image attachments',()=>{
@@ -392,4 +446,82 @@ test('late stopped-session polls cannot replace the id or storage of a new sessi
     await pending;
     assert.deepEqual(writes,[],'outdated polls must not mutate any visible or persisted state');
   }
+});
+
+test('wiring questions start a text review while an explicit capture requests a new photo',async()=>{
+  let sendNode,captureNode;
+  function find(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='send')sendNode=node;if(ts.isFunctionDeclaration(node)&&node.name?.text==='captureStep')captureNode=node;ts.forEachChild(node,find);}
+  find(tree);
+  const calls=[];
+  const bindings={entry:'ECHO 要接哪裡？',active:false,canStart:true,canAct:false,canMessage:false,wiringMode:true,record:null,webcamReady:true,responseMode:'fast',actionContext:context,state,tr:zh=>zh,setEntry(){},session:{pending:false,create:async(...args)=>{calls.push(args);return {id:'created'};}}};
+  for(const node of [sendNode,captureNode]){
+    const code=ts.transpileModule(node.getText(tree),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+    await new Function(...Object.keys(bindings),`${code};return ${node.name.text};`)(...Object.values(bindings))();
+  }
+  assert.equal(calls.length,2);
+  assert.deepEqual(calls[0][5],{purpose:'wiring_review'});
+  assert.deepEqual(calls[1][5],{purpose:'wiring_review',initial_action:'capture'});
+});
+
+test('wiring text remains available without Webcam and does not imply any hardware operation',()=>{
+  const html=render(null,{variant:'wiring',webcamReady:false,symptom:'這條線是接哪一腳？'});
+  assert.match(html,/Pi 尚未開機也可以先討論/);
+  assert.match(html,/仍可先詢問接法/);
+  assert.match(html,/<button[^>]*>送出<\/button>/);
+  assert.match(html,/<button[^>]*disabled=""[^>]*>拍攝這一步<\/button>/);
+  assert.match(html,/<button[^>]*aria-controls="debug-manual-tools"[^>]*>手動測試工具<\/button>/);
+  assert.doesNotMatch(html,/幫我檢查<\/button>/);
+});
+
+test('shared history retains old-check photo ownership and survives without a live session',()=>{
+  const conversation={id:'conversation',messages:[{id:'historic',session_id:'older-check',role:'assistant',text:'先前這張圖看到接頭',capture_ids:['photo'],created_at:0}],
+    evidence:[{...base.evidence[0],session_id:'older-check'}],diagrams:[]};
+  for(const record of [base,null]){
+    const html=render(record,{conversation});
+    assert.match(html,/先前這張圖看到接頭/);
+    const historic=html.slice(html.indexOf('data-message-id="historic"'),html.indexOf('</article>',html.indexOf('data-message-id="historic"')));
+    assert.match(historic,/sessions\/older-check\/evidence\/photo/);
+    assert.doesNotMatch(historic,/sessions\/session\/evidence\/photo/);
+  }
+  const expired=render(base,{conversation:{...conversation,evidence:[]}});
+  const historic=expired.slice(expired.indexOf('data-message-id="historic"'),expired.indexOf('</article>',expired.indexOf('data-message-id="historic"')));
+  assert.match(historic,/此輪照片已過期/);
+  assert.doesNotMatch(historic,/<img/,'the current session must not impersonate missing historical evidence');
+});
+
+test('a fresh budget requires the explicit new-check action and stops the prior check first',async()=>{
+  let declaration;
+  function find(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='startNewCheck')declaration=node;ts.forEachChild(node,find);}
+  find(tree);
+  const code=ts.transpileModule(declaration.getText(tree),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const calls=[];
+  const bindings={canStart:true,active:true,record:{...base,purpose:'wiring_review'},entry:'',actionContext:context,state,responseMode:'fast',wiringMode:true,tr:zh=>zh,setEntry(){},
+    session:{pending:false,action:async(name)=>{calls.push(name);return {status:'stopped'};},create:async(...args)=>{calls.push(['create',args[5]]);return {id:'new'};}}};
+  const start=new Function(...Object.keys(bindings),`${code};return startNewCheck;`)(...Object.values(bindings));
+  assert.deepEqual(calls,[]);
+  await start();
+  assert.deepEqual(calls,['stop',['create',{purpose:'wiring_review'}]]);
+  const html=render({...base,status:'paused',phase:'model_limit',error:'model_call_limit_reached'});
+  assert.match(html,/開始新一輪檢查/);
+  assert.match(html,/保留對話與先前證據/);
+});
+
+test('rapid wiring confirmations retry the newest context after an earlier refresh finishes',async()=>{
+  let callback;
+  function find(node){if(ts.isCallExpression(node)&&node.expression.getText(tree)==='useEffect'&&node.arguments[0]?.getText(tree).includes('const changedKey ='))callback=node.arguments[0];ts.forEachChild(node,find);}
+  find(tree);assert.ok(callback);
+  const code=ts.transpileModule(`const refreshEffect = ${callback.getText(tree)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const staleNotified={current:null},calls=[];
+  let pending=false,finish;
+  const session={async contextChanged(next){if(pending)return;pending=true;calls.push(next);await new Promise(resolve=>{finish=resolve;});pending=false;return base;}};
+  const first={...context,test_keys:{hc:'first-confirmation'}},latest={...context,test_keys:{hc:'second-confirmation'}};
+  function effect(next){const bindings={record:base,active:true,current:false,approvedRepairCode:false,sameProject:true,currentCodeHash:'hash',cameraSource:'device',cameraRuntimeRevision:4,context:next,actionContext:next,staleNotified,session};return new Function(...Object.keys(bindings),`${code};return refreshEffect;`)(...Object.values(bindings));}
+  effect(first)();
+  effect(latest)();
+  await Promise.resolve();
+  assert.equal(staleNotified.current,null,'an in-flight or skipped refresh cannot acknowledge newer wiring');
+  finish();await Promise.resolve();await Promise.resolve();
+  effect(latest)();
+  assert.deepEqual(calls,[first,latest],'the second confirmation must not remain permanently stale');
+  finish();await Promise.resolve();await Promise.resolve();
 });

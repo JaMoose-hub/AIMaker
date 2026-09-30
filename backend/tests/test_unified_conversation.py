@@ -69,10 +69,15 @@ def test_auto_schema_prompt_and_estimate_keep_question_boundary(tmp_path):
     assert 'SECRET' not in prompt and 'keep the screen' in prompt
     assert 'ambiguous requests: action=answer' in prompt
     assert 'proposal=null' in prompt and 'explicit request' in prompt
+    assert 'The answer field is the actual chat reply, not a project summary' in prompt
+    assert 'at most two short sentences' in prompt
+    assert 'Do not repeat the title, full design, module list, BOM' in prompt
+    assert 'Keep relevant safety conditions, unknowns and limitations explicit' in prompt
     schema=proposal_schema('auto')
     assert set(schema['required']) == {'action','answer','proposal'}
     assert schema['additionalProperties'] is False
     assert set(schema['$defs']['DesignProposal']['required']) == set(schema['$defs']['DesignProposal']['properties'])
+    assert 'concise chat reply' in schema['properties']['answer']['description']
     estimate=DesignService(ChatBridge('answer'),ProjectImageStore(tmp_path)).estimate(body)
     assert estimate['image_generation']['conditional'] is True
     assert estimate['image_generation']['requested'] is False
@@ -84,6 +89,38 @@ def test_demo_is_local_and_does_not_call_ai():
     demo=c.get('/api/design/demo').json()
     assert demo['source']=='demo' and len(demo['component_ids'])==2
     assert b.text_calls==0 and not b.image_calls
+
+
+@pytest.mark.parametrize('intent', ['ask', 'auto'])
+@pytest.mark.parametrize('locale', ['zh-TW', 'en'])
+def test_actual_cloud_prompt_and_schema_prefer_brief_paragraphs(intent, locale):
+    body = GenerateRequest(prompt='Make the base circular', intent=intent, locale=locale,
+                           component_ids=['hc-sr04'])
+    prompt = build_design_prompt(body)
+    assert 'Default to a short plain paragraph of 1-3 brief sentences' in prompt
+    assert 'Do NOT format every reply as a list' in prompt
+    assert 'Use a list only for two or more actionable steps' in prompt
+    assert 'under 120 Chinese characters or 50 English words' in prompt
+    assert 'If the user explicitly asks for detail, provide it' in prompt
+    assert 'Never shorten away essential safety' in prompt
+    assert 'Never claim to inspect' in prompt or 'Do not claim to test' in prompt
+    assert 'at most two short points' not in prompt
+    description = proposal_schema(intent)['properties']['answer']['description']
+    assert 'short plain paragraph' in description and 'list only' in description
+
+
+def test_brief_style_is_sent_to_cloud_and_reply_is_not_rewritten_by_server(tmp_path):
+    answer = '已改為雙層圓盤造型，距離警告設定不變。確認右側預覽後再套用。'
+    bridge = ChatBridge('answer')
+    bridge.reply['answer'] = answer
+    c, app = client(bridge)
+    app.state.design_service.images = ProjectImageStore(tmp_path)
+    response = c.post('/api/design/generate', json=dict(prompt='What changed?', intent='auto',
+        component_ids=['hc-sr04'], generate_image=True))
+    result = completed(app.state.design_service, response.json()['job_id'])
+    assert 'Do NOT format every reply as a list' in bridge.prompt
+    assert result['answer'] == answer
+    assert result['design'] is None and not bridge.image_calls
 
 
 @pytest.mark.parametrize('action', ['revise', 'redesign'])

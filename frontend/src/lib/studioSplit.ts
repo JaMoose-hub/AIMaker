@@ -36,3 +36,37 @@ export function keySplitRatio(key: string, shift: boolean, left: number, width: 
   if (key === "ArrowRight") return splitRatioForLeft(left + step, width);
   return null;
 }
+
+export const GUIDE_SPLIT_HANDLE_WIDTH = 18;
+export const GUIDE_SPLIT_STORAGE_KEY = "boardvision.guide-split.v1";
+
+/** Camera and guide share one grid; resizing the grid leaves the video/overlay tree intact. */
+export function guideSplitGeometry(width: number, ratio: number | null) {
+  const available = Math.max(0, (Number.isFinite(width) ? width : 0) - GUIDE_SPLIT_HANDLE_WIDTH);
+  const minRight = Math.min(280, available / 2);
+  const minCamera = available >= 760 ? 480 : available / 2;
+  const maxRight = Math.min(700, Math.max(minRight, available - minCamera));
+  const fallback = Math.min(400, Math.max(320, available * .3));
+  const requested = ratio !== null && Number.isFinite(ratio) ? available * ratio : fallback;
+  const right = Math.min(maxRight, Math.max(minRight, requested));
+  return { available, minRight, maxRight, right, left: available - right };
+}
+
+export function guideRatioForRight(right: number, width: number) {
+  const { available, minRight, maxRight } = guideSplitGeometry(width, null);
+  return available ? Math.min(maxRight, Math.max(minRight, Number.isFinite(right) ? right : minRight)) / available : .5;
+}
+
+export function dragGuideRatio(startRight: number, startX: number, clientX: number, width: number) {
+  return guideRatioForRight(startRight - (clientX - startX), width);
+}
+
+export function keyGuideRatio(key: string, shift: boolean, right: number, width: number): number | null {
+  const { minRight, maxRight } = guideSplitGeometry(width, null);
+  const step = shift ? 80 : 24;
+  if (key === "Home") return guideRatioForRight(maxRight, width);
+  if (key === "End") return guideRatioForRight(minRight, width);
+  if (key === "ArrowLeft") return guideRatioForRight(right + step, width);
+  if (key === "ArrowRight") return guideRatioForRight(right - step, width);
+  return null;
+}

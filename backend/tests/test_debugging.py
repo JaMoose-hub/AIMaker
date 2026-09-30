@@ -80,6 +80,16 @@ def analyse(cases, case, context=None):
     return case["candidate"]
 
 
+def test_analysis_uses_current_ui_language_not_saved_case_language(setup):
+    pi, tests, trials, queue, cases, agent = setup
+    case = diagnose(cases, {**ctx(), "locale": "zh-TW"})
+    binding = deepcopy(case["binding"])
+    analyse(cases, case, {**ctx(), "locale": "en"})
+    assert agent.prompts[-1].startswith("RESPONSE LANGUAGE:")
+    assert "in English." in agent.prompts[-1]
+    assert case["binding"] == binding and not queue.jobs and not pi.files
+
+
 def launch(trials, context=None):
     assert trials.start(context or ctx())["ok"]
     run = trials._active()
@@ -277,7 +287,7 @@ def test_api_no_project_diagnosis_available_apply_requires_explicit_confirmation
 
 def test_observations_only_in_known_scaffold():
     observed, trusted = observed_source(ctx()["code"])
-    assert trusted and "__bv_emit('sample'" in observed and "__bv_emit('display'" in observed
+    assert trusted and "_bv_emit('sample'" in observed and "_bv_emit('display'" in observed
     custom = "print('arbitrary program')"
     assert observed_source(custom) == (custom, False)
 

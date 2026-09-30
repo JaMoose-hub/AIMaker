@@ -33,6 +33,9 @@ test('telemetry wraps fixed-width slots without a scrollbar or clipping live val
   assert.ok(widths.reduce((sum, width) => sum + width, 0) + 8 * 10 <= 1600);
   assert.equal(declarations('.statusbar').padding, '5px 10px');
   assert.equal(declarations('.statusbar').gap, '4px 10px');
+  assert.equal(declarations('.statusbar').width, 'fit-content');
+  assert.equal(declarations('.statusbar.expanded').width, '100%');
+  assert.equal(declarations('.statusbar-content[hidden]').display, 'none');
   const actions = declarations('.status-actions');
   assert.equal(actions['min-height'], '30px');
   assert.equal(actions['flex-wrap'], 'wrap');
@@ -76,10 +79,12 @@ const js = transpileModule(stripImports(source), {
 }).outputText;
 const exports = {};
 new Function('exports', 'React', 'useState', 'useEffect', 'useRef', 'useSyncExternalStore',
+  'useLayoutEffect', 'createPortal', 'cameraToolsPlacement',
   'useI18n', 'useDetections', 'getMotionDisplay', 'subscribeMotionDisplay',
   'advanceBoardStatus', 'currentPitchSample', 'distanceScaleAdvice', 'hasCurrentBoardBody',
   'pinDisplayNameWithNumber', 'CameraAutoTune', js)(
   exports, React, React.useState, React.useEffect, React.useRef, React.useSyncExternalStore,
+  React.useEffect, content => content, () => ({}),
   () => ({ t: key => key }), () => snapshot, () => motionSnapshot, () => () => {},
   distance.advanceBoardStatus, distance.currentPitchSample, distance.distanceScaleAdvice,
   distance.hasCurrentBoardBody,
@@ -87,6 +92,33 @@ new Function('exports', 'React', 'useState', 'useEffect', 'useRef', 'useSyncExte
     'data-camera-auto': alignment ? 'pi-alignment' : 'camera-only',
   }),
 );
+
+test('compact camera tools retain every action behind a toolbar trigger', () => {
+  snapshot = { detection: null, connected: false, detectionsPerSec: 0 };
+  motionSnapshot = undefined;
+  const html = renderToStaticMarkup(React.createElement(exports.StatusBar, {
+    compact: true, pinsById: new Map(), accuracy: null, cameraPickerVisible: true, webcamTuningVisible: true,
+  }));
+  assert.match(html, /class="statusbar camera-tools-menu"/);
+  assert.match(html, /aria-haspopup="dialog"/);
+  assert.match(html, /status.tools</);
+  assert.match(html, /class="statusbar-content camera-tools-popover" hidden=""/);
+  for (const key of ['camera.triggerLabel', 'calibrate.triggerLabel', 'distanceAssistant.title', 'smartGlasses.enter', 'opticalHud.enter']) assert.ok(html.includes(key));
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /viewControl=\{videoControls => <>[\s\S]*?\{renderCameraTools\(videoControls\)\}<\/>\}/);
+  assert.doesNotMatch(app, /<div hidden=\{makerEnabled && makerStage === "design"\}><StatusBar/);
+});
+test('camera tools place supplied video actions in one labelled section above telemetry', () => {
+  snapshot = { detection: null, connected: false, detectionsPerSec: 0 };
+  motionSnapshot = undefined;
+  const html = renderToStaticMarkup(React.createElement(exports.StatusBar, {
+    compact: true, pinsById: new Map(), accuracy: null,
+    videoControls: React.createElement('button', {'data-video-action':true}, 'Video control'),
+  }));
+  assert.match(html,/<section class="camera-tools-video-controls" aria-label="status.videoControls">/);
+  assert.equal((html.match(/data-video-action="true"/g)??[]).length,1);
+  assert(html.indexOf('data-video-action') < html.indexOf('class="status-metrics"'));
+});
 test('telemetry retains the same slots when confidence and geometry disappear', () => {
   const frames = [
     { detection: null, connected: false, detectionsPerSec: 0 },
@@ -103,6 +135,8 @@ test('telemetry retains the same slots when confidence and geometry disappear', 
   assert.match(markup[0], /—/);
   assert.match(markup[2], /status.waitingFrame/);
   assert.ok(markup.every(html => html.includes('status-metrics') && html.includes('status-actions')));
+  assert.ok(markup.every(html => html.includes('class="statusbar-toggle" aria-expanded="false"')));
+  assert.ok(markup.every(html => html.includes('class="statusbar-content" hidden=""')));
 });
 
 test('distance guide uses live source pixels, the worker gate, and fresh matching traces', () => {

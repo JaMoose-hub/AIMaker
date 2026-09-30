@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
+import {systemTextUrl} from './system_text_fixture.mjs';
 
 const url = text => `data:text/javascript;base64,${Buffer.from(text).toString('base64')}`;
 function compile(path, replacements={}) {
@@ -15,10 +16,11 @@ function compile(path, replacements={}) {
 }
 const apiUrl=compile('lib/piApi.ts'), api=await import(apiUrl);
 const textUrl=url('export const useMakerText=()=> (zh,en)=>zh;');
-const localeUrl=url('export const useI18n=()=>({t:key=>key});');
+const localeUrl=url('export const useI18n=()=>({locale:"zh-TW",t:key=>key});');
 async function render(name, status, props={}, connection={}) {
   const context=url(`export const usePiConnection=()=>({...${JSON.stringify({status,pending:false,networkError:false,error:null,...connection})},connect(){},action(){},perform(){}});`);
   const module=await import(compile(`components/${name}.tsx`,{'../lib/piApi':apiUrl,'../lib/PiConnection':context,
+    '../lib/systemText':systemTextUrl,
     '../lib/useMaker':textUrl,'../lib/i18n':localeUrl,'../lib/wiringGuideProfiles':url('export const piPhotoresistorExample=()=>"print(1)";')}));
   return renderToStaticMarkup(createElement(module[name],props));
 }
@@ -59,6 +61,16 @@ test('empty deployment view has no duplicate Pi connection card or badge',async(
   }
   const css=readFileSync(new URL('../src/debug.css',import.meta.url),'utf8');
   assert.match(css,/\.deploy-workspace\s*\{[^}]*grid-template-columns:minmax\(0,1\.05fr\) minmax\(0,\.95fr\)/);
+});
+
+test('deployment cards stretch equally and give extra space to the editor or output',()=>{
+  const css=readFileSync(new URL('../src/debug.css',import.meta.url),'utf8');
+  assert.match(css,/\.deploy-workspace\s*\{[^}]*align-items:stretch/);
+  for(const selector of ['deploy-code-card','deploy-output'])
+    assert.match(css,new RegExp(`\\.${selector}\\s*\\{[^}]*display:flex;[^}]*flex-direction:column`));
+  assert.match(css,/\.deploy-code-card \.pi-code-editor\s*\{[^}]*flex:1 0 auto/);
+  assert.match(css,/\.deploy-output \.pi-console\s*\{[^}]*flex:1 0 auto; min-height:0/);
+  assert.match(css,/@media\(max-width:960px\)\s*\{\s*\.deploy-workspace\s*\{\s*grid-template-columns:minmax\(0,1fr\)/);
 });
 
 test('program activity and diagnostic access survive connection loss without claiming it stopped',async()=>{
@@ -144,4 +156,35 @@ test('deploy preserves request id and code; conflicts expose actionable reason w
     await assert.rejects(api.executionAction('job','confirm','test:old'),/handoff_changed/);
     assert.equal(calls.length,1);
   } finally {globalThis.fetch=original;}
+});
+
+test('standalone project stop binds the request to the exact invocation, never deploys or resets',async()=>{
+  assert.equal(api.programOwner({...status,invocation_id:'current',pid:41}),'program:current');
+  assert.equal(api.programOwner({...status,pid:41}),'program:41');
+  for(const candidate of [null,{...status,pid:null},{...status,program:'unknown',pid:41},{...status,program:'stopped',pid:41}])
+    assert.equal(api.programOwner(candidate),null);
+  const original=globalThis.fetch,calls=[];
+  globalThis.fetch=async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return {ok:true,json:async()=>({ok:true,status:{...status,program:'stopped',pid:null}})};};
+  try {
+    await api.stopPiProgram('program:current');
+    assert.deepEqual(calls,[{path:'/api/pi/stop',body:{owner:'program:current'}}]);
+    globalThis.fetch=async()=>({ok:false,status:409,json:async()=>({detail:'stop_owner_changed'})});
+    await assert.rejects(api.stopPiProgram('program:old'),/stop_owner_changed/);
+  }finally{globalThis.fetch=original;}
+});
+
+test('execution menu exposes Stop project but blocks queue, tests and unknown state',async()=>{
+  const running={...status,invocation_id:'current',pid:41};
+  const html=await render('PiConnectionControl',running);
+  assert.match(html,/class="pi-project-stop">停止作品/);
+  assert.match(html,/停止程式不等於斷電/);
+  for(const candidate of [{...running,connected:false},{...running,busy:true},{...running,execution:undefined},
+    {...running,component_test_id:'test'},{...running,program:'unknown'},{...running,invocation_id:'',pid:null},
+    {...running,program:'stopping'},{...running,execution:{jobs:[job]}},{...running,program:'stopped',pid:null}])
+    assert.match(await render('PiConnectionControl',candidate),/class="pi-project-stop" disabled="">停止作品/);
+  assert.match(await render('PiConnectionControl',{...running,execution:{jobs:[job]}}),/請先取消下方排隊工作/);
+  assert.match(await render('PiConnectionControl',{...running,program:'stopped',pid:null}),/作品已停止，可以回接線引導重新開始/);
+  const disconnected=await render('PiConnectionControl',running,{}, {networkError:true});
+  assert.doesNotMatch(disconnected,/作品已停止|作品程式執行中/);
+  assert.match(await render('PiConnectionControl',running,{}, {error:'Pi API: HTTP 404'}),/請重啟 Tinkro 後端/);
 });

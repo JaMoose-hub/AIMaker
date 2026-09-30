@@ -70,6 +70,31 @@ class PiExecution:
                 self.worker = threading.Thread(target=self._loop, name="pi-execution-fifo", daemon=True)
                 self.worker.start()
 
+    def stop_project(self, expected_owner):
+        # Hold the FIFO lock until remote inactivity is verified. Never cancel
+        # jobs implicitly or use a test/deployment as a surrogate stop action.
+        with self.lock:
+            if self.closed.is_set():
+                raise ValueError("executor_closed")
+            if any(job["state"] not in DONE for job in self.jobs):
+                raise ValueError("stop_queue_active")
+            for manager in (self.tests, self.trials):
+                if manager is None:
+                    continue
+                state = manager.status()
+                if state.get("active") or state.get("test_busy") or any(run.get("reserved") for run in state["results"]):
+                    raise ValueError("stop_test_active")
+            try:
+                self.pi.stop_project(expected_owner)
+                return {"ok": True, "status": self.pi.snapshot()}
+            except ValueError:
+                raise
+            except Exception as error:
+                safe_error = redact(str(error), self.pi.config.password.get_secret_value())
+                self.pi._failure(RemoteCommandError(safe_error) if isinstance(error, RemoteCommandError) else RuntimeError(safe_error))
+                return {"ok": False, "error": safe_error,
+                        "status": self.pi.snapshot()}
+
     def action(self, job_id, action, owner=None):
         with self.lock:
             job = next((j for j in self.jobs if j["id"] == job_id), None)

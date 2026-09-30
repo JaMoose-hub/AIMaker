@@ -73,6 +73,22 @@ def status(request: Request):
     return pi_snapshot(request, request.app.state.pi_deployer.status())
 
 
+class StopProjectRequest(BaseModel):
+    owner: str = Field(min_length=9, max_length=200, pattern=r"^program:\S+$")
+
+
+@router.post("/stop")
+def stop_project(body: StopProjectRequest, request: Request):
+    executor = getattr(request.app.state, "pi_execution", None)
+    if executor is None:
+        raise HTTPException(status_code=503, detail="stop_backend_restart_required")
+    try:
+        result = executor.stop_project(body.owner)
+        return {**result, "status": pi_snapshot(request, result["status"])}
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
 class TestWire(BaseModel):
     componentId: ComponentId
     componentPin: str = Field(max_length=40)

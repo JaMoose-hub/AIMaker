@@ -13,6 +13,7 @@
   --surface-canvas: #dedcd5;
   --surface-card: #eeeae1;
   --surface-subtle: #e4e1d7;
+  --surface-chat: #f8f7f2;
   --surface-blue: #dfe5eb;
   --surface-teal: #dcefe5;
   --surface-warning: #f5ebd6;
@@ -58,7 +59,7 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
   color: var(--text);
 }
 
-/* The shell stays compact; all five stages and the existing global Pi/model
+/* The shell stays compact; all three stages and the existing global Pi/model
    controls retain their order and responsive breakpoints. */
 .app.tinkro-theme:not(.display-mode-active) .header {
   padding: 2px 0 4px;
@@ -92,6 +93,8 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) .maker-nav button span { display: inline-grid; place-items: center; width: 23px; min-height: 23px; margin-right: 7px; padding: 0; color: var(--text-faint); border: 1px solid var(--brand-blue); border-radius: 50%; font-size: 10px; font-variant-numeric: tabular-nums; }
 .app.tinkro-theme:not(.display-mode-active) .maker-nav button.active { color: var(--brand-navy); background: var(--studio-chalk); border-color: var(--studio-chalk); box-shadow: 0 2px 0 #142044; }
 .app.tinkro-theme:not(.display-mode-active) .maker-nav button.active span { color: #102d27; border-color: var(--brand-teal); background: var(--brand-teal); }
+.app.tinkro-theme:not(.display-mode-active) .maker-design-views button { background: var(--surface-subtle); color: var(--ink-secondary); border-color: var(--line-default); }
+.app.tinkro-theme:not(.display-mode-active) .maker-design-views button.active { background: var(--surface-blue); color: var(--brand-navy); border-color: var(--brand-blue); }
 .app.tinkro-theme:not(.display-mode-active) .pi-global-connect.connected { border-color: #9ccfbe; background: var(--surface-teal); }
 .app.tinkro-theme:not(.display-mode-active) .pi-global-connect.connected > span { color: var(--ok); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-model-popover, .pi-execution-popover, .maker-product, .maker-diagram-dialog) { color: var(--text); border-color: var(--border); background: var(--bg-panel); box-shadow: var(--shadow-popover); }
@@ -144,13 +147,15 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-splitter:hover, .maker-splitter:focus-visible, .is-resizing > .maker-splitter) > span { background: var(--brand-blue); }
 
 /* Chat uses the same visual vocabulary in design and debugging. */
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-message, .ai-debug-message) { background: var(--surface-subtle); border-color: var(--border); color: var(--text); border-radius: 3px 10px 10px 3px; border-left: 3px solid var(--line-strong); }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-message.user, .ai-debug-message.is-user) { background: #d7e6dc; border-color: #a9c5b5; border-left-color: var(--brand-teal); border-radius: 10px 3px 3px 10px; }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row, .ai-debug-entry.ai-debug-composer) { background: var(--bg-panel); border-color: var(--border-strong); box-shadow: var(--shadow-card); }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row, .ai-debug-entry.ai-debug-composer):focus-within { border-color: var(--brand-blue); box-shadow: 0 0 0 3px rgb(65 122 190 / 14%); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message, .ai-debug-message) { background: var(--surface-chat); border: 1px solid var(--border); color: var(--text); border-radius: 16px 16px 16px 4px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message.user, .ai-debug-message.is-user) { background: var(--surface-teal); border-color: #afd4c5; border-radius: 16px 16px 4px 16px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message > small, .ai-debug-message-meta strong) { color: var(--brand-navy); font-size: 11px; font-weight: 700; letter-spacing: 0; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row, .ai-debug-compose-row) { background: var(--surface-chat); border-color: var(--border-strong); box-shadow: 0 2px 5px rgb(37 55 48 / 5%); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row, .ai-debug-compose-row):focus-within { border-color: var(--brand-blue); box-shadow: 0 0 0 3px rgb(65 122 190 / 14%); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row textarea, .ai-debug-composer textarea) { background: transparent; }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row textarea, .ai-debug-composer textarea):focus-visible { outline: none; }
 .app.tinkro-theme:not(.display-mode-active) .maker-compose-send { border-radius: 50%; }
+.app.tinkro-theme:not(.display-mode-active) .ai-debug-composer-send > button { border-radius: 999px; }
 .app.tinkro-theme:not(.display-mode-active) .ai-debug-chat { border-color: var(--border); }
 .app.tinkro-theme:not(.display-mode-active) .ai-debug-disclosure { background: var(--surface-blue); border-color: var(--brand-blue); }
 .app.tinkro-theme:not(.display-mode-active) .ai-debug-response-mode select { color: var(--text); background: var(--bg-elev); border-color: var(--border); }
@@ -221,14 +226,13 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.warning { color: var(--warn); background: var(--surface-warning); border-color: #d5b773; }
 .app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.working { color: var(--accent); background: var(--surface-blue); border-color: #c4d7ef; }
 .app.tinkro-theme:not(.display-mode-active) .statusbar { box-shadow: none; }
-.app.tinkro-theme:not(.display-mode-active) :is(.status-pill, .runtime-model-state) { background: var(--surface-subtle); }
+.app.tinkro-theme:not(.display-mode-active) .statusbar.camera-tools-menu { background: transparent; border: 0; border-radius: 0; }
+.app.tinkro-theme:not(.display-mode-active) .status-pill { background: var(--surface-subtle); }
 .app.tinkro-theme:not(.display-mode-active) .status-pill.locked { background: var(--surface-teal); color: var(--ok); }
 .app.tinkro-theme:not(.display-mode-active) .status-pill.searching { background: var(--surface-warning); color: var(--warn); }
 .app.tinkro-theme:not(.display-mode-active) :is(.status-warning, .auto-alignment-message) { color: var(--warn); }
 .app.tinkro-theme:not(.display-mode-active) .camera-auto-message { color: var(--text-dim); }
 .app.tinkro-theme:not(.display-mode-active) :is(.camera-auto-message.success, .auto-alignment-message.success) { color: var(--ok); }
-.app.tinkro-theme:not(.display-mode-active) .runtime-model-state { color: var(--ok); }
-.app.tinkro-theme:not(.display-mode-active) .runtime-model-state.fallback { color: var(--warn); }
 .app.tinkro-theme:not(.display-mode-active) :is(.runtime-error, .camera-message.error) { color: var(--danger); }
 .app.tinkro-theme:not(.display-mode-active) .camera-message.success { color: var(--ok); }
 .app.tinkro-theme:not(.display-mode-active) .camera-current-badge { color: #fff; background: var(--brand-navy); }
@@ -258,4 +262,105 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
   .app.tinkro-theme:not(.display-mode-active) .brand-subtitle { font-size: 11px; padding-left: 5px; }
   .app.tinkro-theme:not(.display-mode-active) .maker-save-status { max-width: 40%; font-size: 10px; }
   .app.tinkro-theme:not(.display-mode-active) .maker-workflow-toolbar { padding: 8px; }
+}
+
+/* One product header: brand + workflow share a baseline, with a slim settings
+   strip below. Keep overflow visible for the existing model / execution menus. */
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated {
+  display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0;
+  padding: 0; border: 1px solid var(--line-default); border-radius: 12px;
+  background: var(--surface-card); box-shadow: 0 3px 0 #2537300b;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main {
+  display: flex; align-items: center; gap: 24px; min-width: 0;
+  padding: 6px 10px; background: var(--brand-navy); border-radius: 11px 11px 0 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand { flex: 0 0 auto; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-text {
+  display: flex; align-items: center; gap: 12px; padding: 0; border-radius: 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-logo { width: 128px; height: 40px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-subtitle { font-size: 11px; padding: 0; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex: 1 1 0; min-width: 0; gap: 6px; padding: 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-width: 0; min-height: 38px; padding: 6px 12px; font-size: 12px; line-height: 1.35; white-space: normal;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button > span {
+  flex: 0 0 23px; margin: 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls {
+  flex-basis: auto; margin: 0; padding: 8px 12px; gap: 8px 20px;
+  border: 0; border-top: 2px solid var(--brand-blue); border-radius: 0 0 11px 11px;
+  background: transparent; box-shadow: none;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-menu {
+  position: relative; flex: 0 1 222px; min-width: 200px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-menu > summary {
+  display: flex; align-items: center; gap: 8px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls :is(.maker-model-label, .pi-global-label, .runtime-select > span) {
+  flex: 0 0 auto; margin: 0; font-size: 11px; white-space: nowrap;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-value { flex: 1; min-width: 0; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-control {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  flex: 0 0 auto; width: auto; min-width: 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-row { height: 34px; width: 220px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-toolbar {
+  display: flex; align-items: center; flex: 0 1 auto; flex-wrap: wrap;
+  width: auto; min-width: 0; margin-left: 0; padding: 0; gap: 8px 16px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-select {
+  display: flex; align-items: center; gap: 8px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-select select { width: 144px; min-width: 0; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .locale-select select { width: 112px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls :is(.maker-model-value, .pi-global-connect, .pi-execution-menu > summary, .runtime-select select) {
+  min-height: 34px; height: 34px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-save-status {
+  margin-left: auto; max-width: none; font-size: 10px; line-height: 1.5;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-save-status[role=alert] {
+  font-size: 11px; color: var(--danger); padding: 4px 8px; background: var(--surface-danger);
+  border-radius: 6px; text-align: left;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-error {
+  position: static; flex-basis: 100%; white-space: normal; overflow-wrap: anywhere;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-control:has(.pi-global-error) { flex-wrap: wrap; flex-basis: 262px; max-width: 100%; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-error { flex-basis: 100%; min-width: 0; overflow-wrap: anywhere; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls :is(.maker-model-popover, .pi-execution-popover) {
+  left: 0; right: auto; width: min(380px, calc(100vw - 40px));
+}
+@media (max-width: 1100px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main { gap: 16px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-subtitle { display: none; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls { gap: 8px 14px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-save-status { flex-basis: 100%; text-align: left; }
+}
+@media (max-width: 960px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls :is(.maker-model-value, .pi-global-connect, .pi-execution-menu > summary, .runtime-select select) { min-height: 44px; height: 44px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button { min-height: 44px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-row { height: 44px; }
+}
+@media (max-width: 700px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main { flex-wrap: wrap; gap: 8px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-subtitle { display: block; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav { flex-basis: 100%; gap: 4px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button { padding: 6px; font-size: 11px; gap: 5px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls { gap: 8px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-menu { flex-basis: 100%; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-control { flex: 1 1 100%; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-row { width: auto; flex: 1; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-connect { width: 45%; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-toolbar { flex: 1 1 100%; gap: 8px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-select { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; flex: 1 1 0; min-width: 0; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-select select { width: 100%; }
 }

@@ -5,6 +5,7 @@ import { usePiConnection } from "../lib/PiConnection";
 import { piPhotoresistorExample } from "../lib/wiringGuideProfiles";
 import type { ProjectDesign, MakerState } from "../lib/maker";
 import { useMakerText } from "../lib/useMaker";
+import { systemText } from "../lib/systemText";
 
 const DRAFT_KEY = "boardvision.pi-python-draft.v1";
 
@@ -17,7 +18,7 @@ function initialCode(): string {
 }
 
 export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { project?: ProjectDesign; draft?: string; onDraftChange?: (code: string) => void; onDebug?: (evidence:NonNullable<MakerState['debug']>['deployment']) => void }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const tr = useMakerText();
   const [localCode, setCode] = useState(initialCode);
   const code = draft ?? localCode;
@@ -72,8 +73,8 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { proj
 
   return <section className="pi-deploy-panel" aria-label={tr("部署與執行", "Deploy & run")}>
     <div className="pi-panel-heading workflow-heading deploy-project-heading">
-      <div><div className="workflow-eyebrow">{tr("05 · 部署與執行", "05 · Deploy & run")}</div>
-        <h2>{project?.title || tr("自訂 Pi 程式", "Custom Pi program")}</h2>
+      <div><div className="workflow-eyebrow">{tr("03 · 部署與執行", "03 · Deploy & run")}</div>
+        <h2>{project?.title ? project.source === "demo" ? systemText(project.title, locale) : project.title : tr("自訂 Pi 程式", "Custom Pi program")}</h2>
         <p className="deploy-project-meta">Raspberry Pi 5{project?.component_ids.map(id => ` · ${id === "hc-sr04" ? "HC-SR04+" : id === "mrd-tf240-8p-cs" ? "MRD-TFT240" : id}`).join("")}</p></div>
     </div>
     <div className="deploy-workspace">
@@ -109,7 +110,7 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { proj
               {!connected ? tr("Pi 狀態待確認", "Pi status unknown") : failed ? tr("需要檢查", "Needs attention") : queued ? tr("排隊中", "Queued") : transferring ? tr("部署中", "Deploying") : running ? tr("執行中", "Running") : tr("待機", "Idle")}
             </span></div>
           <div className="pi-status-lines" role="status"><span>{t("pi.deploymentLabel")} · {t(`pi.deployment.${status?.deployment ?? "idle"}`)}</span><span>{t("pi.programLabel")} · {t(`pi.program.${!connected ? "unknown" : status?.program ?? "unknown"}`)}</span></div>
-          <p className="deploy-output-context">{!connected ? tr("暫時無法更新狀態；恢復連線後會重新核對。", "Status updates are unavailable. They will refresh after reconnecting.") : failed ? tr("先查看錯誤訊息，再到「測試與除錯」檢查原因。", "Review the error, then open Test & debug for help.") : tr("顯示 Pi 程式狀態與最近輸出。", "Shows Pi program status and recent output.")}</p>
+          <p className="deploy-output-context">{!connected ? tr("暫時無法更新狀態；恢復連線後會重新核對。", "Status updates are unavailable. They will refresh after reconnecting.") : failed ? tr("先查看錯誤訊息，再回「02 接線引導＋AI 除錯」檢查原因。", "Review the error, then return to 02 Wiring + AI debug for help.") : tr("顯示 Pi 程式狀態與最近輸出。", "Shows Pi program status and recent output.")}</p>
           <small className="deploy-version">{tr("執行版本", "Running version")}: {status?.version?.code_hash.slice(0,12) ?? tr("尚未取得", "Not available")}{status?.exit_code!=null?` · ${tr("結束代碼", "Exit code")}: ${status.exit_code}`:""}</small>
           {onDebug ? <button type="button" className="workflow-secondary" onClick={diagnoseCurrent}>{tr("沒有反應？幫我檢查", "No response? Help me check")}</button> : null}
           {networkError ? <p className="pi-error" role="alert">{t("pi.networkError")}</p> : null}

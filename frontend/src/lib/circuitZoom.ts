@@ -6,8 +6,14 @@ export function clampCircuitZoom(zoom: number) {
 }
 
 /** Leave a small margin, and fit both axes rather than stretching to page width. */
-export function fitCircuitScale(width: number, height: number, drawingWidth: number, drawingHeight: number) {
-  return Math.max(0.001, Math.min((width - 16) / drawingWidth, (height - 16) / drawingHeight, 0.8));
+export function fitCircuitScale(width: number, height: number, drawingWidth: number, drawingHeight: number, maxScale = 0.8) {
+  return Math.max(0.001, Math.min((width - 16) / drawingWidth, (height - 16) / drawingHeight, maxScale));
+}
+
+/** Prefer legible labels in the Blueprint while keeping the entire width in view. */
+export function readableCircuitScale(fit: number, viewportWidth: number, drawingWidth: number, preferred: number) {
+  if (viewportWidth <= 0 || drawingWidth <= 0) return fit;
+  return Math.max(fit, Math.min(preferred, (viewportWidth - 16) / drawingWidth));
 }
 
 export function wheelCircuitZoom(current: number, deltaY: number, deltaMode: number) {

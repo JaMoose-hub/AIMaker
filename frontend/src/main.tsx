@@ -1,12 +1,13 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { LocaleProvider } from "./lib/i18n";
+import { LocaleProvider, initialLocale } from "./lib/i18n";
 import { PiConnectionProvider } from "./lib/PiConnection";
 import "./styles.css";
 import "./debug.css";
 import "./responsive.css";
 import "./tinkro.css";
+import "./guideAi.css";
 import { migrateStoredMaker } from "./lib/makerMigration";
 
 const root = document.getElementById("root")!;
@@ -17,9 +18,10 @@ async function start() {
     // Do not mount autosaving components after a failed migration.
     root.replaceChildren();
     const message = document.createElement("p");
-    message.textContent = "作品更新未完成，原始草稿已保留。請確認服務已啟動及瀏覽器儲存空間。 / Draft update failed; original preserved.";
+    const english = initialLocale().locale === "en";
+    message.textContent = english ? "Draft update failed; the original draft is preserved. Check the service and browser storage." : "作品更新未完成，原始草稿已保留。請確認服務已啟動及瀏覽器儲存空間。";
     const retry = document.createElement("button");
-    retry.textContent = "重試 / Retry";
+    retry.textContent = english ? "Retry" : "重試";
     retry.onclick = () => void start();
     root.append(message, retry);
     return;

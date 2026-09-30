@@ -1,23 +1,29 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { structuralParts, type ProjectDesign } from "../lib/maker";
+import { makerCatalog, structuralParts, type ProjectDesign } from "../lib/maker";
 import { useMakerText } from "../lib/useMaker";
 import { useI18n } from "../lib/i18n";
+import { systemText } from "../lib/systemText";
 import { guideFor } from "../lib/componentWiringGuides";
 import { CircuitDiagram } from "./CircuitDiagram";
 import { MakerSplitLayout } from "./MakerSplitLayout";
+import { DesignViewSwitch, type DesignView } from "./DesignViewSwitch";
 
-export function BlueprintPage({ design, onGuide, onEdit, hasCandidate, generating }: {
-  design: ProjectDesign; onGuide: () => void; onEdit: () => void;
+export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandidate, generating }: {
+  design: ProjectDesign; onGuide: () => void; onEdit: () => void; onViewChange: (view: DesignView) => void;
   hasCandidate: boolean; generating: boolean;
 }) {
   const tr = useMakerText();
-  const { tx } = useI18n();
+  const { tx, locale } = useI18n();
+  const projectText = (text: string) => design.source === "demo" ? systemText(text, locale) : text;
   const id = useId();
   const [tab, setTab] = useState<"materials" | "steps">("materials");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [product, setProduct] = useState<string | null>(null);
   const structure = design.assembly?.parts.map(p => ({ ...structuralParts[p.kind], id: `structure-${p.kind}`, quantity: p.quantity, purpose: p.purpose })) ?? [];
-  const material = [...design.bom, ...structure].find(item => item.id === product);
+  const materials = [...design.bom, ...structure].map(item => ({...item,
+    name: makerCatalog.modules.some(module => module.id === item.id) ? tx(makerCatalog.modules.find(module => module.id === item.id)!.name) : systemText(item.name, locale),
+    purpose: systemText(item.purpose, locale)}));
+  const material = materials.find(item => item.id === product);
   const dialog = useRef<HTMLDialogElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   const wireSteps = useRef<HTMLOListElement>(null);
@@ -38,21 +44,21 @@ export function BlueprintPage({ design, onGuide, onEdit, hasCandidate, generatin
     setTab(next);
     tabs.current?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus();
   }
-  const cards = (items: typeof design.bom) => <div className="maker-bom">{items.map(item => <article key={item.id}>
+  const cards = (items: typeof design.bom) => <div className="maker-bom">{items.map(original => { const item = materials.find(material => material.id === original.id)!; return <article key={item.id}>
     <strong>{item.name}</strong><small>{item.purpose}</small><div>× {item.quantity} · NT$ {item.price * item.quantity}</div>
     <button onClick={() => setProduct(item.id)}>{tr("示範導購 ↗", "Demo shop ↗")}</button>
-  </article>)}</div>;
+  </article>; })}</div>;
 
   return <MakerSplitLayout stage="blueprint" left={
     <section className="maker-preview maker-blueprint-page" aria-label={tr("作品 Blueprint", "Project Blueprint")}>
-      <div className="maker-eyebrow">02 / BLUEPRINT · v{design.revision}</div>
-      <div className="maker-preview-heading"><div><h2>{design.title}</h2><p className="maker-muted">{tr("零件與 2D 接線總覽", "Modules & 2D wiring")}</p></div>
-        <div className="blueprint-actions"><button onClick={onEdit}>{tr("← 返回設計修改", "← Edit design")}</button>
-          <button className="maker-primary" onClick={onGuide}>{tr("開始 Pin 接線引導 →", "Start Pin wiring →")}</button></div>
+      <div className="maker-view-heading"><span className="maker-eyebrow">01 / BLUEPRINT · v{design.revision}</span>
+        <DesignViewSwitch view="blueprint" hasBlueprint onChange={onViewChange} /></div>
+      <div className="maker-preview-heading"><div><h2>{projectText(design.title)}</h2><p className="maker-muted">{tr("零件與 2D 接線總覽", "Modules & 2D wiring")}</p></div>
+        <div className="blueprint-actions"><button className="maker-primary" onClick={onGuide}>{tr("開始 Pin 接線引導 →", "Start Pin wiring →")}</button></div>
       </div>
       {generating ? <p className="maker-muted" role="status">{tr("AI 仍在背景處理，這裡保留已確認的藍圖。", "AI is working in the background. This remains the confirmed blueprint.")}</p> : null}
       {hasCandidate ? <button className="maker-candidate-notice" onClick={onEdit}>{tr("有新版作品待確認 → 返回設計查看", "New revision ready → Review in Design")}</button> : null}
-      <CircuitDiagram design={design} selectedId={selectedId} onClearSelection={() => setSelectedId(null)}
+      <CircuitDiagram design={design} readableDefault selectedId={selectedId} onClearSelection={() => setSelectedId(null)}
         onSelect={wire => { setSelectedId(wire.id); setTab("steps"); }} />
     </section>
   }>
@@ -70,7 +76,7 @@ export function BlueprintPage({ design, onGuide, onEdit, hasCandidate, generatin
           <p className="maker-muted">{tr("尺寸與固定方式需實物確認。", "Check actual dimensions and mounting.")}</p>{cards(structure)}</> : null}
       </div>
       <div role="tabpanel" id={`${id}-steps-panel`} aria-labelledby={`${id}-steps-tab`} hidden={tab !== "steps"} tabIndex={0}>
-        <ol className="blueprint-instructions">{design.instructions.map((line, i) => <li key={i}>{line}</li>)}</ol>
+        <ol className="blueprint-instructions">{design.instructions.map((line, i) => <li key={i}>{projectText(line)}</li>)}</ol>
         <h3>{tr("逐線接法", "Wire-by-wire reference")}</h3>
         <p className="maker-muted">{tr("點選查看對應線路；不會標記接線完成。", "Select to highlight a wire; this does not confirm wiring.")}</p>
         <ol className="blueprint-wire-steps" ref={wireSteps}>{design.wiring.map((wire, i) => <li key={wire.id}>

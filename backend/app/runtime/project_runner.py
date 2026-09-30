@@ -63,15 +63,28 @@ def main(directory):
     worker = threading.Thread(target=heartbeat, daemon=True)
     worker.start()
     exit_code = 0
+    hooks = {"_bv_emit": emit}
+    if cfg.get("structured") is True:
+        # An already-running backend may still hold the previous instrumenter
+        # while uploading this runner from disk. Support its exact two emitted
+        # names, including Python's class-name mangling, without rewriting the
+        # immutable source or extending trusted instrumentation to custom code.
+        hooks.update({"__bv_emit": emit, "_FreshDistanceSensor__bv_emit": emit})
     try:
-        runpy.run_path(str(root / cfg["source"]), run_name="__main__", init_globals={"__bv_emit": emit})
+        runpy.run_path(str(root / cfg["source"]), run_name="__main__", init_globals=hooks)
     except SystemExit as error:
         exit_code = error.code if isinstance(error.code, int) else (1 if error.code else 0)
     except BaseException:
         exit_code = 1
         data.setdefault("detail", traceback.format_exc()[-4000:])
         data["reason"] = data.get("reason") or "program_error"
-        traceback.print_exc()
+        # A failed background reader interrupts whichever main-thread operation
+        # is in progress. Report the original error, not that incidental frame.
+        if data["reason"] == "reader_error":
+            print("BACKGROUND READER ERROR (original cause):", file=sys.stderr, flush=True)
+            print(data["detail"], file=sys.stderr, flush=True)
+        else:
+            traceback.print_exc()
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         stop.set()

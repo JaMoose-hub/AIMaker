@@ -1,17 +1,16 @@
-# Board Vision - physical C920 camera + YOLO/Profile hybrid mode.
+# Board Vision - physical MX Brio camera + YOLO/Profile hybrid mode.
 [CmdletBinding()]
 param(
     [ValidateSet("raspberry-pi-5", "arduino-uno-q")]
     [string]$Board = "raspberry-pi-5",
-    # Device indices are backend-specific on this host: the C920 is DShow 1
-    # but MSMF 0. MSMF delivers a real 30 FPS stream; DShow silently falls
-    # back to 1080p YUY2, which this camera exposes at only 5 FPS.
-    [int]$DeviceIndex = 1,
+    # Name-bound FFmpeg selection survives USB index changes; index 0 is
+    # MX Brio's current DShow fallback index on this host.
+    [int]$DeviceIndex = 0,
     [ValidateSet("dshow", "msmf")]
     [string]$CaptureApi = "dshow",
     [ValidateSet("opencv", "ffmpeg")]
     [string]$CaptureBackend = "ffmpeg",
-    [string]$FfmpegDeviceName = "HD Pro Webcam C920",
+    [string]$FfmpegDeviceName = "MX Brio",
     [string]$FfmpegPath = "ffmpeg",
     [int]$Width = 1920,
     [int]$Height = 1080,
@@ -142,7 +141,7 @@ $env:BOARDVISION_DETECTOR = "hybrid"
 $env:BOARDVISION_BOARD = $Board
 $env:BOARDVISION_YOLO_POSE__MODEL_PATH = $ModelPath
 # Preserve a model for both controllers so the UI can hot-switch without
-# restarting C920/FFmpeg. A caller-supplied model overrides only the selected
+# restarting the camera/FFmpeg. A caller-supplied model overrides only the selected
 # board; the other controller keeps its validated default.
 $boardModelPaths = @{
     "raspberry-pi-5" = "$root\models\board-pose-pi5-handheld-v2.onnx"

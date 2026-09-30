@@ -13,10 +13,11 @@ interface Props {
   children: ReactNode;
   details: ReactNode;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 /** Opening extra copy never changes the wiring session or its active target. */
-export function CompactGuide({ contextKey, phase, visible, title, headerActions, progress, targetId, actions, children, details: extraDetails, onClose }: Props) {
+export function CompactGuide({ contextKey, phase, visible, title, headerActions, progress, targetId, actions, children, details: extraDetails, onClose, embedded = false }: Props) {
   const tr = useMakerText();
   const detailsId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -32,7 +33,9 @@ export function CompactGuide({ contextKey, phase, visible, title, headerActions,
         event.preventDefault(); event.stopPropagation(); setExpanded(false); toggleRef.current?.focus();
       }
     }}>
-    <header className="guide-panel-header">
+    {embedded ? <header className="guide-panel-header guide-panel-header-embedded">
+      <div className="guide-panel-progress">{progress}</div><div className="guide-header-actions">{headerActions}</div>
+    </header> : <><header className="guide-panel-header">
       <div><span className="guide-panel-eyebrow">{tr("接線引導", "WIRING GUIDE")}</span>
         <h2>{title}</h2></div>
       <div className="guide-header-actions">
@@ -41,7 +44,7 @@ export function CompactGuide({ contextKey, phase, visible, title, headerActions,
           onClick={() => { setExpanded(false); onClose(); }}>×</button>
       </div>
     </header>
-    <div className="guide-panel-progress">{progress}</div>
+    <div className="guide-panel-progress">{progress}</div></>}
     <div className="guide-panel-body" data-wiring-target={targetId}>
       {children}
       <section className="guide-panel-reference">

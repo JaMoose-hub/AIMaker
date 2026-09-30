@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { computeLetterbox, toDisplay, useElementSize } from "../lib/geometry";
 import { pointBounds, placeWiringLabelPair } from "../lib/wiringLabelLayout";
 import {
@@ -7,6 +7,7 @@ import {
   type DisplayMode,
 } from "../lib/displayMode";
 import { useI18n } from "../lib/i18n";
+import { systemText } from "../lib/systemText";
 import {
   createOpticalHudTransform,
   type OpticalHudCalibration,
@@ -14,6 +15,7 @@ import {
 } from "../lib/opticalHud";
 import type { ActiveGuideTarget } from "../lib/componentWiringGuides";
 import { useGuidedPose } from "../lib/useGuidedPose";
+import { componentOverlayScope, componentPosesForOverlay } from "../lib/componentOverlayScope";
 import { useDetections } from "../lib/wsClient";
 import { useRealtimeTracking } from "../lib/useRealtimeTracking";
 import { currentBodyRecognitions } from "../lib/realtimeFrame";
@@ -102,6 +104,9 @@ export interface LegendInfo {
 }
 
 interface VideoViewProps {
+  /** Render existing video controls inside the shared camera-tools menu. */
+  viewControl?: ReactNode | ((cameraControls: ReactNode) => ReactNode);
+  alternateView?: ReactNode;
   displayMode: DisplayMode;
   glassesStatus: GlassesStatus | null;
   onGlassesDisplayFps: (fps: number | null) => void;
@@ -120,6 +125,8 @@ interface VideoViewProps {
   onCloseCalibrate: () => void;
   onCalibrationSuccess: () => void;
   guideTarget: ActiveGuideTarget | null;
+  /** Selected module remains focused during preparation, review and AI tabs. */
+  overlayComponentId?: string | null;
   opticalHudCalibration: OpticalHudCalibration | null;
   onOpticalHudCalibrationComplete: (calibration: OpticalHudCalibration) => void;
   debugView?: boolean;
@@ -129,6 +136,8 @@ interface VideoViewProps {
 }
 
 export function VideoView({
+  viewControl = null,
+  alternateView = null,
   displayMode,
   glassesStatus,
   onGlassesDisplayFps,
@@ -144,7 +153,8 @@ export function VideoView({
   calibrateOpen,
   onCloseCalibrate,
   onCalibrationSuccess,
-  guideTarget,
+  guideTarget: requestedGuideTarget,
+  overlayComponentId = null,
   opticalHudCalibration,
   onOpticalHudCalibrationComplete,
   debugView = false,
@@ -152,7 +162,12 @@ export function VideoView({
   debugEvidence = null,
   debugFramingFeedback = null,
 }: VideoViewProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const focusedComponentId = componentOverlayScope(overlayComponentId, requestedGuideTarget?.componentId, debugCaptureTask);
+  // A synchronous module switch/capture must not borrow the previous step's
+  // held pose, pin callouts or connection while its effect catches up.
+  const guideTarget = requestedGuideTarget && (!focusedComponentId || requestedGuideTarget.componentId === focusedComponentId)
+    ? requestedGuideTarget : null;
   const original = useDetections();
   const glassesMode = displayMode === "smart-glasses-demo";
   const glassesReady = glassesVideoReady(glassesStatus);
@@ -198,12 +213,13 @@ export function VideoView({
   const guideDetection = guideTarget?.manualOnly && guideVisible ? heldGuideDetection : detection;
   const guideComponentPose = guideTarget?.manualOnly && guideVisible ? heldGuidePose : componentPose;
   const displayedComponentPoses = useMemo(() => {
-    if (!guideTarget?.manualOnly || !guideVisible || !heldGuidePose) return componentPoses;
-    const hasTarget = componentPoses.some((pose) => pose.component_id === guideTarget.componentId);
+    const visiblePoses = componentPosesForOverlay(componentPoses, focusedComponentId);
+    if (!guideTarget?.manualOnly || !guideVisible || !heldGuidePose) return visiblePoses;
+    const hasTarget = visiblePoses.some((pose) => pose.component_id === guideTarget.componentId);
     return hasTarget
-      ? componentPoses.map((pose) => pose.component_id === guideTarget.componentId ? heldGuidePose : pose)
-      : [...componentPoses, heldGuidePose];
-  }, [componentPoses, guideTarget, guideVisible, heldGuidePose]);
+      ? visiblePoses.map((pose) => pose.component_id === guideTarget.componentId ? heldGuidePose : pose)
+      : [...visiblePoses, heldGuidePose];
+  }, [componentPoses, focusedComponentId, guideTarget, guideVisible, heldGuidePose]);
   const displayOnlyMode = isDisplayOnlyMode(displayMode);
   const opticalHudMode = isOpticalHudMode(displayMode);
   const opticalCalibrationMode = displayMode === "optical-hud-calibration";
@@ -256,7 +272,9 @@ export function VideoView({
   );
   const letterbox = opticalDemoMode && opticalTransform ? opticalTransform : baseLetterbox;
   const debugCaptureBox = useMemo(() => {
-    if (!debugView || !debugCaptureTask || config?.camera_source !== "device" || glassesLeaving) return null;
+    // Capture guidance also belongs to the wiring workspace, where the original
+    // Pin overlays remain visible. It follows the current task, not a page mode.
+    if (!debugCaptureTask || config?.camera_source !== "device" || glassesLeaving) return null;
     const boxes = {
       overview: [0.04, 0.06, 0.92, 0.88],
       hc_target: [0.08, 0.10, 0.84, 0.80],
@@ -269,7 +287,7 @@ export function VideoView({
     const second = toDisplay(baseLetterbox, (x + w) * videoWidth, (y + h) * videoHeight);
     return { left: Math.min(first.x, second.x), top: Math.min(first.y, second.y),
       width: Math.abs(second.x - first.x), height: Math.abs(second.y - first.y) };
-  }, [debugView, debugCaptureTask, config?.camera_source, glassesLeaving, baseLetterbox, videoWidth, videoHeight]);
+  }, [debugCaptureTask, config?.camera_source, glassesLeaving, baseLetterbox, videoWidth, videoHeight]);
   const captureQuality = debugFramingFeedback?.quality ?? debugEvidence?.quality;
   const captureStability = debugFramingFeedback?.stability ?? debugEvidence?.stability;
   const captureWarnings = captureQuality?.warnings ?? [];
@@ -419,7 +437,7 @@ export function VideoView({
   const offline = backendDown || (!connected && !detection);
   const searching = !offline && tracking === "searching";
   const componentDetected = Boolean(
-    componentPoses.some(
+    displayedComponentPoses.some(
       (pose) => pose.tracking !== "searching" || pose.diagnostic?.detected,
     ),
   );
@@ -428,9 +446,80 @@ export function VideoView({
     && !opticalCalibrationMode && (!opticalDemoMode || opticalTransform !== null)
     && (!glassesMode || glassesReady);
 
+  const cameraControls = !alternateView ? <>
+        <div className="mirror-controls" role="group" aria-label={t("camera.mirrorControlsLabel")}>
+          {config?.board_id === "raspberry-pi-5" && config.realtime_tracking && <button
+            type="button"
+            className={`mirror-toggle realtime-toggle${realtimeEnabled ? " active" : ""}`}
+            aria-pressed={realtimeEnabled}
+            title={t("camera.realtimeTooltip")}
+            onClick={() => setRealtimeEnabled((value) => !value)}
+          >
+            {t("camera.realtime")}{realtimeActive ? ` · ${realtime.frame ? `${realtime.fps} fps` : t("camera.realtimeWaiting")}` : ""}
+          </button>}
+          <button
+            type="button"
+            className={`mirror-toggle${mirror.x ? " active" : ""}`}
+            aria-pressed={mirror.x}
+            title={t("camera.mirrorHorizontalTooltip")}
+            disabled={calibrateOpen}
+            onClick={() => toggleMirror("x")}
+          >
+            <span aria-hidden="true">↔</span>
+            {t("camera.mirrorHorizontalLabel")}
+          </button>
+          <button
+            type="button"
+            className={`mirror-toggle${mirror.y ? " active" : ""}`}
+            aria-pressed={mirror.y}
+            title={t("camera.mirrorVerticalTooltip")}
+            disabled={calibrateOpen}
+            onClick={() => toggleMirror("y")}
+          >
+            <span aria-hidden="true">↕</span>
+            {t("camera.mirrorVerticalLabel")}
+          </button>
+        </div>
+        <div className="pin-calibration-controls">
+          <button
+            type="button"
+            className={`pin-calibration-toggle${pinCalibrationOpen ? " active" : ""}`}
+            aria-expanded={pinCalibrationOpen}
+            title={t("camera.pinCalibrationTooltip")}
+            disabled={calibrateOpen}
+            onClick={() => setPinCalibrationOpen((open) => !open)}
+          >
+            {t("camera.pinCalibrationLabel")}
+          </button>
+          {pinCalibrationOpen && (
+            <div className="pin-calibration-panel" role="group" aria-label={t("camera.pinCalibrationControlsLabel")}>
+              <small>{t("camera.pinCalibrationHint")}</small>
+              <div className="pin-calibration-grid">
+                <span />
+                <button type="button" title={t("camera.pinCalibrationUp")} onClick={() => adjustDisplayedPinCalibration(0, -1)}>↑</button>
+                <span />
+                <button type="button" title={t("camera.pinCalibrationLeft")} onClick={() => adjustDisplayedPinCalibration(-1, 0)}>←</button>
+                <button type="button" title={t("camera.pinCalibrationReset")} onClick={resetPinCalibration}>·</button>
+                <button type="button" title={t("camera.pinCalibrationRight")} onClick={() => adjustDisplayedPinCalibration(1, 0)}>→</button>
+                <span />
+                <button type="button" title={t("camera.pinCalibrationDown")} onClick={() => adjustDisplayedPinCalibration(0, 1)}>↓</button>
+                <span />
+              </div>
+              <small className="pin-calibration-value">X {displayedPinOffset.x} · Y {displayedPinOffset.y}</small>
+              {legacyCalibrationRetained && <small>{t("camera.pinCalibrationAutoRetained")}</small>}
+            </div>
+          )}
+        </div>
+        </> : null;
+
   return (
+    <div className="video-workspace">
+      {!displayOnlyMode && <div className="video-control-toolbar">
+        {typeof viewControl === "function" ? viewControl(cameraControls) : <>{viewControl}{cameraControls}</>}
+      </div>}
     <div
       ref={containerRef}
+      hidden={Boolean(alternateView) && !displayOnlyMode}
       className={`video-shell${realtimeActive ? " realtime-tracking" : ""}${showBoardSearchHint ? " searching" : ""}${displayOnlyMode ? " display-mode-active" : ""}${opticalHudMode ? " optical-hud" : ""}`}
     >
       <img
@@ -447,80 +536,13 @@ export function VideoView({
       {debugCaptureBox ? <div className="debug-capture-overlay" style={debugCaptureBox} aria-hidden="true">
         <span>{debugCaptureTask?.target === "tft_screen" ? "TFT" : debugCaptureTask?.target === "hc_target" ? "HC-SR04+" : t("app.title")}</span>
       </div> : null}
-      {debugView && (debugCaptureTask || debugCaptureHints.length > 0) ? <div className="debug-capture-feedback" role="status">
-        {debugCaptureTask?.instruction ? <strong>{debugCaptureTask.instruction}</strong> : null}
+      {debugCaptureBox ? <div className="debug-capture-feedback" role="status">
+        {debugCaptureTask?.instruction ? <strong>{systemText(debugCaptureTask.instruction, locale)}</strong> : null}
         {debugCaptureHints.map((hint, index) => <span key={index}>{hint}</span>)}
       </div> : null}
       {glassesMode && (!glassesReady || (realtimeActive && !realtime.frame)) && <div className="video-hint"><span className="hint-pill">
         {t(glassesStatus?.state === "error" ? "glasses.noCamera" : "glasses.waiting")}
       </span></div>}
-      {!displayOnlyMode && (
-        <>
-          <div className="mirror-controls" role="group" aria-label={t("camera.mirrorControlsLabel")}>
-            {config?.board_id === "raspberry-pi-5" && config.realtime_tracking && <button
-              type="button"
-              className={`mirror-toggle realtime-toggle${realtimeEnabled ? " active" : ""}`}
-              aria-pressed={realtimeEnabled}
-              title={t("camera.realtimeTooltip")}
-              onClick={() => setRealtimeEnabled((value) => !value)}
-            >
-              {t("camera.realtime")}{realtimeActive ? ` · ${realtime.frame ? `${realtime.fps} fps` : t("camera.realtimeWaiting")}` : ""}
-            </button>}
-            <button
-              type="button"
-              className={`mirror-toggle${mirror.x ? " active" : ""}`}
-              aria-pressed={mirror.x}
-              title={t("camera.mirrorHorizontalTooltip")}
-              disabled={calibrateOpen}
-              onClick={() => toggleMirror("x")}
-            >
-              <span aria-hidden="true">↔</span>
-              {t("camera.mirrorHorizontalLabel")}
-            </button>
-            <button
-              type="button"
-              className={`mirror-toggle${mirror.y ? " active" : ""}`}
-              aria-pressed={mirror.y}
-              title={t("camera.mirrorVerticalTooltip")}
-              disabled={calibrateOpen}
-              onClick={() => toggleMirror("y")}
-            >
-              <span aria-hidden="true">↕</span>
-              {t("camera.mirrorVerticalLabel")}
-            </button>
-          </div>
-          <div className="pin-calibration-controls">
-            <button
-              type="button"
-              className={`pin-calibration-toggle${pinCalibrationOpen ? " active" : ""}`}
-              aria-expanded={pinCalibrationOpen}
-              title={t("camera.pinCalibrationTooltip")}
-              disabled={calibrateOpen}
-              onClick={() => setPinCalibrationOpen((open) => !open)}
-            >
-              {t("camera.pinCalibrationLabel")}
-            </button>
-            {pinCalibrationOpen && (
-              <div className="pin-calibration-panel" role="group" aria-label={t("camera.pinCalibrationControlsLabel")}>
-                <small>{t("camera.pinCalibrationHint")}</small>
-                <div className="pin-calibration-grid">
-                  <span />
-                  <button type="button" title={t("camera.pinCalibrationUp")} onClick={() => adjustDisplayedPinCalibration(0, -1)}>↑</button>
-                  <span />
-                  <button type="button" title={t("camera.pinCalibrationLeft")} onClick={() => adjustDisplayedPinCalibration(-1, 0)}>←</button>
-                  <button type="button" title={t("camera.pinCalibrationReset")} onClick={resetPinCalibration}>·</button>
-                  <button type="button" title={t("camera.pinCalibrationRight")} onClick={() => adjustDisplayedPinCalibration(1, 0)}>→</button>
-                  <span />
-                  <button type="button" title={t("camera.pinCalibrationDown")} onClick={() => adjustDisplayedPinCalibration(0, 1)}>↓</button>
-                  <span />
-                </div>
-                <small className="pin-calibration-value">X {displayedPinOffset.x} · Y {displayedPinOffset.y}</small>
-                {legacyCalibrationRetained && <small>{t("camera.pinCalibrationAutoRetained")}</small>}
-              </div>
-            )}
-          </div>
-        </>
-      )}
       {showArOverlays && (
         <>
           {glassesMode && <ObjectRecognitionOverlay items={bodyRecognitions} letterbox={letterbox} width={size.width} height={size.height} />}
@@ -545,7 +567,6 @@ export function VideoView({
               targetPinId={
                 pose.component_id === guideTarget?.componentId ? guideSensorPinId : null
               }
-              dimmed={Boolean(guideTarget && pose.component_id !== guideTarget.componentId)}
               guidanceSuspended={Boolean(guideTarget?.componentId === pose.component_id && !guideVisible && !realtimeActive)}
               held={Boolean(poseVisualHeld && guideTarget?.componentId === pose.component_id)}
               guideLabel={pose.component_id === guideTarget?.componentId ? wiringLabels?.component : undefined}
@@ -626,6 +647,8 @@ export function VideoView({
           {t("opticalHud.fixedHead")}
         </div>
       )}
+    </div>
+    {!displayOnlyMode ? alternateView : null}
     </div>
   );
 }

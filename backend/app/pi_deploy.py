@@ -6,7 +6,7 @@ stop the remote program; the service is deliberately not enabled at boot.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 import json
 import uuid
 import shlex
@@ -229,14 +229,37 @@ class PiDeployer:
         if active.strip():
             raise RemoteCommandError("A Tinkro component test is still active; reconnect and stop that test first")
 
-    def stop_program(self, expected_owner):
+    def stop_project(self, expected_owner):
+        """Standalone, owner-bound stop. Reserve the client against new work."""
+        with self._state_lock:
+            if self._state.busy:
+                raise ValueError("stop_program_busy")
+            if self._test_reserved:
+                raise ValueError("stop_test_active")
+            self._state.busy = True
+        try:
+            stopped = self.stop_program(expected_owner, check_components=True)
+            state = self.snapshot()
+            if not stopped:
+                raise ValueError("stop_state_unknown" if state["program"] == "unknown" else "stop_owner_changed")
+            if state["program"] not in {"stopped", "exited", "failed", "not_deployed"} or state["pid"]:
+                raise RuntimeError("Remote stop has not been confirmed")
+            return state
+        finally:
+            self._set(busy=False)
+
+    def stop_program(self, expected_owner, *, check_components=False):
         with self._io_lock:
             self._open()
+            if check_components:
+                self.assert_no_component_service()
             self._refresh()
             state = self.snapshot()
             owner = "program:" + (state.get("invocation_id") or str(state["pid"]))
             if state["program"] not in {"running", "starting", "stopping"}:
                 return state["program"] != "unknown"
+            if check_components and not (state.get("invocation_id") or state["pid"]):
+                raise ValueError("stop_state_unknown")
             if owner != expected_owner:
                 return False
             self._run(f"systemctl --user stop {SERVICE}")
@@ -289,16 +312,16 @@ class PiDeployer:
                     except RemoteCommandError as error:
                         raise RemoteCommandError("SPI0 is missing or inaccessible. Enable SPI in raspi-config, reboot if required, "
                             "and check that this user belongs to the spi group: " + device) from error
-                from app.debug_support import digest, observed_source
+                from app.debug_support import build_runtime_bundle, digest
                 run_id = uuid.uuid4().hex
                 version_dir = str(root / "deployments" / run_id)
-                observed, structured = observed_source(code)
+                bundle = build_runtime_bundle(code)
                 version = dict(run_id=run_id, code_hash=digest(code), created_at=time.time(), context=metadata)
                 self._run(f"mkdir -p {shlex.quote(version_dir)}")
                 self._write(version_dir + "/snapshot.py", code)
-                self._write(version_dir + "/observed.py", observed)
-                self._write(version_dir + "/runner.py", (Path(__file__).parent / "runtime/project_runner.py").read_text(encoding="utf-8"))
-                self._write(version_dir + "/run-config.json", json.dumps(dict(run_id=run_id, code_hash=digest(code), source="observed.py", source_hash=digest(observed), structured=structured, duration=None)))
+                self._write(version_dir + "/observed.py", bundle.source)
+                self._write(version_dir + "/runner.py", bundle.runner)
+                self._write(version_dir + "/run-config.json", json.dumps(dict(run_id=run_id, code_hash=digest(code), source="observed.py", source_hash=digest(bundle.source), structured=bundle.structured, duration=None)))
                 unit = (
                     "[Unit]\nDescription=Tinkro Pi program\nStartLimitIntervalSec=0\n\n[Service]\nType=simple\n"
                     f'WorkingDirectory={root}\nExecStart=/usr/bin/flock --nonblock --no-fork "{root}/component-tests/hardware.lock" "{python}" -u "{version_dir}/runner.py" "{version_dir}"\n'

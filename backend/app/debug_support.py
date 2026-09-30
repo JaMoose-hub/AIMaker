@@ -3,14 +3,26 @@ import ast
 import difflib
 import hashlib
 import json
+from pathlib import Path
 import re
 import subprocess
 import sys
+from typing import NamedTuple
 
 from app.component_testing import TEMPLATE_VERSION, wire_key
 from app.designs import CATALOG, MODULES, profile_versions, render_code, validate_logic, wiring_for
 
 DEBUG_VERSION = "debug-v1"
+# Capture the runner with this loaded observer implementation. Reading it again
+# at deployment time can combine old in-memory instrumentation with newer disk
+# code when the backend has not restarted yet.
+_PROJECT_RUNNER_SOURCE = (Path(__file__).parent / "runtime/project_runner.py").read_text(encoding="utf-8")
+
+
+class RuntimeBundle(NamedTuple):
+    source: str
+    structured: bool
+    runner: str
 
 
 def digest(value):
@@ -128,10 +140,19 @@ def observed_source(code):
         def visit_Expr(self, node):
             call = node.value
             if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name) and call.func.value.id == "display" and call.func.attr in {"show_distance", "test_card"}:
-                return [node, ast.parse("__bv_emit('display', None)").body[0]]
+                return [node, ast.parse("_bv_emit('display', None)").body[0]]
             return node
         def visit_Assign(self, node):
             if any(isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self" and t.attr == "latest" for t in node.targets) and isinstance(node.value, ast.Tuple):
-                return [node, ast.parse("__bv_emit('sample', self.latest)").body[0]]
+                # The runner owns this global. A double-leading underscore is
+                # name-mangled inside FreshDistanceSensor, breaking its reader
+                # thread even though the plain generated program runs normally.
+                return [node, ast.parse("_bv_emit('sample', self.latest)").body[0]]
             return node
     return ast.unparse(ast.fix_missing_locations(Observe().visit(ast.parse(code)))), True
+
+
+def build_runtime_bundle(code):
+    """Return observed source and its runner from one loaded implementation."""
+    source, structured = observed_source(code)
+    return RuntimeBundle(source, structured, _PROJECT_RUNNER_SOURCE)

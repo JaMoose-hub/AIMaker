@@ -1,7 +1,16 @@
 /* Maker workflow geometry and fallback styles. Tinkro tokens load last. */
 .maker-layout .main { min-height: 0; }
-.maker-stage-design, .maker-stage-blueprint, .maker-stage-debug, .maker-stage-deploy, .maker-wiring-full-width { grid-template-columns: minmax(0, 1fr) !important; }
-.maker-stage-design > .side, .maker-stage-blueprint > .side { display: none; }
+.maker-stage-design, .maker-stage-debug, .maker-stage-deploy, .maker-wiring-full-width { grid-template-columns: minmax(0, 1fr) !important; }
+.maker-stage-design > .side { display: none; }
+.maker-design-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.maker-design-stage > .maker-studio { flex: 1; min-height: 0; }
+.maker-view-heading { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 8px 12px; }
+.maker-design-views { display: flex; flex: none; gap: 4px; }
+.maker-design-views button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-elev); color: var(--text); cursor: pointer; font-size: 12px; }
+.maker-design-views button.active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.maker-design-views button:disabled { opacity: .5; cursor: not-allowed; }
+.maker-design-views button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.maker-view-heading > .maker-concept-confirm { margin-left: auto; padding: 8px 12px; font-size: 13px; }
 .workspace-toolbar { margin-left: auto; min-width: 0; }
 .maker-header { gap: 12px; }
 .maker-save-status { margin-left: auto; font-size: 11px; text-align: right; }
@@ -20,6 +29,16 @@
 .pi-execution-menu > summary { list-style: none; text-align: center; }
 .pi-execution-menu > summary > span { display: inline-block; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .pi-execution-popover { position: absolute; z-index: 70; top: calc(100% + 8px); right: 0; width: min(380px, calc(100vw - 32px)); max-height: 65vh; overflow: auto; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: #111c24; box-shadow: 0 16px 40px #0009; font-size: 13px; }
+.pi-project-control { display: grid; gap: 8px; padding: 12px 0; margin: 8px 0; border-block: 1px solid var(--border); }
+.pi-project-control p { margin: 0; overflow-wrap: anywhere; }
+.pi-project-control small { color: var(--muted); line-height: 1.5; }
+.pi-project-control button { min-height: 36px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); color: var(--text); cursor: pointer; }
+.pi-project-control .pi-project-stop { border-color: #b66b52; color: #a6442d; font-weight: 600; }
+.pi-project-control button:disabled { opacity: .5; cursor: not-allowed; }
+.pi-project-control button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pi-stop-confirmation { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.pi-stop-confirmation > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.pi-stop-confirmation > p { line-height: 1.5; }
 .pi-queue-job { padding: 12px 0; border-top: 1px solid var(--border); }
 .pi-queue-job > div { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .pi-queue-job > p { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -138,8 +157,11 @@
 .maker-module-progress .active { color: var(--ok); background: #193a2d; border-radius: 4px; }
 .maker-mode-buttons { display: flex; gap: 7px; margin: 8px 0; }
 .maker-mode-buttons button { padding: 5px 9px; font-size: 12px; }
-.maker-2d .video-shell { display: none; }
-.maker-2d-main { width: 100%; min-height: 100%; overflow: auto; padding: 45px 20px 360px; background: #0d1420; }
+.video-workspace > .video-shell[hidden] { display: none; }
+.maker-2d-main { width: 100%; flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-panel); }
+.step-diagram-heading { margin-bottom: 10px; }
+.step-diagram-heading small { color: var(--text-dim); }
+.step-diagram-heading h2 { margin: 4px 0 0; font-size: 18px; color: var(--accent); }
 .maker-2d-main .maker-circuit { margin-bottom: 0; }
 .maker-deploy-main { flex: 1; min-height: 0; overflow: auto; }
 .maker-deploy-main .pi-code-editor { min-height: 300px; }
@@ -159,23 +181,42 @@
 .maker-assistant-heading h2 { font-size: 19px; margin: 8px 0 0; }
 .maker-assistant-heading > span { font-size: 11px; white-space: nowrap; }
 .maker-context { font-size: 11px; color: #a0b8c8; margin: 0; }
-.maker-assistant-options { border-bottom: 1px solid var(--border); padding: 9px 0; font-size: 12px; }
-.maker-assistant-options summary { cursor: pointer; color: #a8cabb; }
-.maker-assistant-parts { border-top: 1px solid var(--border); border-bottom: 0; padding-bottom: 0; }
-.maker-assistant .maker-conversation { margin-top: 0; max-height: 28vh; min-height: 95px; overflow: auto; padding: 0 4px; border-top: 0; scrollbar-width: thin; }
-.maker-message { border-radius: 10px; padding: 10px 12px; background: #15232c; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
-.maker-message.user { background: #1c2d2a; margin-left: 22px; }
+.maker-assistant-parts { font-size: 12px; }
+.maker-assistant-parts > summary { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-elev); color: var(--text); cursor: pointer; list-style: none; white-space: nowrap; }
+.maker-assistant-parts > summary::-webkit-details-marker { display: none; }
+.maker-assistant-parts[open] > summary { border-color: var(--accent); }
+.maker-parts-popover { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; width: min(360px, 100%); max-height: min(360px, 55dvh); overflow: auto; box-sizing: border-box; padding: 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-panel); color: var(--text); box-shadow: 0 10px 24px #0003; scrollbar-width: thin; }
+.maker-parts-popover > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.maker-parts-popover > header strong { font-size: 13px; }
+.maker-assistant .maker-parts-popover > header button { flex: none; width: 32px; height: 32px; padding: 0; font-size: 18px; }
+.maker-parts-popover .maker-parts { padding-top: 10px; }
+.maker-parts-popover .maker-parts label { overflow-wrap: anywhere; }
+.maker-parts-popover p { margin: 10px 0 0; font-size: 11px; line-height: 1.6; }
+.maker-parts-hint { padding-top: 10px; border-top: 1px solid var(--border); }
+.maker-assistant .maker-conversation { display: flex; flex-direction: column; gap: 12px; margin-top: 0; max-height: 28vh; min-height: 95px; overflow: auto; padding: 8px 4px; border-top: 0; scrollbar-width: thin; }
+.maker-assistant .maker-conversation > .maker-message { margin: 0; }
+.maker-message { min-width: 0; max-width: 94%; flex-shrink: 0; align-self: flex-start; border: 1px solid var(--border); border-radius: 16px 16px 16px 4px; padding: 12px 14px; background: #15232c; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.maker-message.user { max-width: 88%; align-self: flex-end; background: #1c2d2a; margin-left: 0; border-radius: 16px 16px 4px 16px; }
+.maker-message.assistant { margin-right: 0; }
+.maker-reply-text { margin: 8px 0 0; white-space: pre-wrap; text-wrap: pretty; }
+.maker-reply-points { display: grid; gap: 4px; margin: 8px 0 0; padding-inline-start: 20px; }
+.maker-reply-points li { min-width: 0; padding: 0; line-height: 1.65; text-wrap: pretty; }
+.maker-reply-points li::marker { color: var(--brand-blue, #417abe); }
+.maker-reply-full { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.maker-reply-full summary { width: fit-content; color: var(--accent); font-size: 11px; font-weight: 700; cursor: pointer; }
+.maker-reply-full summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.maker-reply-full p { margin: 8px 0 0; font-size: 12px; line-height: 1.6; }
 .maker-assistant .maker-field { margin-top: 8px; font-size: 12px; }
 .maker-assistant textarea { font-size: 14px; padding: 9px 10px; height: 64px; min-height: 64px; max-height: 160px; font-weight: 400; line-height: 1.5; }
-.maker-composer { display: grid; gap: 6px; min-width: 0; }
-.maker-compose-label { font-size: 12px; font-weight: 600; }
-.maker-compose-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px; align-items: end; border: 1px solid #3a485b; border-radius: 12px; background: var(--bg-inset); }
+.maker-composer { position: relative; display: grid; gap: 6px; min-width: 0; }
+.maker-compose-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.maker-compose-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px; align-items: end; padding: 4px; border: 1px solid #3a485b; border-radius: 18px; background: var(--bg-inset); }
 .maker-compose-row:focus-within { border-color: #7bcab1; box-shadow: 0 0 0 1px #7bcab1; }
-.maker-assistant .maker-compose-row textarea { width: 100%; min-width: 0; resize: vertical; border: 0; border-radius: 12px; background: transparent; color: var(--text); font-family: inherit; }
+.maker-assistant .maker-compose-row textarea { width: 100%; min-width: 0; resize: vertical; border: 0; border-radius: 14px; background: transparent; color: var(--text); font-family: inherit; }
 .maker-assistant .maker-compose-row textarea:focus-visible { outline: none; }
 .maker-assistant .maker-compose-send { display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; margin: 6px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1; }
 .maker-compose-send svg { pointer-events: none; }
-.maker-composer > small { font-size: 11px; line-height: 1.5; }
+.maker-compose-hint { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .maker-assistant button:not(.maker-primary), .maker-preview > button, .maker-bom button, .maker-product button { border: 1px solid var(--border-strong); background: var(--bg-elev); color: var(--text); border-radius: 7px; padding: 7px 10px; cursor: pointer; }
 .maker-assistant .maker-mode-buttons button.active { background: #1c3d33; color: #a0eaca; border-color: #407d65; }
 .maker-assistant .maker-mode-buttons { margin: 0; }
@@ -189,11 +230,13 @@
 .maker-draft-consent { margin: 14px 0; padding: 14px; border: 1px solid #92713c; background: #332a1b; border-radius: 9px; }
 .maker-draft-consent p { color: #ffd894; }
 .maker-draft-consent button { margin: 4px 8px 4px 0; }
-.maker-concept-page > .maker-eyebrow { margin-bottom: 8px; }
+.maker-concept-page > .maker-view-heading { margin-bottom: 8px; }
 .maker-concept-page .maker-preview-heading { gap: 10px; align-items: center; }
 .maker-concept-page .maker-preview-heading > div { flex: 1; min-width: 0; }
 .maker-concept-page .maker-preview-heading h2 { font-size: clamp(20px, 1.65vw, 26px); line-height: 1.35; margin: 6px 0 0; }
-.maker-concept-page .maker-preview-heading > button { flex-shrink: 0; padding: 8px 12px; font-size: 13px; }
+.maker-concept-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.maker-concept-version { font-size: 12px; font-weight: 700; color: var(--text); }
+.maker-concept-feedback { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; background: var(--surface-teal, #17332a); color: var(--text); font-size: 12px; line-height: 1.5; }
 .maker-concept-description { margin: 10px 0; font-size: 13px; line-height: 1.6; }
 .maker-concept-description > summary, .project-assembly-details > summary { cursor: pointer; color: #a8cabb; }
 .maker-concept-description p, .project-assembly-details p { margin: 8px 0; overflow-wrap: anywhere; }
@@ -237,6 +280,28 @@
 .project-image-empty { min-height: 180px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center; background: radial-gradient(ellipse at top, #183a43, #101821 65%); border: 1px dashed #365b67; border-radius: 16px; }
 .project-image-empty > span { font-size: 40px; color: #6ae5cd; }
 .project-image-empty p { max-width: 540px; line-height: 1.8; color: #9aafc3; overflow-wrap: anywhere; }
+.project-generation-status { gap: 16px; }
+.project-generation-status.project-image-empty { min-height: 260px; }
+.project-generation-orbit { position: relative; flex: none; display: grid; place-items: center; width: 64px; height: 64px; color: var(--brand-blue, #417abe); }
+.project-generation-orbit::before { content: ""; position: absolute; inset: 0; border: 3px solid var(--border, #365b67); border-top-color: var(--brand-blue, #417abe); border-right-color: var(--brand-teal, #16b9a6); border-radius: 50%; animation: project-generation-spin 2s linear infinite; }
+.project-generation-orbit > span { font-size: 30px; line-height: 1; }
+.project-generation-copy { min-width: 0; }
+.project-generation-copy h3 { margin: 0; font-size: 17px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.project-generation-copy p { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: var(--text-dim); overflow-wrap: anywhere; }
+.project-generation-dots { display: inline-flex; align-items: center; gap: 3px; padding-inline-start: 6px; }
+.project-generation-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--brand-blue, #417abe); animation: project-generation-pulse 1.4s ease-in-out infinite; }
+.project-generation-dots i:nth-child(2) { animation-delay: .2s; }
+.project-generation-dots i:nth-child(3) { animation-delay: .4s; background: var(--brand-teal, #16b9a6); }
+.project-generation-status.is-compact { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); }
+.project-generation-status.is-compact .project-generation-orbit { width: 32px; height: 32px; }
+.project-generation-status.is-compact .project-generation-orbit > span { font-size: 17px; }
+.project-generation-status.is-compact h3 { font-size: 14px; }
+.project-generation-status.is-compact p { font-size: 12px; margin-top: 2px; }
+@keyframes project-generation-spin { to { transform: rotate(360deg); } }
+@keyframes project-generation-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .project-generation-orbit::before, .project-generation-dots i { animation: none; }
+}
 .project-scope, .project-structure-tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .project-scope span, .project-structure-tags span { border: 1px solid #355262; background: #152932; color: #b4dedf; border-radius: 6px; padding: 5px 8px; font-size: 12px; }
 .project-assembly-details { font-size: 13px; line-height: 1.6; }
@@ -247,6 +312,7 @@
   .maker-concept-page { display: flex; flex-direction: column; }
   .maker-concept-page > * { flex-shrink: 0; }
   .maker-concept-page > .project-image-concept { flex: 1 0 auto; }
+  .maker-concept-page > .project-generation-status, .maker-concept-page .project-image-concept > .project-generation-status.project-image-empty { flex: 1 0 auto; }
   .maker-concept-page .project-image-concept > figure { flex: 1 0 auto; }
   .maker-concept-page .project-image-concept figure > a { flex: 1 0 auto; height: auto; min-height: 260px; }
   .maker-concept-page .project-image-concept figure img { position: absolute; inset: 0; height: 100%; max-height: none; }
@@ -267,13 +333,13 @@
 .maker-blueprint-page .maker-preview-heading h2 { margin: 8px 0; }
 .maker-blueprint-page .maker-preview-heading p { margin: 4px 0; font-size: 12px; }
 .maker-blueprint-page > .maker-candidate-notice { align-self: flex-start; margin-top: 8px; font-size: 12px; }
-.maker-blueprint-page .maker-circuit { flex: 1; min-height: 390px; margin-bottom: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(160px, 1fr) auto auto auto; gap: 6px; }
+.maker-blueprint-page .maker-circuit { flex: none; min-height: 0; margin-bottom: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto auto auto auto; gap: 6px; overflow: visible; }
 .maker-blueprint-page .maker-circuit > .maker-expand { grid-column: 2; grid-row: 1; margin: 0; align-self: start; font-size: 12px; }
 .maker-blueprint-page .maker-circuit > .circuit-module-tabs { grid-column: 1; grid-row: 1; margin: 0; }
 .maker-blueprint-page .maker-circuit > :is(.circuit-inspector, .circuit-zoom, .circuit-legend, small, .maker-warning) { grid-column: 1 / -1; margin: 0; }
 .maker-blueprint-page .maker-circuit > .circuit-inspector { padding: 8px; font-size: 12px; }
 .maker-blueprint-page .maker-circuit > .circuit-zoom { min-height: 0; display: flex; flex-direction: column; }
-.maker-blueprint-page .maker-circuit > .circuit-zoom > .circuit-viewport { height: auto; min-height: 120px; flex: 1; }
+.maker-blueprint-page .maker-circuit > .circuit-zoom > .circuit-viewport { height: clamp(300px, 42dvh, 430px); min-height: 0; flex: none; }
 .maker-blueprint-page .maker-circuit > :is(small, .maker-warning) { font-size: 11px; line-height: 1.5; }
 .blueprint-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .blueprint-actions button { font-size: 12px; }
@@ -308,6 +374,8 @@
 .component-test-card .test-outcome { font-size:22px; color:#dce7ed; }
 .component-test-card .test-outcome.passed { color:#6de0b4; }
 .component-test-card .test-outcome.failed { color:#ff9d9d; }
+.component-test-result-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 12px; min-width:0; }
+.component-test-debug-action { flex:none; justify-self:start; min-height:32px; padding:6px 10px; font-size:12px; }
 .component-test-card p { margin:0; }
 .component-test-card small { color:#a7bbc8; font-size:12px; }
 .test-next-step { padding:12px; background:#1b2b37; border-left:3px solid #79bcdb; }
@@ -323,7 +391,7 @@
 .component-test-card pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; font-size:11px; }
 .component-test-card details > summary { cursor:pointer; color:#a4bdc9; }
 .component-test-card button:focus-visible { outline:2px solid #79bcdb; outline-offset:3px; }
-.maker-chat-tools { display:flex; flex-wrap:wrap; gap:8px; }
+.maker-chat-tools { position:relative; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .maker-chat-tools button,.maker-chat-confirm button { padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elev); color:var(--text); cursor:pointer; font:inherit; font-size:12px; }
 .maker-chat-tools button:disabled,.maker-chat-confirm button:disabled { opacity:.45; cursor:default; }
 .maker-chat-tools button:focus-visible,.maker-chat-confirm button:focus-visible { outline:2px solid #74cfb8; outline-offset:3px; }

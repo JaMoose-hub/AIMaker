@@ -463,24 +463,6 @@ h3 {
   outline-offset: 2px;
 }
 
-.runtime-model-state {
-  align-self: flex-end;
-  min-height: 30px;
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 9px;
-  border: 1px solid color-mix(in srgb, var(--ok) 38%, var(--border));
-  border-radius: 999px;
-  color: #a6f0c6;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.runtime-model-state.fallback {
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
-  color: #ffd08a;
-}
-
 .runtime-error {
   align-self: center;
   max-width: 230px;
@@ -565,6 +547,27 @@ h3 {
 /* Video area                                                          */
 /* ------------------------------------------------------------------ */
 
+.video-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.video-control-toolbar {
+  position: relative;
+  z-index: 12;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 32px;
+}
+
 .video-shell {
   position: relative;
   flex: 1;
@@ -625,6 +628,13 @@ h3 {
   border: 0;
   border-radius: 0;
   background: #000000;
+}
+
+.app.display-mode-active .video-workspace,
+.video-guide-stage:fullscreen .video-workspace {
+  width: 100%;
+  height: 100%;
+  gap: 0;
 }
 
 .display-mode-controls {
@@ -977,32 +987,45 @@ h3 {
 }
 
 .mirror-controls {
-  position: absolute;
-  z-index: 9;
-  top: 12px;
-  right: 12px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 
 .pin-calibration-controls {
-  position: absolute;
-  z-index: 9;
-  top: 54px;
-  right: 12px;
+  position: relative;
   display: grid;
   justify-items: end;
-  gap: 6px;
 }
 
-/* Keep the wider trial control below the mirror row, clear of the existing
-   centered guide-collapse control and the right-hand calibration button. */
 .mirror-controls .realtime-toggle {
-  position: absolute;
-  top: 42px;
-  right: 106px;
   white-space: nowrap;
+}
+
+.video-control-toolbar :is(.mirror-toggle, .pin-calibration-toggle) {
+  border-color: var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text);
+  backdrop-filter: none;
+}
+
+.video-control-toolbar .mirror-toggle.active {
+  background: color-mix(in srgb, var(--accent) 15%, var(--bg-panel));
+  color: var(--text);
+}
+
+.video-control-toolbar .pin-calibration-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: 0 10px 25px #0004;
 }
 
 .realtime-tracking .overlay-svg.stale .board-outline,
@@ -1814,6 +1837,8 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
 .camera-auto-message.success { color: #7de1b1; }
 .statusbar {
   display: grid;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
   align-items: center;
   gap: 4px 10px;
@@ -1824,6 +1849,68 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
   font-size: 12.5px;
   color: var(--text-dim);
 }
+.statusbar.expanded { width: 100%; }
+.statusbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.statusbar-toggle:hover { border-color: var(--accent); }
+.statusbar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.statusbar-content { display: grid; gap: 4px 10px; min-width: 0; }
+.statusbar-content[hidden] { display: none; }
+.statusbar.camera-tools-menu {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.statusbar.camera-tools-menu[hidden] { display: none; }
+.camera-tools-menu .statusbar-toggle { min-height: 30px; font-size: 12px; padding: 4px 10px; }
+.camera-tools-popover {
+  position: fixed;
+  z-index: 60;
+  top: 12px;
+  right: auto;
+  width: min(640px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: var(--shadow-popover, 0 16px 48px rgb(0 0 0 / 25%));
+  font-size: 12.5px;
+}
+.camera-tools-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.camera-tools-heading button { min-width: 30px; min-height: 30px; padding: 2px 8px; border: 1px solid var(--border); font-size: 20px; }
+.camera-tools-video-controls { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 0 12px; margin-bottom: 10px; border-bottom: 1px solid var(--border); min-width: 0; }
+.camera-tools-video-controls > strong { flex: 1 1 100%; }
+.camera-tools-video-controls .mirror-controls { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; width: 100%; min-width: 0; }
+.camera-tools-video-controls .pin-calibration-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; width: 100%; min-width: 0; }
+.camera-tools-video-controls :is(.mirror-toggle, .pin-calibration-toggle, .pin-calibration-panel) { border-color: var(--border-strong); background: var(--bg-panel); color: var(--text); backdrop-filter: none; }
+.camera-tools-video-controls :is(.mirror-toggle, .pin-calibration-toggle).active { background: color-mix(in srgb, var(--accent) 15%, var(--bg-panel)); color: var(--text); }
+.camera-tools-video-controls .pin-calibration-panel { position: static; flex: 1 1 200px; min-width: 0; box-shadow: none; }
+.camera-tools-video-controls .pin-calibration-grid button { background: var(--bg-panel); border-color: var(--border-strong); }
+.camera-tools-popover .status-actions { margin-top: 10px; gap: 8px; }
+.camera-tools-popover .distance-assistant[open] { flex: 1 1 100%; }
+.camera-tools-popover .distance-assistant-panel { position: static; width: 100%; max-width: none; margin-top: 6px; box-shadow: none; }
+.camera-tools-popover .status-actions .camera-auto-message { white-space: normal; overflow-wrap: anywhere; }
+.deploy-camera-tools { display: flex; justify-content: flex-end; }
 
 /* Slots stay mounted and keep their widths as live values change. Only a
    container resize wraps them onto another row; the metrics never scroll. */
@@ -3750,7 +3837,7 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
     grid-template-rows: minmax(0, 1fr);
     gap: 12px;
   }
-  .app:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) > .video-shell {
+  .app:not(.display-mode-active) .video-guide-stage:not(.maker-2d):has(> .compact-guide:not([hidden])) > .video-workspace {
     grid-column: 1;
     grid-row: 1;
   }

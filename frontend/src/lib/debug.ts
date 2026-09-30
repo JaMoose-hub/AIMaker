@@ -3,7 +3,9 @@ import { makerRequest, type ProjectDesign, type ProjectGuideState } from "./make
 import type { ComponentTestRun } from "./componentTests";
 
 export interface DebugContext { project: ProjectDesign | null; code: string; test_keys: Record<string,string>; entry: object;
-  guide_confirmations?: ProjectGuideState["confirmed"]; guide_run?: number }
+  locale?: "zh-TW" | "en";
+  guide_confirmations?: ProjectGuideState["confirmed"]; guide_run?: number;
+  wiring_target?: { component_id: string; wire_id: string } | null }
 export interface DebugIssue { reason: string; next_action: string; component_id?: string; fact?: string }
 export interface DebugCase {
   id: string; status: string; progress: string; rounds: number; finished_at?: number; error?: string; eligible?: boolean;

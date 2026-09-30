@@ -258,3 +258,117 @@ def test_active_queue_entry_survives_many_cancelled_jobs(queue):
         rid = queue.submit("deploy", {"code":f"print({index})"})
         queue.action(rid,"cancel")
     assert job(queue,first)["state"] == "queued"
+
+
+def test_standalone_stop_is_owner_bound_and_preserves_records(queue):
+    queue.pi._set(program="running", pid=41, invocation_id="original", logs=["saved output"])
+    previous = queue.submit("deploy", {"code": "print('keep draft')"})
+    queue.action(previous, "cancel")
+    before = queue.snapshot()
+    # Fake SSH must reflect actual inactive PID just as systemctl show does.
+    refresh = queue.pi._refresh
+    def inactive_refresh():
+        refresh()
+        if queue.pi.snapshot()["program"] == "stopped":
+            queue.pi._set(pid=None)
+    queue.pi._refresh = inactive_refresh
+    result = queue.stop_project("program:original")
+    assert result["ok"] and result["status"]["program"] == "stopped"
+    assert result["status"]["pid"] is None and not result["status"]["busy"]
+    assert result["status"]["logs"] == ["saved output"]
+    assert queue.snapshot() == before and not queue.tests.runs and not queue.pi.deployments
+    assert queue.pi.commands == [f"systemctl --user stop {SERVICE}"]
+    assert queue.stop_project("program:original")["ok"]  # no second stop command
+    assert len(queue.pi.commands) == 1
+
+
+@pytest.mark.parametrize("blocker", ["queue", "busy", "test", "trial", "reservation", "foreign", "changed", "unknown", "no_identity", "stale_pid", "closed"])
+def test_standalone_stop_rejects_unverified_or_changed_work(queue, blocker):
+    queue.pi._set(program="running", pid=41, invocation_id="original")
+    expected = {
+        "queue": "stop_queue_active", "busy": "stop_program_busy", "test": "stop_test_active",
+        "trial": "stop_test_active", "reservation": "stop_test_active", "changed": "stop_owner_changed",
+        "unknown": "stop_state_unknown", "no_identity": "stop_state_unknown", "closed": "executor_closed",
+    }
+    if blocker == "queue": queue.submit("deploy", {"code": "print(1)"})
+    elif blocker == "busy": queue.pi._set(busy=True)
+    elif blocker == "test": queue.tests.start(context())
+    elif blocker == "trial":
+        class ActiveTrial:
+            def status(self): return {"active": {"id": "trial"}, "results": [], "test_busy": True}
+        queue.trials = ActiveTrial()
+    elif blocker == "reservation": queue.pi._test_reserved = "remote-test"
+    elif blocker == "foreign": queue.pi.foreign_test = True
+    elif blocker == "changed": queue.pi._set(invocation_id="new-program")
+    elif blocker == "unknown": queue.pi._set(program="unknown")
+    elif blocker == "no_identity": queue.pi._set(program="starting", pid=None, invocation_id="")
+    elif blocker == "stale_pid": queue.pi._set(program="stopped")
+    elif blocker == "closed": queue.closed.set()
+    if blocker in {"foreign", "stale_pid"}:
+        assert not queue.stop_project("program:original")["ok"]
+    else:
+        with pytest.raises(ValueError, match=expected[blocker]): queue.stop_project("program:original")
+    assert not any("stop " in command for command in queue.pi.commands)
+    assert not queue.pi.deployments
+    assert queue.pi.snapshot()["busy"] == (blocker == "busy")
+
+
+def test_standalone_stop_rechecks_remote_owner_not_cached_status(queue):
+    queue.pi._set(program="running", pid=41, invocation_id="original")
+    queue.pi._refresh = lambda: queue.pi._set(invocation_id="remote-replacement", pid=42)
+    with pytest.raises(ValueError, match="stop_owner_changed"):
+        queue.stop_project("program:original")
+    assert not queue.pi.commands
+
+
+def test_standalone_stop_lost_reply_is_not_success_or_retried(queue):
+    queue.pi._set(program="running", pid=41, invocation_id="original")
+    queue.pi.stop_fails = True
+    result = queue.stop_project("program:original")
+    assert not result["ok"] and result["status"]["program"] == "unknown"
+    assert not result["status"]["busy"] and not queue.pi.deployments
+    assert "private-test-password" not in json.dumps(result)
+
+
+def test_standalone_stop_disconnect_redacts_status_and_keeps_output(queue):
+    queue.pi._set(program="running", pid=41, invocation_id="original", logs=["preserved output"])
+    queue.pi.fail = "offline"
+    result = queue.stop_project("program:original")
+    assert not result["ok"] and not result["status"]["connected"]
+    assert result["status"]["program"] == "unknown" and result["status"]["logs"] == ["preserved output"]
+    assert "private-test-password" not in json.dumps(result)
+    assert not queue.pi.commands and not queue.pi.deployments
+
+
+def test_standalone_stop_reservation_prevents_concurrent_hardware_start(queue):
+    queue.pi._set(program="running", pid=41, invocation_id="original")
+    results = []
+    refresh = queue.pi._refresh
+    def checking_refresh():
+        refresh()
+        if queue.pi.snapshot()["program"] == "running":
+            results.append(queue.tests.start(context()))
+        else:
+            queue.pi._set(pid=None)
+    queue.pi._refresh = checking_refresh
+    assert queue.stop_project("program:original")["ok"]
+    assert results and all(not result["ok"] and result["error"] == "resource_busy" for result in results)
+    assert not queue.tests.runs
+
+
+def test_standalone_stop_api_requires_exact_program_owner_and_executor(queue):
+    app = FastAPI(); app.include_router(router)
+    app.state.pi_deployer, app.state.pi_execution = queue.pi, queue
+    with TestClient(app) as client:
+        for body in ({}, {"owner": ""}, {"owner": "test:abc"}, {"owner": "program:"}):
+            assert client.post("/api/pi/stop", json=body).status_code == 422
+        queue.pi._set(program="running", pid=41, invocation_id="new")
+        response = client.post("/api/pi/stop", json={"owner": "program:old"})
+        assert response.status_code == 409 and response.json()["detail"] == "stop_owner_changed"
+        queue.pi._set(program="stopped", pid=None)
+        result = client.post("/api/pi/stop", json={"owner": "program:old"}).json()
+        assert result["ok"] and "execution" in result["status"]
+        del app.state.pi_execution
+        response = client.post("/api/pi/stop", json={"owner": "program:old"})
+        assert response.status_code == 503 and response.json()["detail"] == "stop_backend_restart_required"
+    assert not queue.pi.commands and not queue.pi.deployments

@@ -1,0 +1,15 @@
+{
+  "tft": {
+    "reason": "既有 TFT 舊資料抽查點位位於 PCB 外角，但正式定位語意為安裝孔中心。舊驗證集不能用作孔心真值；隔離該類微調與定位驗收，保留原模型。",
+    "scope": "Known exact image-label pairs; group-level precaution, not automatic relabeling.",
+    "expected_semantics": "mounting_hole_centers",
+    "anchors": [
+      ["64c119efffa95a3e194b632bd31aab0fa6950c5b9c3f2cb7dff86ef82adf1711", "d4b3a4dac8115b561ea32303a48f23f1ad29f41bfb6697d18a33cc7ef263e7a7"],
+      ["14332a158f6cdb9c174b5034fbc2c666182d65b38281a8631e7f1ed79f5b475f", "b0f6224a56150d2711288234dd79fce91bbc28d7c8ec92799ef7297de31a3b51"],
+      ["ec1cae8072ee1b0072e75b7ebad4fdb64e41d0e9800386a241d44cec40cada06", "c28309f0f1da3b68cf29854250ad497ca7a9a27a7e98763c173e614ba4ca4104"],
+      ["443ee18fa94e8dbd043daab26e54d7e8c6b0246247bba73c8c2535cafb504428", "fe8445b792889ea2ef903792ba115ef277c5cdb4b4b9d40368bfc3967fba5155"],
+      ["8cb7dacc40be0ab3c11f079c429634209046bf4c41df8a97d881cfe0adf29e72", "5f9148e9d140504a5b5a328ebbf8a70a32731e70e2a1353e112d351b85d3aa46"],
+      ["d2c9058d60e6d11414c5f34545704a77e2e9b70a8752a49645ebff11e5f161f3", "049cd6cd676663d27c4f97947eb340b5ad1ac85bbba45093e5145df06e8fb9e3"]
+    ]
+  }
+}
