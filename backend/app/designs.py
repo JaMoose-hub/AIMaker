@@ -44,6 +44,14 @@ class StructuralPart(BaseModel):
     purpose: str = Field(min_length=1, max_length=180)
 
 
+class ConceptOnlyPart(BaseModel):
+    """Appearance-only; never a catalog module, wiring target or runtime device."""
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["motor"]
+    quantity: int = Field(ge=1, le=32)
+    purpose: str = Field(min_length=1, max_length=180)
+
+
 class AssemblyConcept(BaseModel):
     model_config = ConfigDict(extra="forbid")
     description: str = Field(min_length=1, max_length=1200)
@@ -68,6 +76,7 @@ class DesignProposal(BaseModel):
     logic: str = Field(min_length=1, max_length=12000)
     preview: ConceptPreview | None = None
     assembly: AssemblyConcept | None = None
+    concept_only_parts: list[ConceptOnlyPart] = Field(default_factory=list, max_length=1)
 
     @model_validator(mode="after")
     def unique_modules(self):

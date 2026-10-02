@@ -10,7 +10,8 @@ export function WorkspaceHeader({ brand, navigation, saveStatus, children }: {
   return <header className="header maker-header maker-header-integrated">
     <div className="maker-header-main">{brand}{navigation}</div>
     <div className="workspace-toolbar maker-workflow-toolbar maker-header-controls">
-      {children}{saveStatus}
+      {children}
     </div>
+    {saveStatus}
   </header>;
 }

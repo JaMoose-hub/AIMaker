@@ -1,4 +1,4 @@
-# Tinkro visual identity (2026-09-29)
+# Tinkro Pro visual identity (Style 23, 2026-09-30)
 
 ## Scope and compatibility
 
@@ -21,42 +21,88 @@ are not rewritten to change their branding or hashes. Historical text may still
 contain the old name. Backend identity strings take effect at the next ordinary
 backend restart; this visual update does not require interrupting the camera or Pi.
 
-## Visual rules
+## Current visual rules
 
-| Role | Color / treatment |
-| --- | --- |
-| Brand navy | `#203065`: integrated brand/workflow bar, links and key headings; workspace surfaces remain warm paper |
-| Brand blue | `#417ABE`: principal workspace top borders, eyebrow markers, step rings and selection borders |
-| Brand teal | `#16B9A6`: primary actions, current-step number and progress |
-| Studio ink | `#253730`: neutral graphite detail and shadow tint |
-| Workspace | `#DEDCD5` warm-gray dotted desk, `#EEEAE1` paper cards, `#E4E1D7` secondary surfaces |
-| Links | `#203065`, original navy for small-text contrast |
-| Secondary text | `#4E5F59`; muted text `#55605B` |
-| Semantic status | Dark green / amber / red; never substitute brand color for electrical wire colors |
-| Shapes | 8px controls; notebook-like asymmetric corners on principal cards, circular step numbers |
+The approved Style 23 document supplies the Pro palette, typography and component
+treatment. The reference's sidebar, fourth workflow stage and example wiring
+are **not** adopted. The existing three stages, resizable panes and guide/AI tabs
+remain the navigation model. Warm paper, dot patterns and thick/asymmetric card
+borders have been removed.
 
-The maker-studio revision replaces the blue social-feed appearance with warm
-paper, a compact navy tool tray, a subtle dot grid and drawing-paper frame.
-The original `#203065` and `#417ABE` remain visibly present alongside teal;
-blue is concentrated in navigation and accents rather than large page surfaces.
-Conversation messages resemble margin-marked notes rather than blue chat bubbles.
-Patterns are static CSS backgrounds outside live camera / circuit surfaces;
-they never cover image pixels or add animation, content or interaction layers.
+| Token role | Dark | Light |
+| --- | --- | --- |
+| Canvas | `#0a0b10` | `#f3f4f7` |
+| Panel / raised | `#12141b` / `#171a22` | `#ffffff` / `#f7f8fb` |
+| Border / strong | `#23262f` / `#2f333f` | `#e2e5ec` / `#cfd4de` |
+| Text / secondary / muted | `#e8eaf0` / `#a4a9b8` / `#7f869a` | `#10131c` / `#454c5e` / `#646b7e` |
+| Link / selection text | `#7faee6` | `#2a5f9e` |
+| Success / warning / error text | `#3dd68c` / `#f5a524` / `#ff7b82` | `#0d7148` / `#9a5b00` / `#b3262f` |
 
-Primary buttons use dark ink on teal, **not** white on teal. Theme tests enforce
-at least 4.5:1 contrast for the declared normal-text pairs; this is not a claim
-of a complete accessibility audit. Existing system/CJK font stacks are retained;
-no network font dependency is introduced. Common headings, focus outlines,
-chat bubbles, disclosures, inputs, cards and warnings share semantic tokens.
+Brand navy `#203065`, blue `#417abe` and action teal `#16b9a6` remain. Cards use
+8px corners, controls 6px, tags 4px. UI text uses the local Segoe/system/CJK stack;
+code, pins and logs use system monospace. No new package or web font is needed.
+Normal actions have no glow. The original wordmark retains its image glow; only
+AI input surfaces add aurora decoration. Keyboard focus uses a separate 2px outline.
+Color transitions are 120ms and respect reduced motion.
 
-The supplied transparent logo is preserved byte-for-byte in
-`frontend/public/brand/tinkro-dark.png`; CSS crops excess transparent canvas at
-display time. The favicon is a separate simple two-arc brand symbol. Camera,
-circuit drawing, code and logs retain dark surfaces. Optical HUD / Eye display
-modes explicitly bypass the light theme. No camera pixels, pin coordinates,
-mirroring, homographies or detection models are modified.
+Primary actions use dark `#04241f` ink on teal, not white. Confirmation actions
+are tonal; other actions remain outlined/text buttons. User/AI messages share
+8px conversation surfaces. Candidate projects and code proposals are dashed and
+explicitly marked unapplied until existing confirmation handlers apply them.
+Theme styling does not rewrite AI replies or manufacture test evidence.
+
+The original PNG and SVG brand assets are unchanged. The compact header uses
+the complete supplied `public/brand/tinkro-dark.png` wordmark, not an SVG symbol
+with typeset text. Its SHA-256 matches the user-supplied transparent PNG. It has
+an accessible Tinkro image label and retains the Vibe Maker Studio subtitle.
+The 128 x 40 CSS image window (112 x 35 in the integrated workspace header)
+trims transparent canvas space without stretching or editing the source.
+Light mode adds a dark backing behind the white wordmark;
+dark mode uses the header surface. See [logo verification](qa/brand-logo/README.md).
+The integrated desktop header puts brand, three stages, AI model, Pi connection,
+execution and Settings on one row with 4px vertical padding. Controller, language
+and theme live in a non-modal Settings disclosure; they keep the same mounted
+controls and handlers. Escape returns focus to Settings, and outside clicks or
+tabbing away close it. Normal save-success text is omitted; storage failures
+remain visible alerts outside Settings. Runtime/Pi errors can add a row without
+squeezing navigation. At widths up to 1200px the header wraps; up to 960px,
+controls retain 44px targets. See [settings header verification](qa/header-settings/README.md)
+and the [earlier compact header baseline](qa/compact-workspace-header/README.md).
+Camera, photo thumbnails,
+circuit drawing, code and output logs retain dark surfaces. Optical HUD / Eye
+modes bypass ordinary workspace paint. Electrical colors, pixels, pin
+coordinates, mirroring, homographies and detection models remain untouched.
+
+## Theme preference
+
+`ThemeSelect` appears below Language inside Settings in the Maker header;
+non-Maker/HUD toolbars retain their existing inline controls. Choices
+are **Dark / Light** (`深色 / 淺色`), with dark as the first-use default; there is
+no system-following mode. Only `boardvision.theme.v1` is written. No project,
+conversation, guide, code, backend schema or other saved preference is migrated.
+
+`public/theme.js` runs synchronously in the document head, before app/CSS loading,
+with minimal first-paint colors in `index.html`. It restores the saved preference
+or falls back to dark if storage is unavailable/invalid. Storage failures do not
+prevent in-session switching. `lib/theme.ts` updates the root `data-theme` and
+browser theme-color metadata. `useSyncExternalStore` subscribes only the select,
+not App: no keyed subtree, provider remount, reload, business API or polling.
+Other tabs' theme changes synchronize without reacting to unrelated storage keys.
+
+`tinkro.css` loads **after guideAi.css and all other component styles**. Its root
+palette is separate from the legacy HUD variables; the ordinary workspace maps
+the old semantic aliases locally. Do not move it earlier or replace electrical
+`--cap-*` / `--wire-*` colors with brand tokens.
 
 ## Validation
+
+### Pro dual-theme verification (current)
+
+See [the Pro verification record and screenshots](qa/tinkro-pro/README.md).
+The older sections below document earlier changes, not current Pro layout sizes
+or current test counts. No Pi deployment/test or paid AI generation is part of
+this visual verification. The frontend build is sufficient; no backend restart
+is required for these presentation-only changes.
 
 ### Integrated workspace header (2026-09-30)
 

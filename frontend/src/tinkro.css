@@ -1,38 +1,103 @@
-/* Tinkro presentation layer. Loaded after legacy component and RWD styles.
-   No stage remounts, image transforms, pin coordinates or hardware state here.
-   The legacy dark palette remains the fallback for optical HUD / Eye modes. */
+/* Tinkro Pro (Style 23). Presentation only; ordinary workspace is scoped
+   separately from the optical HUD. Electrical and image colors are not tokens. */
 :root {
   --brand-navy: #203065;
   --brand-blue: #417abe;
   --brand-teal: #16b9a6;
-  --brand-action-hover: #0fa390;
-  --brand-link: #203065;
-  --studio-ink: #253730;
-  --studio-chalk: #edece2;
-  /* A maker's desk: warm paper, graphite edges and restrained brand accents. */
-  --surface-canvas: #dedcd5;
-  --surface-card: #eeeae1;
-  --surface-subtle: #e4e1d7;
-  --surface-chat: #f8f7f2;
-  --surface-blue: #dfe5eb;
-  --surface-teal: #dcefe5;
-  --surface-warning: #f5ebd6;
-  --surface-danger: #f4e1e5;
-  --ink-primary: #263632;
-  --ink-secondary: #4e5f59;
-  --ink-muted: #55605b;
-  --line-default: #c6c7bb;
-  --line-strong: #9faea2;
-  --radius-control: 8px;
-  --radius-card: 12px;
-  --radius-workspace: 16px;
-  --shadow-card: 0 3px 0 rgb(37 55 48 / 7%), 0 7px 18px rgb(37 55 48 / 4%);
-  --shadow-popover: 0 16px 48px rgb(37 55 48 / 18%);
+  --brand-action-hover: #20c9b5;
+  --brand-link: #7faee6;
+  --studio-ink: #e8eaf0;
+  --studio-chalk: #e8eaf0;
+  --surface-canvas: #0a0b10;
+  --surface-card: #12141b;
+  --surface-subtle: #171a22;
+  --surface-chat: #171a22;
+  --surface-blue: rgb(65 122 190 / 14%);
+  --surface-teal: rgb(61 214 140 / 10%);
+  --surface-warning: rgb(245 165 36 / 10%);
+  --surface-danger: rgb(242 85 93 / 12%);
+  --surface-evidence: rgb(255 255 255 / 1.5%);
+  --ink-primary: #e8eaf0;
+  --ink-secondary: #a4a9b8;
+  --ink-muted: #7f869a;
+  --line-default: #23262f;
+  --line-strong: #2f333f;
+  --line-blue: rgb(65 122 190 / 60%);
+  --line-ok: rgb(61 214 140 / 36%);
+  --line-warn: rgb(245 165 36 / 38%);
+  --line-danger: rgb(242 85 93 / 42%);
+  --status-ok: #3dd68c;
+  --status-warn: #f5a524;
+  --status-danger: #ff7b82;
+  --status-error-base: #f2555d;
+  --tonal-bg: rgb(22 185 166 / 16%);
+  --tonal-border: rgb(22 185 166 / 60%);
+  --tonal-ink: #5fe0d0;
+  --diff-bg: #0a0b10;
+  --diff-add-bg: rgb(61 214 140 / 10%);
+  --diff-add-ink: #6be3a6;
+  --diff-del-bg: rgb(242 85 93 / 10%);
+  --completed-progress: #417abe;
+  --pending-step: #7f869a;
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-workspace: 8px;
+  --radius-tag: 4px;
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 4%), 0 12px 32px rgb(0 0 0 / 35%);
+  --shadow-popover: 0 16px 48px rgb(0 0 0 / 35%);
+  --logo-glow: .62;
+  --prompt-glow: .42;
+  --workspace-scheme: dark;
+  --pro-font: "Segoe UI Variable", "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+  --pro-mono: ui-monospace, "Cascadia Mono", Consolas, "Microsoft JhengHei", monospace;
 }
-
-body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-canvas); }
+:root[data-theme="light"] {
+  --brand-action-hover: #12ac99;
+  --brand-link: #2a5f9e;
+  --studio-ink: #10131c;
+  --surface-canvas: #f3f4f7;
+  --surface-card: #ffffff;
+  --surface-subtle: #f7f8fb;
+  --surface-chat: #f7f8fb;
+  --surface-blue: rgb(65 122 190 / 8%);
+  --surface-teal: rgb(13 113 72 / 8%);
+  --surface-warning: rgb(154 91 0 / 8%);
+  --surface-danger: rgb(200 50 59 / 7%);
+  --surface-evidence: #fafbfd;
+  --ink-primary: #10131c;
+  --ink-secondary: #454c5e;
+  --ink-muted: #646b7e;
+  --line-default: #e2e5ec;
+  --line-strong: #cfd4de;
+  --line-blue: rgb(42 95 158 / 38%);
+  --line-ok: rgb(13 113 72 / 32%);
+  --line-warn: rgb(154 91 0 / 32%);
+  --line-danger: rgb(200 50 59 / 32%);
+  --status-ok: #0d7148;
+  --status-warn: #9a5b00;
+  --status-danger: #b3262f;
+  --status-error-base: #c8323b;
+  --tonal-bg: rgb(22 185 166 / 12%);
+  --tonal-border: rgb(11 111 99 / 55%);
+  --tonal-ink: #0b6f63;
+  --diff-bg: #f7f8fb;
+  --diff-add-bg: rgb(22 163 74 / 12%);
+  --diff-add-ink: #0d7148;
+  --diff-del-bg: rgb(200 50 59 / 9%);
+  --completed-progress: #6b98cc;
+  --pending-step: #5a6174;
+  --shadow-card: 0 1px 0 rgb(16 19 32 / 4%), 0 8px 24px rgb(16 19 32 / 6%);
+  --shadow-popover: 0 16px 48px rgb(16 19 32 / 14%);
+  --logo-glow: .30;
+  --prompt-glow: .26;
+  --workspace-scheme: light;
+}
+/* Also paint the pre-mount document from the synchronous saved preference. */
+html[data-theme] { background: var(--surface-canvas); color-scheme: var(--workspace-scheme); }
+body:not(:has(.display-mode-active)) { background: var(--surface-canvas); }
+html:has(.display-mode-active) { color-scheme: dark; background: var(--bg); }
 .app.tinkro-theme:not(.display-mode-active) {
-  color-scheme: light;
+  color-scheme: var(--workspace-scheme);
   --bg: var(--surface-canvas);
   --bg-panel: var(--surface-card);
   --bg-elev: var(--surface-subtle);
@@ -45,17 +110,19 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
   --text-muted: var(--ink-muted);
   --muted: var(--ink-muted);
   --accent: var(--brand-link);
-  --ok: #087255;
-  --warn: #85550a;
-  --danger: #b52e45;
+  --ok: var(--status-ok);
+  --warn: var(--status-warn);
+  --danger: var(--status-danger);
   --control-bg: var(--surface-card);
   --control-hover: var(--surface-blue);
   --primary-bg: var(--brand-teal);
   --primary-hover: var(--brand-action-hover);
-  --primary-ink: #102d27;
+  --primary-ink: #04241f;
   background: var(--bg);
-  background-image: radial-gradient(rgb(37 55 48 / 12%) .65px, transparent .65px);
-  background-size: 20px 20px;
+  font-family: var(--pro-font);
+  font-size: 14px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
@@ -70,36 +137,36 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
   color: var(--text);
 }
 .brand-logo { display: block; width: 152px; height: 48px; object-fit: cover; object-position: center 48%; }
-.app.tinkro-theme:not(.display-mode-active) .brand-text { display: flex; align-items: center; gap: 16px; padding: 2px 12px 2px 8px; border-radius: 12px 12px 12px 3px; background: var(--brand-navy); }
+.app.tinkro-theme:not(.display-mode-active) .brand-text { display: flex; align-items: center; gap: 16px; padding: 2px 12px 2px 8px; border-radius: var(--radius-card); background: var(--surface-card); }
 .app.tinkro-theme:not(.display-mode-active) .brand-title { margin: 0; line-height: 1; }
-.app.tinkro-theme:not(.display-mode-active) .brand-subtitle { color: #d3ddd0; font-size: 12px; letter-spacing: .03em; }
+.app.tinkro-theme:not(.display-mode-active) .brand-subtitle { color: var(--text-faint); font-size: 12px; letter-spacing: .03em; }
 .app.tinkro-theme:not(.display-mode-active) .maker-save-status { color: var(--text-dim); }
 .app.tinkro-theme:not(.display-mode-active) .maker-save-status.maker-warning { color: var(--warn); }
-.app.tinkro-theme:not(.display-mode-active) .maker-workflow-toolbar { padding: 8px; background: var(--bg-panel); border-color: var(--border); color: var(--text); border-radius: var(--radius-card); box-shadow: 0 2px 0 rgb(37 55 48 / 7%); }
+.app.tinkro-theme:not(.display-mode-active) .maker-workflow-toolbar { padding: 8px; background: var(--bg-panel); border-color: var(--border); color: var(--text); border-radius: var(--radius-card); box-shadow: none; }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-nav button, .maker-model-value, .pi-global-connect, .pi-execution-menu > summary, .runtime-select select) { min-height: 36px; }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-model-label, .runtime-select > span, .pi-global-label) { color: var(--text-dim); font-size: 11px; }
 .app.tinkro-theme:not(.display-mode-active) .maker-nav {
-  --text: var(--studio-chalk);
-  --text-faint: #c4d3eb;
-  --control-hover: #304782;
-  --accent: #81daca;
+  --text: var(--ink-primary);
+  --text-faint: var(--ink-muted);
+  --control-hover: var(--surface-subtle);
+  --accent: var(--brand-link);
   padding: 5px;
   gap: 4px;
   justify-content: space-between;
   border-radius: 10px;
-  background: var(--brand-navy);
+  background: var(--surface-card);
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-nav button { background: transparent; border-color: transparent; padding: 6px 10px; }
 .app.tinkro-theme:not(.display-mode-active) .maker-nav button span { display: inline-grid; place-items: center; width: 23px; min-height: 23px; margin-right: 7px; padding: 0; color: var(--text-faint); border: 1px solid var(--brand-blue); border-radius: 50%; font-size: 10px; font-variant-numeric: tabular-nums; }
-.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active { color: var(--brand-navy); background: var(--studio-chalk); border-color: var(--studio-chalk); box-shadow: 0 2px 0 #142044; }
-.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active span { color: #102d27; border-color: var(--brand-teal); background: var(--brand-teal); }
+.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active { color: var(--brand-link); background: var(--surface-blue); border-color: var(--line-blue); box-shadow: none; }
+.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active span { color: var(--brand-link); border-color: var(--line-blue); background: var(--surface-blue); }
 .app.tinkro-theme:not(.display-mode-active) .maker-design-views button { background: var(--surface-subtle); color: var(--ink-secondary); border-color: var(--line-default); }
-.app.tinkro-theme:not(.display-mode-active) .maker-design-views button.active { background: var(--surface-blue); color: var(--brand-navy); border-color: var(--brand-blue); }
-.app.tinkro-theme:not(.display-mode-active) .pi-global-connect.connected { border-color: #9ccfbe; background: var(--surface-teal); }
+.app.tinkro-theme:not(.display-mode-active) .maker-design-views button.active { background: var(--surface-blue); color: var(--brand-link); border-color: var(--brand-blue); }
+.app.tinkro-theme:not(.display-mode-active) .pi-global-connect.connected { border-color: var(--line-ok); background: var(--surface-teal); }
 .app.tinkro-theme:not(.display-mode-active) .pi-global-connect.connected > span { color: var(--ok); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-model-popover, .pi-execution-popover, .maker-product, .maker-diagram-dialog) { color: var(--text); border-color: var(--border); background: var(--bg-panel); box-shadow: var(--shadow-popover); }
 
-/* Shared controls: paper secondary actions, teal primary actions, visible focus.
+/* Shared controls: neutral secondary actions, teal primary actions, visible focus.
    Do not change button placement, hidden/disabled semantics or click handlers. */
 .app.tinkro-theme:not(.display-mode-active) :is(button, select) { background-color: var(--control-bg); color: var(--text); border-color: var(--border-strong); border-radius: var(--radius-control); }
 .app.tinkro-theme:not(.display-mode-active) :is(button, summary, select, input, textarea, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -110,16 +177,16 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) :is(input[type=checkbox], input[type=radio], progress) { accent-color: var(--brand-link); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-primary, .guide-primary-action, .pi-deploy-button, .ai-debug-composer-send > button:last-child, .calibrate-btn.primary) { background: var(--primary-bg); color: var(--primary-ink); border-color: var(--primary-bg); font-weight: 700; box-shadow: 0 2px 0 rgb(16 45 39 / 18%); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-primary, .guide-primary-action, .pi-deploy-button, .ai-debug-composer-send > button:last-child, .calibrate-btn.primary):hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--primary-ink); }
-.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active:hover { background: var(--surface-blue); color: var(--brand-navy); }
+.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active:hover { background: var(--surface-blue); color: var(--brand-link); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-text-button, .pi-text-button, .guide-reference-toggle, .compact-guide-close) { background: transparent; color: var(--accent); }
 .app.tinkro-theme:not(.display-mode-active) a { color: var(--accent); }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-mode-buttons button.active, .blueprint-tabs button[aria-selected=true], .blueprint-wire-steps button.active, .circuit-module-tabs button.active, .debug-actions button[aria-pressed=true], .ai-debug-quick button[aria-pressed=true], .ai-debug-head-actions button[aria-expanded=true]) { background: var(--surface-blue); border-color: var(--brand-blue); color: var(--brand-navy); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-mode-buttons button.active, .blueprint-tabs button[aria-selected=true], .blueprint-wire-steps button.active, .circuit-module-tabs button.active, .debug-actions button[aria-pressed=true], .ai-debug-quick button[aria-pressed=true], .ai-debug-head-actions button[aria-expanded=true]) { background: var(--surface-blue); border-color: var(--brand-blue); color: var(--brand-link); }
 
 /* Work surfaces / type. Existing pane geometry and adaptive image sizing stay. */
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-prompt-panel, .maker-preview, .pi-deploy-panel, .photo-guide, .debug-page, .debug-page-content, .workflow-surface, .workflow-details, .debug-results, .debug-status-grid article, .component-test-card, .ai-debug-panel, .debug-trial, .debug-symptom, .statusbar, .camera-panel-card) { color: var(--text); background: var(--bg-panel); border-color: var(--border); border-radius: var(--radius-card); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-prompt-panel, .maker-preview, .pi-deploy-panel, .compact-guide, .debug-page-content) { box-shadow: var(--shadow-card); }
-.app.tinkro-theme:not(.display-mode-active) .main :is(.maker-preview, .pi-deploy-panel, .debug-page-content) { border-radius: 4px 18px 18px 18px; border-top: 3px solid var(--brand-blue); }
-.app.tinkro-theme:not(.display-mode-active) .main .maker-prompt-panel { border-radius: 18px 4px 18px 18px; border-top: 3px solid var(--brand-teal); }
+.app.tinkro-theme:not(.display-mode-active) .main :is(.maker-preview, .pi-deploy-panel, .debug-page-content) { border-radius: var(--radius-card); border-top: 1px solid var(--border); }
+.app.tinkro-theme:not(.display-mode-active) .main .maker-prompt-panel { border-radius: var(--radius-card); border-top: 1px solid var(--border); }
 .app.tinkro-theme:not(.display-mode-active) .photo-guide.component-guide {
   --text-dim: var(--ink-secondary);
   --border: var(--line-default);
@@ -130,26 +197,26 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-eyebrow, .workflow-eyebrow, .guide-eyebrow, .blueprint-step-number, .debug-results > h3, .debug-camera-toolbar strong) { color: var(--brand-link); letter-spacing: .04em; }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-eyebrow, .workflow-eyebrow)::before { content: ""; display: inline-block; width: 16px; height: 3px; margin-right: 8px; vertical-align: middle; background: var(--brand-blue); border-radius: 2px; }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-context, .maker-conversation small, .maker-ai-settings label, .maker-ai-settings small, .maker-assistant-options summary, .maker-concept-description > summary, .project-assembly-details > summary, .project-image-concept figcaption, .project-image-empty p, .guide-progress-label, .guide-module-track, .guide-step-label, .guide-pin-pair > div > span, .guide-pin-pair small, .guide-step-instruction, .guide-panel-footer > small, .guide-prepare-message p, .component-test-card header > span, .component-test-card small, .component-test-card details > summary, .test-facts, .ai-debug-disclosure, .ai-debug-model, .ai-debug-camera-verdict, .ai-debug-composer-hint, .ai-debug-welcome, .ai-debug-message-meta, .ai-debug-message-model, .ai-debug-message-meta strong, .ai-debug-message.is-user .ai-debug-message-meta strong) { color: var(--text-dim); }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-preview-heading h2, .workflow-heading h2) { font-size: clamp(20px, 1.65vw, 24px); line-height: 1.4; color: var(--brand-navy); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-preview-heading h2, .workflow-heading h2) { font-size: clamp(20px, 1.65vw, 24px); line-height: 1.4; color: var(--brand-link); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-assistant-heading h2, .ai-debug-head h3, .deploy-section-heading h3) { font-size: 18px; line-height: 1.45; }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-badge, .project-scope span, .project-structure-tags span, .concept-parts span, .ai-debug-avatar, .ai-debug-evidence-levels span) { color: var(--brand-navy); background: var(--surface-blue); border-color: var(--border); }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-generating, .maker-ai-cost, .maker-chat-confirm, .maker-candidate-notice, .guide-module-review, .ai-debug-current, .ai-debug-chat .ai-debug-current, .ai-debug-next-step, .debug-ai-result) { color: var(--text); background: var(--surface-teal); border-color: #a9d7ca; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-badge, .project-scope span, .project-structure-tags span, .concept-parts span, .ai-debug-avatar, .ai-debug-evidence-levels span) { color: var(--brand-link); background: var(--surface-blue); border-color: var(--border); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-generating, .maker-ai-cost, .maker-chat-confirm, .maker-candidate-notice, .guide-module-review, .ai-debug-current, .ai-debug-chat .ai-debug-current, .ai-debug-next-step, .debug-ai-result) { color: var(--text); background: var(--surface-teal); border-color: var(--line-ok); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-ai-price, .maker-ai-cost summary, .guide-module-review > span, .guide-module-review > strong, .ai-debug-busy, .ai-debug-busy small, .ai-debug-capture-hint, .debug-check-feedback) { color: var(--ok); }
 .app.tinkro-theme:not(.display-mode-active) .maker-ai-settings :is(select, input) { background: var(--bg-inset); border-color: var(--border); }
 .app.tinkro-theme:not(.display-mode-active) .maker-bom article { background: var(--bg-inset); }
-.app.tinkro-theme:not(.display-mode-active) .maker-empty > span { color: var(--brand-blue); background: var(--surface-blue); border-color: var(--border); }
+.app.tinkro-theme:not(.display-mode-active) .maker-empty > span { color: var(--brand-link); background: var(--surface-blue); border-color: var(--border); }
 .app.tinkro-theme:not(.display-mode-active) .project-image-empty { background: var(--surface-subtle); border-color: var(--border-strong); }
-.app.tinkro-theme:not(.display-mode-active) .project-image-empty > span { color: var(--brand-blue); }
-.app.tinkro-theme:not(.display-mode-active) .project-image-concept figure { background-color: var(--surface-subtle); background-image: linear-gradient(rgb(37 55 48 / 7%) 1px, transparent 1px), linear-gradient(90deg, rgb(37 55 48 / 7%) 1px, transparent 1px); background-size: 24px 24px; border-color: var(--line-strong); border-radius: 3px 14px 3px 14px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.project-image-empty > span,.project-generation-orbit > span) { color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) .project-image-concept figure { background-color: var(--surface-subtle); background-image: none; border-color: var(--line-strong); border-radius: var(--radius-card); }
 .app.tinkro-theme:not(.display-mode-active) .project-image-concept figcaption { background: var(--bg-panel); border-top: 1px dashed var(--line-strong); }
 .app.tinkro-theme:not(.display-mode-active) .maker-splitter > span { background: var(--border-strong); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-splitter:hover, .maker-splitter:focus-visible, .is-resizing > .maker-splitter) { background: var(--surface-blue); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-splitter:hover, .maker-splitter:focus-visible, .is-resizing > .maker-splitter) > span { background: var(--brand-blue); }
 
 /* Chat uses the same visual vocabulary in design and debugging. */
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-message, .ai-debug-message) { background: var(--surface-chat); border: 1px solid var(--border); color: var(--text); border-radius: 16px 16px 16px 4px; }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-message.user, .ai-debug-message.is-user) { background: var(--surface-teal); border-color: #afd4c5; border-radius: 16px 16px 4px 16px; }
-.app.tinkro-theme:not(.display-mode-active) :is(.maker-message > small, .ai-debug-message-meta strong) { color: var(--brand-navy); font-size: 11px; font-weight: 700; letter-spacing: 0; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message, .ai-debug-message) { background: var(--surface-chat); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-card); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message.user, .ai-debug-message.is-user) { background: var(--surface-subtle); border-color: var(--line-strong); border-radius: var(--radius-card); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message > small, .ai-debug-message-meta strong) { color: var(--brand-link); font-size: 11px; font-weight: 700; letter-spacing: 0; }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row, .ai-debug-compose-row) { background: var(--surface-chat); border-color: var(--border-strong); box-shadow: 0 2px 5px rgb(37 55 48 / 5%); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row, .ai-debug-compose-row):focus-within { border-color: var(--brand-blue); box-shadow: 0 0 0 3px rgb(65 122 190 / 14%); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row textarea, .ai-debug-composer textarea) { background: transparent; }
@@ -161,7 +228,7 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) .ai-debug-response-mode select { color: var(--text); background: var(--bg-elev); border-color: var(--border); }
 .app.tinkro-theme:not(.display-mode-active) .debug-page.debug-chat-page { background: transparent; box-shadow: none; }
 .app.tinkro-theme:not(.display-mode-active) .debug-camera-toolbar { background: var(--bg-panel); }
-.app.tinkro-theme:not(.display-mode-active) .debug-page .debug-problem { background: var(--surface-blue); border-color: #c4d7ef; border-left-color: var(--brand-blue); }
+.app.tinkro-theme:not(.display-mode-active) .debug-page .debug-problem { background: var(--surface-blue); border-color: var(--line-blue); border-left-color: var(--brand-blue); }
 .app.tinkro-theme:not(.display-mode-active) .debug-page .debug-problem h3 { font-size: 20px; }
 .app.tinkro-theme:not(.display-mode-active) .debug-symptom b { color: var(--brand-link); }
 .app.tinkro-theme:not(.display-mode-active) .debug-symptom[aria-pressed=true] { background: var(--surface-blue); border-color: var(--brand-blue); box-shadow: inset 0 0 0 1px var(--brand-blue); }
@@ -169,7 +236,7 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 
 /* Wiring and test cards: keep numbering, progress, voltage warnings and truth
    states. Brand accents never replace the electrical wire/pin palette. */
-.app.tinkro-theme:not(.display-mode-active) :is(.guide-connection-card, .test-next-step, .circuit-inspector) { background: var(--surface-blue); border-color: #c4d7ef; color: var(--text); }
+.app.tinkro-theme:not(.display-mode-active) :is(.guide-connection-card, .test-next-step, .circuit-inspector) { background: var(--surface-blue); border-color: var(--line-blue); color: var(--text); }
 .app.tinkro-theme:not(.display-mode-active) :is(.guide-pin-pair strong, .guide-step-label strong, .guide-progress-label strong, .guide-prepare-message, .guide-prepare-message > strong, .component-test-card .test-outcome) { color: var(--text); }
 .app.tinkro-theme:not(.display-mode-active) :is(.guide-pin-link, .guide-module-track > [aria-current=step]) { color: var(--accent); }
 .app.tinkro-theme:not(.display-mode-active) :is(.guide-panel-footer, .test-code-options label) { background: var(--bg-inset); border-color: var(--border); }
@@ -182,12 +249,12 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) :is(.pi-row-locator p, .component-row-locator p, .component-row-count li) { color: var(--text); border-color: var(--border); }
 .app.tinkro-theme:not(.display-mode-active) :is(.pi-row-caption, .pi-row-count li, .guide-progress-label strong > span, .guide-step-label strong > span) { color: var(--text-dim); }
 .app.tinkro-theme:not(.display-mode-active) :is(.pi-row-locator p > strong, .component-row-locator p strong, .guide-pin-pair > div > .guide-pi-row-label, .pi-row-count [aria-current=step]) { color: var(--warn); }
-.app.tinkro-theme:not(.display-mode-active) .component-row-count [aria-current=step] { color: var(--warn); background: var(--surface-warning); border-color: #cba04c; }
+.app.tinkro-theme:not(.display-mode-active) .component-row-count [aria-current=step] { color: var(--warn); background: var(--surface-warning); border-color: var(--line-warn); }
 .app.tinkro-theme:not(.display-mode-active) .pi-row-count [aria-current=step] .pi-row-dot { background: var(--warn); border-color: var(--warn); box-shadow: 0 0 0 2px var(--surface-warning); }
 .app.tinkro-theme:not(.display-mode-active) .guide-panel-reference .guide-reference-toggle { color: var(--accent); }
 .app.tinkro-theme:not(.display-mode-active) :is(.test-outcome.passed, .workflow-state.good) { color: var(--ok); }
 .app.tinkro-theme:not(.display-mode-active) :is(.test-outcome.failed, .debug-check-feedback.is-error) { color: var(--danger); }
-.app.tinkro-theme:not(.display-mode-active) :is(.guide-caution, .maker-draft-consent, .guide-connection-card.divider) { color: var(--warn); background: var(--surface-warning); border-color: #d5b773; }
+.app.tinkro-theme:not(.display-mode-active) :is(.guide-caution, .maker-draft-consent, .guide-connection-card.divider) { color: var(--warn); background: var(--surface-warning); border-color: var(--line-warn); }
 .app.tinkro-theme:not(.display-mode-active) :is(.maker-draft-consent p, .guide-connection-card.divider .guide-pin-link, .deploy-action-notice, .deploy-blockers, .workflow-state.warning, .pi-global-error, .wiring-row.uncertain .wiring-status, .wiring-row.partial .wiring-status) { color: var(--warn); }
 .app.tinkro-theme:not(.display-mode-active) .maker-error { color: var(--danger); background: var(--surface-danger); }
 .app.tinkro-theme:not(.display-mode-active) .test-visual-confirm { border-color: var(--border-strong); }
@@ -222,9 +289,9 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) :is(.pi-code-editor, .pi-console, .debug-page pre, .component-test-card pre) { color-scheme: dark; background: #111b30; color: #e0eafb; border-color: #344764; border-radius: var(--radius-control); }
 .app.tinkro-theme:not(.display-mode-active) .pi-console { color: #a0e6d1; }
 .app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator { color: var(--text-dim); background: var(--bg-inset); border-color: var(--border); }
-.app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.good { color: var(--ok); background: var(--surface-teal); border-color: #a9d7ca; }
-.app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.warning { color: var(--warn); background: var(--surface-warning); border-color: #d5b773; }
-.app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.working { color: var(--accent); background: var(--surface-blue); border-color: #c4d7ef; }
+.app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.good { color: var(--ok); background: var(--surface-teal); border-color: var(--line-ok); }
+.app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.warning { color: var(--warn); background: var(--surface-warning); border-color: var(--line-warn); }
+.app.tinkro-theme:not(.display-mode-active) .deploy-output-indicator.working { color: var(--accent); background: var(--surface-blue); border-color: var(--line-blue); }
 .app.tinkro-theme:not(.display-mode-active) .statusbar { box-shadow: none; }
 .app.tinkro-theme:not(.display-mode-active) .statusbar.camera-tools-menu { background: transparent; border: 0; border-radius: 0; }
 .app.tinkro-theme:not(.display-mode-active) .status-pill { background: var(--surface-subtle); }
@@ -235,7 +302,7 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) :is(.camera-auto-message.success, .auto-alignment-message.success) { color: var(--ok); }
 .app.tinkro-theme:not(.display-mode-active) :is(.runtime-error, .camera-message.error) { color: var(--danger); }
 .app.tinkro-theme:not(.display-mode-active) .camera-message.success { color: var(--ok); }
-.app.tinkro-theme:not(.display-mode-active) .camera-current-badge { color: #fff; background: var(--brand-navy); }
+.app.tinkro-theme:not(.display-mode-active) .camera-current-badge { color: var(--brand-link); background: var(--surface-blue); }
 .app.tinkro-theme:not(.display-mode-active) .verification-layer.pass .verification-layer-mark { color: var(--accent); }
 .app.tinkro-theme:not(.display-mode-active) .verification-layer.fail .verification-layer-mark { color: var(--danger); }
 
@@ -249,7 +316,7 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) :is(.cloud-result-next, .cloud-color-pair > div) { background: var(--surface-blue); }
 .app.tinkro-theme:not(.display-mode-active) :is(.cloud-result-target, .cloud-result-disclosure, .cloud-result-meta, .cloud-color-pair > div) { border-color: var(--border); }
 .app.tinkro-theme:not(.display-mode-active) :is(.cloud-result-error, .cloud-result-inline .cloud-inline-error) { color: var(--warn); background: var(--surface-warning); }
-.app.tinkro-theme:not(.display-mode-active) .cloud-result-inline .cloud-result-actions button { color: var(--brand-navy); background: var(--surface-blue); border-color: var(--brand-blue); }
+.app.tinkro-theme:not(.display-mode-active) .cloud-result-inline .cloud-result-actions button { color: var(--brand-link); background: var(--surface-blue); border-color: var(--brand-blue); }
 
 /* Respect existing responsive sizing; no universal fixed pane heights. */
 @media (max-width: 960px) {
@@ -268,12 +335,12 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
    strip below. Keep overflow visible for the existing model / execution menus. */
 .app.tinkro-theme:not(.display-mode-active) .maker-header-integrated {
   display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0;
-  padding: 0; border: 1px solid var(--line-default); border-radius: 12px;
-  background: var(--surface-card); box-shadow: 0 3px 0 #2537300b;
+  padding: 0; border: 1px solid var(--line-default); border-radius: var(--radius-card);
+  background: var(--surface-card); box-shadow: none;
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-main {
   display: flex; align-items: center; gap: 24px; min-width: 0;
-  padding: 6px 10px; background: var(--brand-navy); border-radius: 11px 11px 0 0;
+  padding: 2px 10px; background: var(--surface-card); border-radius: 7px 7px 0 0;
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand { flex: 0 0 auto; }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-text {
@@ -287,14 +354,14 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button {
   display: flex; align-items: center; justify-content: center; gap: 7px;
-  min-width: 0; min-height: 38px; padding: 6px 12px; font-size: 12px; line-height: 1.35; white-space: normal;
+  min-width: 0; min-height: 34px; padding: 4px 12px; font-size: 12px; line-height: 1.35; white-space: normal;
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button > span {
   flex: 0 0 23px; margin: 0;
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls {
-  flex-basis: auto; margin: 0; padding: 8px 12px; gap: 8px 20px;
-  border: 0; border-top: 2px solid var(--brand-blue); border-radius: 0 0 11px 11px;
+  flex-basis: auto; margin: 0; padding: 4px 12px; gap: 6px 20px;
+  border: 0; border-top: 1px solid var(--border); border-radius: 0 0 7px 7px;
   background: transparent; box-shadow: none;
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-menu {
@@ -311,7 +378,7 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
   position: relative; display: flex; align-items: center; gap: 8px;
   flex: 0 0 auto; width: auto; min-width: 0;
 }
-.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-row { height: 34px; width: 220px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-row { height: 30px; width: 220px; }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-toolbar {
   display: flex; align-items: center; flex: 0 1 auto; flex-wrap: wrap;
   width: auto; min-width: 0; margin-left: 0; padding: 0; gap: 8px 16px;
@@ -322,7 +389,7 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-select select { width: 144px; min-width: 0; }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .locale-select select { width: 112px; }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls :is(.maker-model-value, .pi-global-connect, .pi-execution-menu > summary, .runtime-select select) {
-  min-height: 34px; height: 34px;
+  min-height: 30px; height: 30px; padding: 4px 9px;
 }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-save-status {
   margin-left: auto; max-width: none; font-size: 10px; line-height: 1.5;
@@ -363,4 +430,198 @@ body:has(.tinkro-theme:not(.display-mode-active)) { background: var(--surface-ca
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-toolbar { flex: 1 1 100%; gap: 8px; }
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-select { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; flex: 1 1 0; min-width: 0; }
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-select select { width: 100%; }
+}
+/* Pro refinements shared by both themes. Geometry of the existing workspaces
+   stays in maker.css / responsive.css / guideAi.css. */
+.app.tinkro-theme:not(.display-mode-active) :is(h1,h2,h3,h4,strong,b) { font-weight: 600; }
+.app.tinkro-theme:not(.display-mode-active) :is(h2,.debug-page .debug-problem h3) { font-size: 20px; line-height: 28px; }
+.app.tinkro-theme:not(.display-mode-active) :is(button,select,input,textarea) { font-family: var(--pro-font); }
+.app.tinkro-theme:not(.display-mode-active) :is(button,select,summary,a) {
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+.app.tinkro-theme:not(.display-mode-active) button:active:not(:disabled) { border-color: var(--accent); }
+.app.tinkro-theme:not(.display-mode-active) button:disabled { opacity: .5; box-shadow: none; }
+.app.tinkro-theme:not(.display-mode-active) :is(button,select) { font-weight: 500; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-primary,.guide-primary-action,.pi-deploy-button) { font-weight: 600; box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px rgb(22 185 166 / 55%); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-concept-confirm,.maker-draft-consent .maker-primary,.maker-chat-confirm .maker-primary,.debug-proposal > button,.pi-stop-confirmation button:first-of-type) {
+  color: var(--tonal-ink); background: var(--tonal-bg); border-color: var(--tonal-border); box-shadow: none;
+}
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-concept-confirm,.maker-draft-consent .maker-primary,.maker-chat-confirm .maker-primary,.debug-proposal > button):hover:not(:disabled) {
+  color: var(--tonal-ink); background: var(--tonal-bg); border-color: var(--tonal-ink);
+}
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-badge,.project-scope span,.project-structure-tags span,.concept-parts span,.camera-current-badge,.ai-debug-evidence-levels span) { border-radius: var(--radius-tag); font-size: 12px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.workflow-eyebrow,.maker-eyebrow,.guide-eyebrow) { font-size: 12px; letter-spacing: .08em; line-height: 16px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-muted,.maker-context,.maker-save-status,.maker-concept-description > summary,.project-assembly-details > summary,.project-image-concept figcaption,.ai-debug-message-meta,.component-test-card small,.test-facts,.component-test-card details > summary) { color: var(--text-dim); font-size: 13px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-header-controls .maker-save-status,.maker-header-controls .maker-model-label,.maker-header-controls .pi-global-label,.maker-header-controls .runtime-select > span) { font-size: 12px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.pi-row-locator,.component-row-locator,.guide-pin-pair,.pi-code-editor,.pi-console,pre,code,kbd) { font-family: var(--pro-mono); }
+.app.tinkro-theme:not(.display-mode-active) kbd { display: inline-block; min-width: 20px; padding: 0 8px; font-size: 12px; line-height: 18px; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--text-dim); background: var(--bg-elev); }
+
+/* Original transparent Tinkro wordmark. Its white lettering keeps a dark
+   backing in light mode; the PNG supplies the brand's own colors and glow. */
+.app.tinkro-theme:not(.display-mode-active) .brand { overflow: hidden; }
+.app.tinkro-theme:not(.display-mode-active) .brand-text,
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-text {
+  display: grid; justify-items: center; gap: 0; padding: 0; min-width: 156px; position: relative; isolation: isolate; background: transparent; border-radius: 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .brand-text::before {
+  content: none;
+}
+.app.tinkro-theme:not(.display-mode-active) .brand-title { display: flex; align-items: center; width: fit-content; padding: 0 4px; border-radius: var(--radius-control); color: var(--text); font-size: 16px; line-height: 20px; }
+:root[data-theme="light"] .app.tinkro-theme:not(.display-mode-active) .brand-title { background: #12141b; }
+.app.tinkro-theme:not(.display-mode-active) .brand-logo { width: 128px; height: 40px; object-fit: cover; object-position: center 44%; border-radius: 0; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-logo { width: 112px; height: 35px; }
+.app.tinkro-theme:not(.display-mode-active) .brand-subtitle,
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-subtitle { display: block; margin: 0; padding: 0; text-align: center; color: var(--text-faint); font-size: 11px; line-height: 14px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main { min-height: 52px; background: var(--surface-card); }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button { font-size: 14px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active,
+.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active:hover { color: var(--brand-link); background: var(--surface-blue); border-color: var(--line-blue); box-shadow: none; }
+.app.tinkro-theme:not(.display-mode-active) .maker-nav button.active span { color: var(--brand-link); background: transparent; border-color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .theme-select select { width: 96px; }
+
+/* One desktop row: workflow stays primary; infrequent runtime preferences live
+   in a non-modal disclosure. Keep controls mounted and popovers unclipped. */
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  gap: 4px 16px; padding: 4px 10px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main { min-height: 49px; padding: 0; gap: 16px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-text { min-width: 132px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls {
+  min-width: 0; padding: 0; gap: 8px 12px; border: 0; border-radius: 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-menu { flex: 0 1 190px; width: 190px; min-width: 170px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated:has(.runtime-error, .pi-global-error, .glasses-restore-error) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated > .maker-save-status[role=alert] {
+  grid-column: 1 / -1; margin: 0; max-width: none; padding: 4px 8px;
+  color: var(--danger); background: var(--surface-danger); border-radius: var(--radius-control); text-align: left;
+}
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings { position: relative; flex: 0 0 auto; }
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings > summary {
+  display: flex; align-items: center; justify-content: center; gap: 6px; list-style: none;
+  min-height: 30px; padding: 4px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius-control);
+  background: var(--bg-panel); color: var(--text); font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings > summary::-webkit-details-marker { display: none; }
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings[open] > summary { border-color: var(--brand-link); background: var(--surface-blue); }
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings-popover {
+  position: absolute; z-index: 60; top: calc(100% + 8px); right: 0;
+  width: min(300px, calc(100vw - 40px)); max-height: calc(100dvh - 100px); overflow: auto;
+  padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-card);
+  background: var(--bg-panel); color: var(--text); box-shadow: var(--shadow-popover);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-settings .runtime-toolbar {
+  display: grid; grid-template-columns: minmax(0, 1fr); width: auto; margin: 0; padding: 0; gap: 12px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-settings .runtime-select {
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-column: auto; grid-row: auto; gap: 5px; min-width: 0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-settings .runtime-select select { width: 100%; min-height: 40px; height: 40px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls > :is(.runtime-error,.glasses-restore-error) { max-width: 520px; overflow-wrap: anywhere; }
+@media (max-width: 1200px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-integrated { grid-template-columns: minmax(0, 1fr); }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls { padding-top: 4px; border-top: 1px solid var(--border); }
+  .app.tinkro-theme:not(.display-mode-active) .runtime-settings { margin-left: auto; }
+}
+@media (max-width: 960px) {
+  .app.tinkro-theme:not(.display-mode-active) .runtime-settings > summary,
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-settings .runtime-select select { min-height: 44px; height: 44px; }
+}
+@media (max-width: 700px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-menu { grid-column: 1; grid-row: 1; min-width: 0; width: auto; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-settings { grid-column: 2; grid-row: 1; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-control { grid-column: 1 / -1; grid-row: 2; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls > :is(.runtime-error,.glasses-restore-error) { grid-column: 1 / -1; }
+  .app.tinkro-theme:not(.display-mode-active) .runtime-settings-popover { max-height: calc(100dvh - 180px); }
+}
+
+/* Connection, selection and progress are distinct from verified test success. */
+.app.tinkro-theme:not(.display-mode-active) .wiring-workspace { border-radius: 8px; }
+.app.tinkro-theme:not(.display-mode-active) .wiring-workspace-tabs { background: var(--bg-panel); border-bottom: 1px solid var(--border); }
+.app.tinkro-theme:not(.display-mode-active) .wiring-workspace .wiring-workspace-tabs > button[aria-selected="true"],
+.app.tinkro-theme:not(.display-mode-active) .wiring-workspace .wiring-workspace-tabs > button[aria-selected="true"]:hover,
+.app.tinkro-theme:not(.display-mode-active) .wiring-workspace .guide-ai-mode-picker > button[aria-pressed="true"] { background: var(--surface-blue); color: var(--brand-link); border-color: var(--line-blue); border-radius: 6px; }
+.app.tinkro-theme:not(.display-mode-active) .wiring-tab-notice { color: var(--status-ok); border-radius: 4px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.wiring-workspace-progress,.guide-panel-progress progress) { accent-color: var(--completed-progress); }
+.app.tinkro-theme:not(.display-mode-active) :is(.wiring-workspace-progress,.guide-panel-progress progress)::-webkit-progress-value { background: var(--completed-progress); }
+.app.tinkro-theme:not(.display-mode-active) :is(.wiring-workspace-progress,.guide-panel-progress progress)::-moz-progress-bar { background: var(--completed-progress); }
+.app.tinkro-theme:not(.display-mode-active) :is(.guide-module-review,.maker-ai-cost,.maker-chat-confirm) { background: var(--bg-elev); border-color: var(--border); }
+.app.tinkro-theme:not(.display-mode-active) .guide-module-review > :is(span,strong) { color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) :is(.guide-pin-pair,.guide-connection-card) { background: var(--bg-elev); border-color: var(--border); border-radius: 6px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.ai-debug-current,.ai-debug-chat .ai-debug-current,.ai-debug-next-step,.maker-generating,.test-next-step) { background: var(--surface-blue); border: 1px solid var(--line-blue); border-radius: 6px; color: var(--text); }
+.app.tinkro-theme:not(.display-mode-active) :is(.ai-debug-busy,.ai-debug-busy small,.ai-debug-capture-hint) { color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) :is(.component-test-card header > span,.component-test-card .test-facts,.ai-debug-head small,.wiring-workspace-context small,.wiring-workspace-count) { color: var(--text-dim); font-size: 13px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.guide-caution,.maker-draft-consent) { border: 1px solid var(--line-warn); border-radius: 6px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.pi-error,.runtime-error,.maker-error) { color: var(--danger); }
+.app.tinkro-theme:not(.display-mode-active) .status-pill { border: 1px solid var(--border); border-radius: 6px; }
+.app.tinkro-theme:not(.display-mode-active) .status-pill.locked { border-color: var(--line-ok); }
+.app.tinkro-theme:not(.display-mode-active) .status-pill.searching { border-color: var(--line-warn); }
+
+/* A shared conversation treatment; real message bodies are left intact. */
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message,.ai-debug-message) { border-radius: 8px; background: var(--surface-evidence); }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message.user,.ai-debug-message.is-user) { background: var(--bg-elev); border-color: var(--border-strong); border-radius: 8px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message > small,.ai-debug-message-meta strong) { font-size: 14px; color: var(--text); font-weight: 600; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-message p,.maker-reply-points,.ai-debug-message p) { font-size: 14px; line-height: 22px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.ai-debug-message-meta time,.ai-debug-message-model) { color: var(--text-faint); font-size: 13px; }
+.app.tinkro-theme:not(.display-mode-active) .ai-debug-panel :is(.ai-photo-card,.ai-diagram-card) { border-radius: 8px; background: var(--surface-evidence); }
+.app.tinkro-theme:not(.display-mode-active) .ai-debug-panel .ai-evidence-tabs button[aria-pressed=true] { background: var(--surface-blue); border-color: var(--line-blue); color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) .ai-debug-panel .ai-diagram-preview .ai-diagram-connector { color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) .ai-debug-panel .ai-photo-card img { color-scheme: dark; background: #07100f; border-color: #3d5a50; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row,.ai-debug-compose-row) {
+  position: relative; isolation: isolate; min-height: 96px; padding: 12px; border: 1px solid transparent; border-radius: 8px;
+  background: linear-gradient(var(--surface-chat),var(--surface-chat)) padding-box, linear-gradient(90deg,rgb(124 92 255 / 90%),rgb(65 122 190 / 95%),rgb(22 185 166 / 90%)) border-box;
+  box-shadow: none;
+}
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row,.ai-debug-compose-row)::before {
+  content: ""; position: absolute; inset: -4px; z-index: -1; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(90deg,#7c5cff,#417abe,#16b9a6); filter: blur(22px); opacity: var(--prompt-glow);
+}
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row,.ai-debug-compose-row)::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: 7px; background: var(--surface-chat);
+}
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row,.ai-debug-compose-row):focus-within { outline: 2px solid var(--brand-link); outline-offset: 3px; box-shadow: none; border-color: transparent; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-row textarea,.ai-debug-compose-row textarea) { min-height: 64px; font-size: 14px; line-height: 22px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-send,.ai-debug-composer-send > button) { border-radius: 6px; box-shadow: none; }
+.app.tinkro-theme:not(.display-mode-active) :is(.maker-compose-send:disabled,.ai-debug-composer-send > button:last-child:disabled) { color: var(--text-faint); background: var(--bg-elev); border-color: var(--border-strong); opacity: 1; }
+.app.tinkro-theme:not(.display-mode-active) :is(.ai-debug-response-mode,.ai-debug-composer-hint) { color: var(--text-dim); font-size: 12px; }
+
+/* Honest proposal state: never infer applied/success from the current theme. */
+.app.tinkro-theme:not(.display-mode-active) [data-proposal="true"] { border-style: dashed; }
+.app.tinkro-theme:not(.display-mode-active) .main .maker-preview[data-proposal="true"] { border: 1px dashed var(--border-strong); }
+.app.tinkro-theme:not(.display-mode-active) .debug-proposal { padding: 12px; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--surface-evidence); }
+.app.tinkro-theme:not(.display-mode-active) .debug-proposal[data-proposal="false"] { border-style: solid; }
+.app.tinkro-theme:not(.display-mode-active) .proposal-status { display: inline-block; margin-block: 4px 8px; padding: 2px 6px; border: 1px solid var(--line-warn); border-radius: 4px; color: var(--warn); font-size: 12px; }
+.app.tinkro-theme:not(.display-mode-active) .debug-proposal pre { background: var(--diff-bg); color: var(--text); border-color: var(--border); }
+.app.tinkro-theme:not(.display-mode-active) .debug-diff .diff-add { background: var(--diff-add-bg); color: var(--diff-add-ink); }
+.app.tinkro-theme:not(.display-mode-active) .debug-diff .diff-del { background: var(--diff-del-bg); color: var(--danger); }
+.app.tinkro-theme:not(.display-mode-active) .debug-diff > span { line-height: 24px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.camera-tools-popover,.maker-assistant-parts-panel,.maker-model-popover,.pi-execution-popover,.maker-product,.maker-diagram-dialog) { background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: var(--shadow-popover); color: var(--text); }
+.app.tinkro-theme:not(.display-mode-active) .camera-tools-popover :is(.camera-info,.camera-mode-info,.camera-help) { color: var(--text-dim); }
+.app.tinkro-theme:not(.display-mode-active) .camera-tools-popover .status-metrics > .pill { flex-basis: auto; min-width: min(160px, 100%); white-space: normal; }
+.app.tinkro-theme:not(.display-mode-active) .pill { border: 1px solid var(--border); border-radius: 6px; font-size: 12px; letter-spacing: .03em; }
+.app.tinkro-theme:not(.display-mode-active) .pill.locked { color: var(--ok); background: var(--surface-teal); border-color: var(--line-ok); }
+.app.tinkro-theme:not(.display-mode-active) .pill.searching { color: var(--warn); background: var(--surface-warning); border-color: var(--line-warn); }
+.app.tinkro-theme:not(.display-mode-active) .pill.stale { color: var(--text-dim); background: var(--bg-elev); }
+.app.tinkro-theme:not(.display-mode-active) .ws-dot { transition: background-color 120ms ease; box-shadow: none; }
+.app.tinkro-theme:not(.display-mode-active) :is(dialog::backdrop) { background: rgb(0 0 0 / 65%); }
+.app.tinkro-theme:not(.display-mode-active) :is(.project-image-empty,.project-generation-status) { border-radius: 8px; }
+.app.tinkro-theme:not(.display-mode-active) :is(.project-generation-orbit,.project-generation-orbit::before,.project-generation-orbit > span) { box-shadow: none; filter: none; }
+.app.tinkro-theme:not(.display-mode-active) .pi-stop-confirmation { color: var(--text); background: var(--surface-warning); border-color: var(--line-warn); }
+
+/* Optical modes and their native controls keep the original dark palette. */
+.app.display-mode-active { color-scheme: dark; }
+@media (max-width: 960px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-toolbar { gap: 8px; }
+}
+@media (max-width: 700px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-main .maker-nav button { font-size: 12px; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .theme-select select { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app.tinkro-theme:not(.display-mode-active) :is(button,select,summary,a,.ws-dot) { transition: none; }
+  .app.tinkro-theme:not(.display-mode-active) .pill-dot { animation: none; }
 }

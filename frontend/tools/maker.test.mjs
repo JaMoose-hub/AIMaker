@@ -21,7 +21,7 @@ let assistantJS = ts.transpileModule(readFileSync(new URL('../src/components/Mak
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022,jsx:ts.JsxEmit.ReactJSX},
 }).outputText;
 for(const [name,url] of Object.entries({react:hooksUrl,'react/jsx-runtime':import.meta.resolve('react/jsx-runtime'),
-  '../lib/maker':moduleUrl(`export const makerCatalog=${JSON.stringify(catalog)}`),
+  '../lib/maker':moduleUrl(outputText),
   '../lib/makerReply':moduleUrl(replyPreviewJS),
   '../lib/useMaker':moduleUrl('export const useMakerText=()=>(zh,en)=>zh'),
   '../lib/i18n':moduleUrl('export const useI18n=()=>({locale:"zh-TW",tx:v=>typeof v=== "string"?v:v["zh-TW"]})'),
@@ -92,6 +92,8 @@ test('new project is separate from clearing chat and requires explicit confirmat
   const f=assistantFixture({...m.initialMaker(),design,conversation:[{role:'user',text:'old'}]},false,async()=>{resets++;return true});
   f.button('新作品').props.onClick();
   assert.match(textOf(f.render()),/作品、圖片、預覽、對話、程式與接線進度將清空/);
+  assert.match(textOf(f.render()),/內建 Demo 圖會保留，之後仍可按「載入 Demo 示範」/);
+  assert.match(f.button('新作品').props.title,/內建 Demo 圖會保留/);
   assert.equal(resets,0);
   f.button('取消').props.onClick();
   assert.equal(resets,0);
@@ -207,16 +209,13 @@ const design = {
   code: "old", tests: [], features: [], instructions: [], unresolved: [], bom: [],
 };
 
-test('starter prompt matches the requested multi-line brief without submitting an AI job',()=>{
+test('starter prompt uses conversational paragraphs without submitting an AI job',()=>{
   const expected = [
-    '我想做一個桌上型距離監測器。', '', '需求：',
-    '- 可以偵測前方物體的距離',
-    '- 螢幕即時顯示目前距離與狀態',
-    '- 當距離小於 20 cm 時，顯示警告，並在螢幕上顯示一台靠近障礙物的小車圖示',
-    '- 裝置使用上下兩層圓形壓克力圓盤組成，並使用支柱固定',
-    '- 底部加裝三個輪胎，形成可手動推動的三輪底座',
-    '- 整體大小適合放在桌面上', '',
-    '請直接依照以上需求生成完整作品設計與組裝圖片，並規劃所需零件、組裝方式與接線。已提供的需求不要重複詢問，其餘造型與結構細節請自行採用合理配置。',
+    '我想做一台桌上型小車，可以偵測前面的距離。', '',
+    '螢幕要顯示距離，小於 20 cm 就顯示警告和快撞到東西的小車圖案。', '',
+    '外型用兩片圓形壓克力板，下面有馬達和三個輪子。', '',
+    '我不太懂硬體，請直接幫我選零件、教我組裝和接線，並做出完成後的示意圖。', '',
+    '不用問我，直接幫我設計。',
   ].join('\n');
   assert.equal(m.defaultPrompt,expected);
   assert.equal(m.initialMaker().prompt,expected);
@@ -225,6 +224,59 @@ test('starter prompt matches the requested multi-line brief without submitting a
   assert.equal(nodes(f.render()).find(n=>n.type==='textarea').props.value,expected);
   assert.deepEqual(f.calls,[]);
   assert.equal(m.initialMaker().aiJobId,null);
+});
+
+test('English starter matches the user supplied wording exactly',()=>{
+  const expected = `I want to make a small desktop car that can detect how far away things are.
+
+The screen should show the distance. If something is closer than 20 cm, show a warning and a small car about to hit an obstacle.
+
+I want to use two round acrylic plates, with motors and three wheels underneath.
+
+I don’t know much about hardware, so please choose the parts for me and show me how to assemble and wire everything.
+
+Also, show me what the finished project will look like.
+
+Don’t ask me questions. Just design it for me.`;
+  assert.equal(m.defaultPromptEn,expected);
+  const state=m.localizeStarterPrompt(m.initialMaker(),'en');
+  assert.equal(state.prompt,expected);
+  assert.equal(m.designRequest(state,'en',null).prompt,expected);
+  assert.equal(state.aiJobId,null);
+});
+
+test('previous bilingual conversational starters migrate without rewriting sent messages or custom drafts',()=>{
+  const previousZh = `我想做一個放在桌上的小型距離監測器。
+
+它要能顯示前方物體離它多遠。如果距離小於 20 cm，就在螢幕上顯示警告，還有一台快要碰到障礙物的小車。
+
+我希望機身用兩片圓形壓克力板，底下裝三個輪子。
+
+我不知道該用哪些零件，請幫我全部選好，並教我怎麼組裝和接線。
+
+也請生成完成後的設計與組裝圖片。
+
+不用再問我問題，請直接做合理的選擇，幫我把它設計出來。`;
+  const previousEn = `I want to make a small distance monitor for my desk.
+
+It should show how far away something is in front of it. If something gets closer than 20 cm, show a warning and a small car getting close to an obstacle on the screen.
+
+I want the body to use two round acrylic plates with three wheels underneath.
+
+I don’t know what parts to use, so please choose everything for me and show me how to build and connect it.
+
+Also generate an image of the finished design and assembly.
+
+Don’t ask me questions. Just make reasonable choices and design it for me.`;
+  for(const [prompt,expected] of [[previousZh,m.defaultPrompt],[previousEn,m.defaultPromptEn]]){
+    const before={...m.initialMaker(),prompt,design,code:'manual code',conversation:[{role:'user',text:prompt}]};
+    const after=m.restoreMaker(JSON.stringify(before));
+    assert.equal(after.prompt,expected);
+    for(const key of ['design','conversation','code'])assert.deepEqual(after[key],before[key]);
+    for(const unchanged of [prompt+'\nMy addition',prompt.replace('20 cm','15 cm'),''])
+      assert.equal(m.restoreMaker(JSON.stringify({...before,prompt:unchanged})).prompt,unchanged);
+    assert.equal(m.restoreMaker(JSON.stringify({...before,aiJobId:'existing-job'})).prompt,prompt);
+  }
 });
 
 test('known starter drafts upgrade without changing projects or overwriting custom and in-flight drafts',()=>{
@@ -267,7 +319,13 @@ Requirements:
 - Keep the overall size suitable for a desktop
 
 Based on these requirements, help me choose the electronic components, sensors, controller, display and other necessary parts, and plan the assembly and wiring.`;
-  for(const [prompt,next] of [[olderZh,m.defaultPrompt],[olderEn,m.defaultPromptEn]]) {
+  const structuredZh=olderZh.replace('- 整體大小適合放在桌面上', '- 底部加裝三個輪胎，形成可手動推動的三輪底座\n- 整體大小適合放在桌面上')
+    .replace('請根據以上需求，幫我決定需要哪些電子零件、感測器、控制板、螢幕與其他必要元件，並規劃如何組裝與接線。',
+      '請直接依照以上需求生成完整作品設計與組裝圖片，並規劃所需零件、組裝方式與接線。已提供的需求不要重複詢問，其餘造型與結構細節請自行採用合理配置。');
+  const structuredEn=olderEn.replace('- Keep the overall size suitable for a desktop', '- Add three wheels underneath to form a manually movable three-wheel base\n- Keep the overall size suitable for a desktop')
+    .replace('Based on these requirements, help me choose the electronic components, sensors, controller, display and other necessary parts, and plan the assembly and wiring.',
+      'Generate the complete project design and assembly image directly from these requirements, including the parts, assembly and wiring plan. Do not ask me to repeat or reconfirm requirements already provided. Choose reasonable defaults for the remaining appearance and structural details.');
+  for(const [prompt,next] of [[olderZh,m.defaultPrompt],[olderEn,m.defaultPromptEn],[structuredZh,m.defaultPrompt],[structuredEn,m.defaultPromptEn]]) {
     const restored=m.restoreMaker(JSON.stringify({...state,prompt}));
     assert.equal(restored.prompt,next);
     for(const key of ['design','candidate','conversation','code'])assert.deepEqual(restored[key],state[key]);
@@ -304,6 +362,30 @@ test("saved project is validated and restoration never revives camera evidence",
   assert.deepEqual(restored.guide.checks, []);
   assert.equal(m.restoreMaker("broken").design, null);
   assert.equal(m.restoreMaker(JSON.stringify({ ...state, design: { ...design, catalog_version: "bad" } })).design, null);
+});
+
+test("concept-only motors survive confirmation and storage without entering the hardware workflow", () => {
+  const motors = [{kind:'motor',quantity:2,purpose:'Image-only chassis detail'}];
+  const visual = {...design,concept_only_parts:motors};
+  assert.equal(m.validDesign(visual),true);
+  assert.equal(m.validDesign(design),true);
+  const state = m.confirmConcept({...m.initialMaker(),candidate:visual});
+  const restored = m.restoreMaker(JSON.stringify(state));
+  assert.deepEqual(restored.design.concept_only_parts,motors);
+  for(const key of ['component_ids','wiring','bom','code','requirements','instructions','tests','assembly']) {
+    assert.deepEqual(restored.design[key],design[key],key);
+  }
+  assert.equal(state.code,design.code);
+  assert.equal(state.designView,'blueprint');
+});
+
+test("concept motor validation rejects executable scope, invalid quantities and malformed storage", () => {
+  for(const parts of [null,{},[{kind:'servo',quantity:1,purpose:'x'}],[{kind:'motor',quantity:0,purpose:'x'}],
+    [{kind:'motor',quantity:33,purpose:'x'}],[{kind:'motor',quantity:1.5,purpose:'x'}],
+    [{kind:'motor',quantity:1,purpose:''}],[{kind:'motor',quantity:1,purpose:'x'.repeat(181)}],
+    [{kind:'motor',quantity:1,purpose:'x'},{kind:'motor',quantity:1,purpose:'x'}]]) {
+    assert.equal(m.validDesign({...design,concept_only_parts:parts}),false);
+  }
 });
 test("candidate does not overwrite manual code; applying revision preserves only matching wires", () => {
   let state = m.applyDesign(m.initialMaker(), design, "guide");
@@ -491,8 +573,33 @@ test("demo is a preview; approved code and wire progress change only after confi
   const next=m.previewDemo(state,demo);
   assert.equal(next.candidate,demo);assert.equal(next.stage,'design');
   assert.equal(next.design,state.design);assert.equal(next.guide,state.guide);
-  assert.equal(next.code,'manual');assert.equal(next.conversation,state.conversation);
+  assert.equal(next.code,'manual');assert.deepEqual(next.conversation.slice(0,-2),state.conversation);
   assert.equal(m.confirmConcept(next),next,'manual code still needs separate consent');
   assert.equal(m.previewDemo(state,{...demo,source:'ai'}),state);
   const busy={...state,aiJobId:'pending'};assert.equal(m.previewDemo(busy,demo),busy);
+});
+
+test('Demo adds localized sample bubbles without consuming real conversation history',()=>{
+  const history=Array.from({length:20},(_,i)=>({role:i%2?'assistant':'user',text:`Real message ${i}`}));
+  const before={...m.initialMaker(),conversation:history,prompt:'Keep my unsent draft'};
+  let state=m.previewDemo(before,design,'zh-TW');
+  assert.deepEqual(state.conversation.slice(0,-2),history);assert.equal(state.conversation.length,22);
+  assert.equal(state.conversation.at(-2).text,m.defaultPrompt);
+  assert.deepEqual(m.restoreMaker(JSON.stringify(state)).conversation,state.conversation);
+  state=m.previewDemo(state,design,'en');
+  assert.equal(state.conversation.length,22);assert.equal(state.prompt,before.prompt);
+  assert.equal(state.conversation.at(-2).text,m.defaultPromptEn);
+  assert.match(state.conversation.at(-1).text,/motors.*concept image only/);
+  assert.deepEqual(state.conversation.slice(0,-2),history);
+  for(const aiIntent of ['auto','ask','design']){
+    const request=m.designRequest({...state,aiIntent,designMode:'fixed'},'en',null);
+    assert.deepEqual(request.conversation,history,'sample bubbles are not real AI or hardware evidence');
+  }
+  const updated=m.retainMakerConversation([...state.conversation,{role:'user',text:'Real follow-up'}]);
+  assert.equal(updated.length,22);
+  assert.deepEqual(updated.filter(msg=>msg.source!=='demo'),[...history.slice(1),{role:'user',text:'Real follow-up'}]);
+  assert.equal(m.clearMakerConversation(state).conversation.length,0);
+  assert.equal(m.newMakerProject(state).conversation.length,0);
+  assert.equal(m.previewDemo(m.clearMakerConversation(state),design).conversation.length,2);
+  assert.deepEqual(before.conversation,history);
 });

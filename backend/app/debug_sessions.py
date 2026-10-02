@@ -221,9 +221,19 @@ class DebugSessions:
                 raise ValueError("conversation_restarted")
             for session in self.sessions.values():
                 own = session["binding"]["project_id"] == project_id
-                if own and session["status"] in LIVE | {"paused"}:
+                same_target = session["binding"]["target_id"] == self.state.component_tests.target
+                # Changing SSH address also changes the target identity. After
+                # a backend restart, an old target's check has no runnable
+                # context and is absent from active(). Keep that read-only
+                # history without making it an impossible-to-stop reset gate.
+                # This does not assert the previous target's hardware stopped;
+                # the current target must still pass _wiring_edit_ready below.
+                restored_other_target = (not same_target and session["status"] == "paused"
+                                         and session.get("phase") == "backend_restarted"
+                                         and session.get("context") is None)
+                if own and session["status"] in LIVE | {"paused"} and not restored_other_target:
                     raise ValueError("ai_stop_unconfirmed")
-                if not own and session["binding"]["target_id"] == self.state.component_tests.target and session["status"] in LIVE:
+                if not own and same_target and session["status"] in LIVE:
                     raise ValueError("other_debug_active")
             if not self._wiring_edit_ready(None):
                 raise ValueError("hardware_work_active")

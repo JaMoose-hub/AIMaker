@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#203065" />
+    <script src="/theme.js"></script>
+    <style>
+      /* First paint before the application bundle; the full theme loads last. */
+      :root { color-scheme: dark; background: #0a0b10; }
+      :root[data-theme="light"] { color-scheme: light; background: #f3f4f7; }
+    </style>
     <meta name="description" content="Tinkro — Turn ideas into working hardware. Design, wire, test and run." />
     <link rel="icon" type="image/svg+xml" href="/brand/tinkro-symbol.svg" />
     <title>Tinkro</title>

@@ -11,6 +11,7 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const url = text => `data:text/javascript;base64,${Buffer.from(text).toString('base64')}`;
 const catalog = JSON.parse(read('../../profiles/component-catalog.json'));
 const maker = url(`export const makerCatalog=${JSON.stringify(catalog)};
+export const fillStarterPrompt=state=>state;
 export const structuralParts={wheel:{name:'輪子'}};
 export const needsDraftConsent=()=>false;
 export const discardConcept=state=>state;`);
@@ -38,7 +39,24 @@ const design = {id:'layout-test',revision:2,source:'ai',title:'桌上型距離�
 
 const renderAssistant=(selected,busy=false)=>renderToStaticMarkup(createElement(MakerAssistant,{
   state:{stage:'design',prompt:'保留這段未送出需求',selected,candidate:null,conversation:[{role:'user',text:'保留既有對話'}]},setState(){},
-  assistant:{ai:{logged_in:true},aiOptions:{estimate:{},selectionValid:true},busy,error:'',phase:'design',clearConversation(){},loadDemo(){},generate(){},retryImage(){}},onReview(){}}));
+  assistant:{ai:{logged_in:true},aiOptions:{estimate:{},selectionValid:true},busy,error:'',phase:'design',clearConversation(){},loadDemo(){},generate(){},retryImage(){}},onReview(){},onNewProject:async()=>true}));
+
+test('assistant header uses two compact rows and keeps every action and hint accessible',()=>{
+  const html=renderAssistant(['hc-sr04']);
+  assert.match(html,/<header class="maker-assistant-header"><div class="maker-assistant-heading"><h2 title="設計與藍圖 · 對話與作品跨頁保留">一起把想法做出來<\/h2>/);
+  assert.doesNotMatch(html,/CLOUD \/ CO-DESIGNER|<p class="maker-context">|<small class="maker-muted">Demo/);
+  for(const label of ['載入 Demo 示範','清除對話','新作品','零件 · 1','已連線']) assert.ok(html.includes(label));
+  const contextId=html.match(/<section[^>]*aria-describedby="([^"]+)"/)[1];
+  assert.ok(html.includes(`<span id="${contextId}" class="maker-compose-hint">設計與藍圖 · 對話與作品跨頁保留</span>`));
+  const demoHintId=html.match(/<button[^>]*title="載入示範對話[^>]*aria-describedby="([^"]+)"/)[1];
+  assert.ok(html.includes(`<span id="${demoHintId}" class="maker-compose-hint">載入示範對話與作品預覽，不需 AI；確認後才套用作品。</span>`));
+  assert.match(html,/<\/header><div class="maker-conversation"/,'no extra normal-flow explanation rows above the conversation');
+  const css=postcss.parse(read('../src/maker.css'));
+  const header=css.nodes.find(n=>n.type==='rule'&&n.selector==='.maker-assistant-header');
+  assert.match(header.toString(),/flex-direction: column/);
+  assert.match(header.toString(),/gap: 8px/);
+  assert.match(css.nodes.find(n=>n.type==='rule'&&n.selector==='.maker-assistant-heading h2').toString(),/margin: 0/);
+});
 
 test('parts are a closed toolbar disclosure and neither footer row occupies the composer',()=>{
   const html=renderAssistant(catalog.modules.map(module=>module.id));

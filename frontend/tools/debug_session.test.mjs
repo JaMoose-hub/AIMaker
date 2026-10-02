@@ -5,6 +5,7 @@ import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {systemText} from './system_text_fixture.mjs';
+import {passiveCountdown,passiveChat} from './capture_ui_fixture.mjs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const makerCatalog = JSON.parse(read('../../profiles/component-catalog.json'));
@@ -33,10 +34,10 @@ assert.ok(declaration);
 const js = ts.transpileModule(declaration.getText(tree).replace(/^export\s+/, ''), {
   compilerOptions: {target:ts.ScriptTarget.ES2022, jsx:ts.JsxEmit.React},
 }).outputText;
-const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys','PhotoEvidenceCard','DiagramEvidenceCard','debugEvidenceUrl','evidenceSessionId','makerCatalog','systemText',
+const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys','PhotoEvidenceCard','DiagramEvidenceCard','debugEvidenceUrl','evidenceSessionId','makerCatalog','systemText','useCaptureCountdown','CaptureCountdown','useChatScroll',
   `${js}; return AiDebugPanel;`)(React, () => (zh) => zh, value => [value, () => {}], effect, effect, value => ({current:value}),
     status => ['complete','stopped','error'].includes(status), value => String(value), (_, guide) => guide.complete, sameDebugTestKeys,
-    photoModule.PhotoEvidenceCard,()=>null,evidenceHelpers.debugEvidenceUrl,evidenceHelpers.evidenceSessionId,makerCatalog,systemText);
+    photoModule.PhotoEvidenceCard,()=>null,evidenceHelpers.debugEvidenceUrl,evidenceHelpers.evidenceSessionId,makerCatalog,systemText,passiveCountdown,()=>null,passiveChat);
 const AiDebugPanel = makePanel();
 
 const context = {project:{id:'project'}, code:'draft', test_keys:{'hc-sr04':'hc-key','mrd-tf240-8p-cs':'tft-key'}, entry:{}}; // gitleaks:allow -- synthetic wiring signatures, not credentials
@@ -54,7 +55,7 @@ function render(record=base, options={}) {
   const Panel = options.effects ? makePanel(effect => options.effects.push(effect)) : AiDebugPanel;
   return renderToStaticMarkup(React.createElement(Panel,{state:{...state,guide:{complete:options.wired??true},debug:{symptom:options.symptom??''}},context,currentCodeHash:options.hash??'hash',repairCaseId:options.repairCaseId??null,repairAppliedHash:options.repairAppliedHash??null,repairCandidateReady:options.repairCandidateReady??false,session,
     webcamReady:options.webcamReady??true,eyeActive:options.eyeActive??false,cameraSource:options.cameraSource??'device',cameraRuntimeRevision:options.revision??4,
-    variant:options.variant??'debug',onReturnWebcam(){},onCase(){},onRetest(){},onTrial(){},onReviewRepair(){},onManual(){},onWiring(){}}));
+    variant:options.variant??'debug',headerControls:options.headerControls,onReturnWebcam(){},onCase(){},onRetest(){},onTrial(){},onReviewRepair(){},onManual(){},onWiring(){}}));
 }
 
 test('Check for me sends a visual session request with the selected cloud model and current context',async()=>{
@@ -64,7 +65,7 @@ test('Check for me sends a visual session request with the selected cloud model 
   const code=ts.transpileModule(sendNode.getText(tree),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   for(const entry of ['', '螢幕有亮但距離不動']) {
     const calls=[];
-    const bindings={entry,active:false,canStart:true,canAct:false,canMessage:false,wiringMode:false,record:null,responseMode:'fast',context,actionContext:context,state,tr:zh=>zh,setEntry(){},session:{pending:false,
+    const bindings={entry,counting:false,chat:passiveChat(),countdown:passiveCountdown(),active:false,canStart:true,canAct:false,canMessage:false,wiringMode:false,record:null,responseMode:'fast',context,actionContext:context,state,tr:zh=>zh,setEntry(){},session:{pending:false,
       create:async(...args)=>{calls.push(args);return {id:'new-session'};},
       action(){throw Error('Fresh checks must create a visual session');}}};
     const send=new Function(...Object.keys(bindings),`${code};return send;`)(...Object.values(bindings));
@@ -130,6 +131,36 @@ test('photo records use a header action and stay mounted in a hidden tool view',
   assert.match(html,/Webcam 照片與遮蔽密碼、金鑰後的診斷資料/);
   assert.match(html,/Photos|照片、測試與工作紀錄/);
   assert.doesNotMatch(html,/ai-debug-session-details/);
+});
+
+test('compact AI header omits repeated title and model copy but keeps its accessible name and actions',()=>{
+  for (const variant of ['wiring','debug']) {
+    for (const record of [null,base]) {
+      const html=render(record,{variant});
+      const head=html.slice(0,html.indexOf('<div class="ai-debug-conversation"'));
+      assert.match(head,new RegExp(`aria-label="與 AI 一起${variant==='wiring'?'接線':'除錯'}"`));
+      assert.doesNotMatch(head,/<h3|ai-debug-model|ai-debug-heading|沿用目前作品與接線資料/);
+      assert.match(head,/aria-controls="ai-debug-records"/);
+      assert.match(head,/aria-controls="debug-manual-tools"/);
+      if(record)assert.match(head,new RegExp(variant==='wiring'?'停止本次檢查':'停止本次除錯'));
+      else assert.doesNotMatch(head,/停止本次/);
+    }
+  }
+});
+
+test('mode controls share the action header without duplicating or removing tools',()=>{
+  const headerControls=React.createElement('div',{className:'guide-ai-mode-picker',role:'group','aria-label':'Assistant focus'},
+    React.createElement('button',{'aria-pressed':true},'Ask about wiring'),
+    React.createElement('button',{'aria-pressed':false},"Something isn't working"));
+  const html=render(base,{variant:'wiring',headerControls});
+  const head=html.slice(html.indexOf('<div class="ai-debug-head">'),html.indexOf('<div class="ai-debug-conversation"'));
+  assert.match(head,/guide-ai-mode-picker[\s\S]*Ask about wiring[\s\S]*ai-debug-head-actions/);
+  assert.equal((html.match(/role="group" aria-label="Assistant focus"/g)||[]).length,1);
+  for(const action of ['停止本次檢查','檢查紀錄','手動測試工具'])assert.ok(head.includes(action));
+  assert.match(read('../src/App.tsx'),/headerControls=\{headerControls\}/);
+  const page=read('../src/components/DebugPage.tsx');
+  assert.match(page,/headerControls:manualOpen\?undefined:modePicker/);
+  assert.match(page,/!assistant \|\| manualOpen \? modePicker : null/,'mode controls remain available in manual tools');
 });
 
 test('AI can inspect the camera before wiring confirmation and without a symptom',()=>{
@@ -453,7 +484,7 @@ test('wiring questions start a text review while an explicit capture requests a 
   function find(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='send')sendNode=node;if(ts.isFunctionDeclaration(node)&&node.name?.text==='captureStep')captureNode=node;ts.forEachChild(node,find);}
   find(tree);
   const calls=[];
-  const bindings={entry:'ECHO 要接哪裡？',active:false,canStart:true,canAct:false,canMessage:false,wiringMode:true,record:null,webcamReady:true,responseMode:'fast',actionContext:context,state,tr:zh=>zh,setEntry(){},session:{pending:false,create:async(...args)=>{calls.push(args);return {id:'created'};}}};
+  const bindings={entry:'ECHO 要接哪裡？',counting:false,chat:passiveChat(),countdown:passiveCountdown(),canCaptureWiring:true,active:false,canStart:true,canAct:false,canMessage:false,wiringMode:true,record:null,webcamReady:true,responseMode:'fast',actionContext:context,state,tr:zh=>zh,setEntry(){},session:{pending:false,create:async(...args)=>{calls.push(args);return {id:'created'};}}};
   for(const node of [sendNode,captureNode]){
     const code=ts.transpileModule(node.getText(tree),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
     await new Function(...Object.keys(bindings),`${code};return ${node.name.text};`)(...Object.values(bindings))();
@@ -495,7 +526,7 @@ test('a fresh budget requires the explicit new-check action and stops the prior 
   find(tree);
   const code=ts.transpileModule(declaration.getText(tree),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   const calls=[];
-  const bindings={canStart:true,active:true,record:{...base,purpose:'wiring_review'},entry:'',actionContext:context,state,responseMode:'fast',wiringMode:true,tr:zh=>zh,setEntry(){},
+  const bindings={canStart:true,counting:false,chat:passiveChat(),countdown:passiveCountdown(),active:true,record:{...base,purpose:'wiring_review'},entry:'',actionContext:context,state,responseMode:'fast',wiringMode:true,tr:zh=>zh,setEntry(){},
     session:{pending:false,action:async(name)=>{calls.push(name);return {status:'stopped'};},create:async(...args)=>{calls.push(['create',args[5]]);return {id:'new'};}}};
   const start=new Function(...Object.keys(bindings),`${code};return startNewCheck;`)(...Object.values(bindings));
   assert.deepEqual(calls,[]);

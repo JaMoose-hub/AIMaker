@@ -15,6 +15,9 @@ export async function renderDetails(result, locale, overrides = {}) {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.ReactJSX,
   }}).outputText;
   js = js.replaceAll('"react/jsx-runtime"', JSON.stringify(import.meta.resolve('react/jsx-runtime')))
+    .replaceAll('"react"', JSON.stringify(import.meta.resolve('react')))
+    .replace(/import \{ useCaptureCountdown \} from "\.\.\/lib\/useCaptureCountdown";/, 'const useCaptureCountdown=()=>({remaining:null});')
+    .replace(/import \{ CaptureCountdown \} from "\.\/CaptureCountdown";/, 'const CaptureCountdown=()=>null;')
     .replaceAll('"../lib/cloudWiring"', JSON.stringify(libraryUrl))
     .replace(/import \{ useMakerText \} from "\.\.\/lib\/useMaker";/,
       `const useMakerText = () => (zh, en) => ${JSON.stringify(locale)} === 'zh-TW' ? zh : en;`);

@@ -63,7 +63,7 @@ export function DebugPage({state, onCase, onCode, onWiring, onDeploy, onSelect, 
   assistantOpen?:boolean; onAssistantOpenChange?:(open:boolean)=>void;
   assistantIntent?:"wiring"|"debug"; onAssistantIntentChange?:(intent:"wiring"|"debug")=>void;
   embedded?:boolean;
-  assistant?:(tools:{context:DebugContext;codeHash:string;repairCaseId:string|null;repairAppliedHash:string|null;repairCandidateReady:boolean;onRetest:(cid:string,runId?:string)=>void;onTrial:(trialId?:string)=>void;onReviewRepair:()=>void;onManual:()=>void;operationCard?:ReactNode;intent:"wiring"|"debug"})=>ReactNode;
+  assistant?:(tools:{context:DebugContext;codeHash:string;repairCaseId:string|null;repairAppliedHash:string|null;repairCandidateReady:boolean;onRetest:(cid:string,runId?:string)=>void;onTrial:(trialId?:string)=>void;onReviewRepair:()=>void;onManual:()=>void;operationCard?:ReactNode;headerControls?:ReactNode;intent:"wiring"|"debug"})=>ReactNode;
 }) {
   const tr = useMakerText();
   const pi = usePiConnection();
@@ -285,7 +285,7 @@ const trialOutput = <>      {trial?<section className="debug-trial-result"><h3>{
       {record?.eligible===false?<p>{message("unsupported_draft")}</p>:null}
       {(record?.rounds??0)>=2?<p>{message("repair_limit_reached")}</p>:null}
       {record?.analysis?<div className="debug-ai-result"><h3>{tr("AI 已完成分析", "AI review is ready")}</h3><p>{stale?tr("這是先前的分析，重新檢查後再決定下一步。", "This is an earlier review. Check again before deciding what to do."):record.candidate?tr("有一份程式修改建議。先看修改內容，確認後才會套用。", "A code change is suggested. Review it before confirming any change."):tr("目前沒有可直接套用的修改。可依本頁建議重測，或展開完整分析。", "There is no ready-to-apply change. Follow the suggested test or open the full review.")}</p><details className="debug-analysis-details"><summary>{tr("查看完整 AI 分析（進階）", "Full AI review (advanced)")}</summary><p>{tr("檢查紀錄", "Evidence")}: {record.analysis.facts}</p><p>{tr("可能原因（尚未確認）", "Possible causes (unconfirmed)")}: {record.analysis.possible_causes}</p><p>{tr("AI 建議", "AI suggestions")}: {record.analysis.next_step}</p></details></div>:null}
-      {record?.candidate?<><details><summary>{tr("候選修改差異／離線測試","Candidate diff / offline checks")}</summary><pre>{record.candidate.diff}</pre><pre>{JSON.stringify(record.candidate.offline,null,2)}</pre></details><button disabled={working||stale||record.candidate.applied||!hardwareReady} onClick={()=>setConfirmAction("apply")}>{tr("套用修復並試跑","Apply repair and trial")}</button></>:null}
+      {record?.candidate?<div className="debug-proposal" data-proposal={!record.candidate.applied}><span className="proposal-status">{record.candidate.applied ? tr("已套用", "Applied") : tr("提案預覽 · 尚未套用", "Proposal preview · Not applied")}</span><details><summary>{tr("候選修改差異／離線測試","Candidate diff / offline checks")}</summary><pre className="debug-diff">{record.candidate.diff.split(/(?<=\n)/).map((line,index)=><span key={index} className={line.startsWith("+")&&!line.startsWith("+++")?"diff-add":line.startsWith("-")&&!line.startsWith("---")?"diff-del":undefined}>{line}</span>)}</pre><pre>{JSON.stringify(record.candidate.offline,null,2)}</pre></details><button disabled={working||stale||record.candidate.applied||!hardwareReady} onClick={()=>setConfirmAction("apply")}>{tr("套用修復並試跑","Apply repair and trial")}</button></div>:null}
       {record?.can_restore?<button disabled={working} onClick={()=>setConfirmAction("restore")}>{tr("還原上一版草稿","Restore previous draft")}</button>:null}
       {confirmAction?<div className="guide-caution" role="group" aria-label={tr("確認草稿變更","Confirm draft change")}><p>{confirmAction==="apply"?tr("套用此邏輯修復並加入 60 秒試跑佇列？若需停止目前程式，還會在執行管理要求確認。","Apply this logic repair and queue a 60-second trial? Stopping the current program requires a separate handoff confirmation."):tr("還原上一版草稿？不會停止或重新啟動 Pi 程式。","Restore the previous draft? This does not stop or restart Pi programs.")}</p><button disabled={working||(confirmAction==="apply"&&(stale||!hardwareReady))} onClick={()=>void(confirmAction==="apply"?apply():restore())}>{tr("確認執行","Confirm")}</button><button onClick={()=>setConfirmAction(null)}>{tr("取消","Cancel")}</button></div>:null}
     </div></details>
@@ -348,21 +348,23 @@ const trialOutput = <>      {trial?<section className="debug-trial-result"><h3>{
     ? <SessionTestCard state={state} componentId={boundVisual.component_id} runId={boundVisual.id} onWiring={onWiring}/>
     : sessionRecord?.status === "awaiting_trial_visual" ? trial?.id === sessionRecord.trial_result?.id ? trialOutput : <p role="status">{tr("正在取得本次試跑紀錄。", "Loading this trial's record.")}</p>
     : sessionRecord?.status === "awaiting_repair" && record?.id === sessionRecord.diagnosis?.case_id ? repairTools : undefined;
+  const modePicker = variant === "wiring" ? <div className="guide-ai-mode-picker" role="group" aria-label={tr("協作內容", "Assistant focus")}>
+    <button type="button" aria-pressed={intent === "wiring"} onClick={()=>chooseAssistantIntent("wiring")}>{embedded ? tr("問接法", "Ask about wiring") : tr("接線看圖", "Inspect wiring")}</button>
+    <button type="button" aria-pressed={intent === "debug"} onClick={()=>chooseAssistantIntent("debug")}>{embedded ? tr("功能異常", "Something isn't working") : tr("測試與除錯", "Test & debug")}</button>
+    {!embedded ? <small>{tr("共用同一段對話與測試紀錄", "One conversation and test history")}</small> : null}
+  </div> : null;
   return <section className={`debug-page${assistant ? " debug-chat-page" : ""}${variant === "wiring" ? " guide-ai-workspace" : ""}${embedded ? " is-docked" : ""}`} data-open={embedded||variant!=="wiring"||guideAssistantOpen} aria-label={variant === "wiring" ? tr("接線 AI 協作除錯","Wiring AI assistant") : tr("測試與除錯","Test & debug")}>
     {embedded ? null : variant === "wiring" ? <header className="guide-ai-heading"><button type="button" aria-expanded={guideAssistantOpen} aria-controls="guide-ai-content" onClick={()=>{setGuideAssistantOpen(!guideAssistantOpen);setManualOpen(false);}}>{tr("AI 協作 · 接線與除錯", "AI assistant · wiring and debugging")}</button><div className="guide-ai-heading-actions"><button type="button" onClick={()=>chooseAssistantIntent("debug")}>{tr("測試與除錯", "Test & debug")}</button><button type="button" onClick={onDeploy}>{tr("前往 03 部署 →", "Go to 03 Deploy →")}</button></div></header> :
     <header className={`debug-heading workflow-heading${assistant ? " debug-chat-heading" : ""}`}><div><div className="workflow-eyebrow">{tr("02 · 接線與除錯", "02 · Wiring & debug")}</div>{!assistant ? <><h2>{tr("哪個地方沒有正常運作？", "What isn't working?")}</h2>
       <p className="workflow-subtitle">{tr("把零件放進鏡頭，讓 AI 看畫面並帶你查找原因。", "Show the components to the camera so AI can inspect them and guide your diagnosis.")}</p></> : null}</div>
       <div className="workflow-heading-actions"><button className="workflow-secondary" onClick={onDeploy}>{tr("先去啟動作品 →","Go to deployment →")}</button></div></header>}
     <div className="debug-page-content" id={variant === "wiring" ? "guide-ai-content" : undefined} hidden={!embedded&&variant === "wiring"&&!guideAssistantOpen}>
-    {variant === "wiring" ? <div className="guide-ai-mode-picker" role="group" aria-label={tr("協作內容", "Assistant focus")}>
-      <button type="button" aria-pressed={intent === "wiring"} onClick={()=>chooseAssistantIntent("wiring")}>{embedded ? tr("問接法", "Ask about wiring") : tr("接線看圖", "Inspect wiring")}</button>
-      <button type="button" aria-pressed={intent === "debug"} onClick={()=>chooseAssistantIntent("debug")}>{embedded ? tr("功能異常", "Something isn't working") : tr("測試與除錯", "Test & debug")}</button>
-      {!embedded ? <small>{tr("共用同一段對話與測試紀錄", "One conversation and test history")}</small> : null}
-    </div> : null}
+    {!assistant || manualOpen ? modePicker : null}
     {assistant ? <div className="debug-chat-view" hidden={manualOpen}>
     {assistant?.({context,codeHash:hash,repairCaseId:record?.id??null,intent,
       repairAppliedHash:record?.candidate?.applied ? record.candidate.code_hash : repairAccepted && repairAccepted.caseId===record?.id && repairAccepted.candidateId===record?.candidate?.id ? repairAccepted.codeHash : null,
       repairCandidateReady:Boolean(record?.candidate),
+      headerControls:manualOpen?undefined:modePicker,
       operationCard:manualOpen?undefined:operationCard,
       onRetest:(id,runId)=>{openManual();openRetest(id,runId);},onTrial:trialId=>{setSelectedTrialId(trialId);openManual("trial");},onReviewRepair:()=>openManual("repair"),onManual:()=>openManual()})}
     </div> : null}

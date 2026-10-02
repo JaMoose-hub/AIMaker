@@ -4,6 +4,9 @@
 .maker-stage-design > .side { display: none; }
 .maker-design-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .maker-design-stage > .maker-studio { flex: 1; min-height: 0; }
+.maker-guide-empty .guide-panel-body { justify-content: flex-start; }
+.maker-guide-empty .guide-panel-body p { margin: 0; color: var(--muted); line-height: 1.7; }
+.maker-guide-empty .guide-panel-body > .guide-primary-action { flex: none; align-self: flex-start; }
 .maker-view-heading { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 8px 12px; }
 .maker-design-views { display: flex; flex: none; gap: 4px; }
 .maker-design-views button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-elev); color: var(--text); cursor: pointer; font-size: 12px; }
@@ -177,8 +180,9 @@
 .maker-assistant .maker-conversation { flex-shrink: 1; }
 .maker-product { color: var(--text); }
 .maker-product::backdrop { background: #000b; }
+.maker-assistant-header { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .maker-assistant-heading { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.maker-assistant-heading h2 { font-size: 19px; margin: 8px 0 0; }
+.maker-assistant-heading h2 { min-width: 0; font-size: 19px; margin: 0; }
 .maker-assistant-heading > span { font-size: 11px; white-space: nowrap; }
 .maker-context { font-size: 11px; color: #a0b8c8; margin: 0; }
 .maker-assistant-parts { font-size: 12px; }
@@ -351,6 +355,29 @@
 .maker-blueprint-sidebar .maker-bom { grid-template-columns: minmax(0, 1fr); }
 .maker-blueprint-sidebar .maker-bom article { gap: 5px; }
 .maker-blueprint-sidebar .maker-bom button { justify-self: start; font-size: 12px; }
+.maker-material-notice { margin: 0 0 14px; color: var(--text-dim); font-size: 12px; }
+.maker-material-notice p { margin: 0 0 6px; }
+.maker-material-notice summary { cursor: pointer; width: fit-content; }
+.maker-material-notice details[open] { display: block; padding-bottom: 4px; }
+.maker-material-notice details p { margin-top: 8px; }
+.maker-material-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; margin-top: 5px; }
+.maker-material-price { color: var(--text-dim); font-size: 12px; }
+.maker-material-price strong { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.maker-product.maker-partnership { box-sizing: border-box; width: min(540px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 24px; line-height: 1.6; }
+.maker-partnership-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.maker-partnership-heading button { min-width: 32px; min-height: 32px; padding: 0; font-size: 22px; }
+.maker-partnership h2 { margin: 16px 0 10px; font-size: 22px; line-height: 1.4; }
+.maker-partnership p { margin: 10px 0; color: var(--text-dim); }
+.maker-partnership h3 { margin: 20px 0 8px; font-size: 14px; }
+.maker-partnership-material { display: grid; gap: 4px; margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-inset); overflow-wrap: anywhere; }
+.maker-partnership-material small, .maker-partnership-material > span { color: var(--text-dim); }
+.maker-partnership-material > span strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.maker-partnership-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.maker-partnership-options li { display: grid; gap: 2px; }
+.maker-partnership-options span { color: var(--text-dim); font-size: 12px; }
+.maker-partnership .maker-partnership-status { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; }
+.maker-partnership footer { display: flex; justify-content: flex-end; margin-top: 16px; }
+.maker-partnership :focus-visible { outline: 2px solid var(--brand-link, #7bcab1); outline-offset: 3px; }
 .blueprint-instructions { padding-left: 20px; }
 .blueprint-instructions li { padding: 6px 0; }
 .blueprint-wire-steps { list-style: none; padding: 0; display: grid; gap: 8px; }
@@ -359,6 +386,7 @@
 .blueprint-step-number { color: #85bea8; font-variant-numeric: tabular-nums; }
 .maker-blueprint-sidebar :focus-visible, .blueprint-actions :focus-visible { outline: 2px solid #7bcab1; outline-offset: 2px; }
 @media (max-width: 720px) {
+  .maker-partnership-heading button { min-width: 44px; }
   .maker-layout .maker-studio.maker-resizable { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .maker-splitter { display: none; }
   .maker-blueprint-layout > .maker-preview { position: static; max-height: none; }

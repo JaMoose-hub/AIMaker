@@ -19,19 +19,19 @@ async function presentation(view){
     const input=el.querySelector('textarea'),send=el.querySelector('button'),r=el.getBoundingClientRect(),b=send.getBoundingClientRect();
     return {radius:getComputedStyle(el).borderRadius,border:getComputedStyle(el).borderTopWidth,inputHeight:input.getBoundingClientRect().height,sendInside:b.x>=r.x&&b.right<=r.right+1&&b.y>=r.y&&b.bottom<=r.bottom+1,overflow:document.documentElement.scrollWidth>innerWidth+1};
   });
-  assert.equal(result.radius,'18px');assert.equal(result.border,'1px');
+  assert.equal(result.radius,'8px');assert.equal(result.border,'1px');
   assert(result.inputHeight>=64,'Input retains enough writing space');
   assert(result.sendInside,'Send stays inside the input surface');assert(!result.overflow,'No page overflow');
   await input.focus();
-  const border=await row.evaluate(el=>getComputedStyle(el).borderColor);
-  assert.equal(border,'rgb(65, 122, 190)','Visible keyboard focus');
+  const focus=await row.evaluate(el=>({style:getComputedStyle(el).outlineStyle,width:getComputedStyle(el).outlineWidth}));
+  assert.deepEqual(focus,{style:'solid',width:'2px'},'Visible keyboard focus separate from aurora');
   const bubbles=await page.locator(designView?'.maker-message':'.ai-debug-message').evaluateAll(items=>items.map(el=>({
     role:el.className.includes('user')?'user':'assistant',side:getComputedStyle(el).alignSelf,border:getComputedStyle(el).borderLeftWidth,radius:getComputedStyle(el).borderRadius,background:getComputedStyle(el).backgroundColor,clipped:el.scrollWidth>el.clientWidth+1,
   })));
   for(const bubble of bubbles){
     assert.equal(bubble.side,bubble.role==='user'?'flex-end':'flex-start');
     assert.equal(bubble.border,'1px','Messages are not striped warning cards');
-    assert.equal(bubble.radius,bubble.role==='user'?'16px 16px 4px':'16px 16px 16px 4px');
+    assert.equal(bubble.radius,'8px');
     assert(!bubble.clipped,'Bubble content stays inside its surface');
   }
   assert(bubbles.some(b=>b.role==='user')&&bubbles.some(b=>b.role==='assistant'));

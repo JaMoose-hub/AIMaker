@@ -28,7 +28,7 @@ export function DesignStudio({ state, setState, onAdopt, onViewChange, generatio
     setConsentFor("");
     setDiscardedFor(approvedKey);
   }
-  return <section className="maker-preview maker-concept-page" data-concept-state={state.candidate ? "preview" : state.design ? "approved" : "empty"} aria-label={tr("作品設計預覽", "Project concept preview")} aria-busy={processing}>
+  return <section className="maker-preview maker-concept-page" data-proposal={Boolean(state.candidate)} data-concept-state={state.candidate ? "preview" : state.design ? "approved" : "empty"} aria-label={tr("作品設計預覽", "Project concept preview")} aria-busy={processing}>
     <div className="maker-view-heading"><span className="maker-eyebrow">01 / CONCEPT STUDIO</span>
       <DesignViewSwitch view="concept" hasBlueprint={Boolean(state.design)} onChange={onViewChange} />
       {state.candidate ? <button className="maker-primary maker-concept-confirm" disabled={cannotConfirm} onClick={() => needsDraftConsent(state) ? setConsentFor(revisionKey) : onAdopt()}>{tr("確認作品並查看藍圖 →", "Confirm and view blueprint →")}</button> : null}</div>
@@ -39,7 +39,7 @@ export function DesignStudio({ state, setState, onAdopt, onViewChange, generatio
         <button onClick={() => setConsentFor("")}>{tr("取消，保留草稿", "Cancel, keep draft")}</button>
         <button className="maker-primary" disabled={cannotConfirm} onClick={() => onAdopt(true)}>{tr("確認取代並進入 Blueprint", "Replace draft & open Blueprint")}</button></div> : null}
       <details className="maker-concept-description" key={revisionKey}><summary>{tr("作品說明", "About this project")}</summary><p className="maker-muted">{projectText(design.summary)}</p></details>
-      {state.candidate && state.design ? <p className="maker-warning">{tr("新版預覽，尚未套用。確認後才更新 Blueprint、接線配置與程式。", "Unapplied revision. Confirm to update the blueprint, wiring and code.")}</p> : null}
+      {state.candidate ? <p className="maker-warning proposal-status">{tr("新版預覽，尚未套用。確認後才更新 Blueprint、接線配置與程式。", "Unapplied revision. Confirm to update the blueprint, wiring and code.")}</p> : null}
       <ProjectConcept design={design} generationPhase={activePhase} />
       {state.candidate ? <button type="button" disabled={processing} title={processing ? tr("AI 處理完成後才能捨棄預覽。", "Wait for AI processing to finish before discarding the preview.") : undefined} onClick={discardPreview}>{tr("捨棄此預覽", "Discard preview")}</button> : null}
     </> : activePhase ? <ProjectGenerationStatus phase={activePhase} /> : <div className="maker-empty"><span aria-hidden="true">✧</span><h2>{tr("先看見你的作品", "See your idea take shape")}</h2><p>{tr("在左側描述需求。雲端 AI 完成設計後，作品概念畫面會直接出現在這裡。", "Describe your idea on the left. The cloud-generated concept will appear here.")}</p><div>CONCEPT → BLUEPRINT → WIRE → DEPLOY</div></div>}

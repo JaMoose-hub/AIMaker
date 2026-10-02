@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import postcss from 'postcss';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -11,126 +12,122 @@ const declarations = selector => {
   return values;
 };
 const scope = '.app.tinkro-theme:not(.display-mode-active)';
-const tokens = declarations(':root');
-const luminance = hex => {
-  const rgb = hex.replace('#', '').match(/../g).map(v => parseInt(v, 16) / 255)
-    .map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
-  return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
-};
-const contrast = (a, b) => {
-  const values = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (values[0] + .05) / (values[1] + .05);
+const dark = declarations(':root'), light = {...dark,...declarations(':root[data-theme="light"]')};
+const rgb = hex => hex.replace('#','').match(/../g).map(v=>parseInt(v,16));
+const luminance = c => c.map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
+const contrast = (a,b) => {const l=[luminance(a),luminance(b)].sort((a,b)=>b-a);return (l[0]+.05)/(l[1]+.05)};
+const paint = (value,base) => {
+  if(value.startsWith('#'))return rgb(value);
+  const [r,g,b,alpha] = value.match(/[\d.]+/g).map(Number);
+  return [r,g,b].map((v,i)=>v*alpha/100+base[i]*(1-alpha/100));
 };
 
-test('Tinkro brand palette and text contrast are explicit reusable tokens', () => {
-  assert.equal(tokens['--brand-navy'], '#203065');
-  assert.equal(tokens['--brand-blue'], '#417abe');
-  assert.equal(tokens['--brand-teal'], '#16b9a6');
-  for (const ink of ['--ink-primary', '--ink-secondary', '--ink-muted', '--brand-link']) {
-    for (const surface of ['--surface-card', '--surface-canvas']) {
-      assert.ok(contrast(tokens[ink], tokens[surface]) >= 4.5, `${ink} on ${surface}`);
+test('Style 23 defines exact dark/light surfaces, brand colors and small radii',()=>{
+  assert.equal(dark['--surface-canvas'],'#0a0b10');
+  assert.equal(dark['--surface-card'],'#12141b');
+  assert.equal(light['--surface-canvas'],'#f3f4f7');
+  assert.equal(light['--surface-card'],'#ffffff');
+  for(const tokens of [dark,light]){
+    assert.equal(tokens['--brand-navy'],'#203065');
+    assert.equal(tokens['--brand-blue'],'#417abe');
+    assert.equal(tokens['--brand-teal'],'#16b9a6');
+    assert.equal(tokens['--radius-card'],'8px');
+    assert.equal(tokens['--radius-control'],'6px');
+    assert.equal(tokens['--radius-tag'],'4px');
+  }
+  assert.doesNotMatch(css.toString(),/#dedcd5|#eeeae1|background-image: radial-gradient|border-top: 3px/);
+});
+
+for(const [theme,tokens] of [['dark',dark],['light',light]]){
+  test(theme+' text, status chips, tonal and diff colors meet 4.5:1 on composited backgrounds',()=>{
+    const panel=rgb(tokens['--surface-card']);
+    for(const ink of ['--ink-primary','--ink-secondary','--ink-muted','--brand-link']){
+      for(const surface of ['--surface-card','--surface-canvas','--surface-subtle']){
+        assert.ok(contrast(rgb(tokens[ink]),rgb(tokens[surface]))>=4.5,theme+ink+surface);
+      }
     }
-  }
-  assert.ok(contrast(tokens['--brand-navy'], '#ffffff') >= 4.5);
-});
-
-test('large surfaces use warm paper rather than a blue social-feed shell or bright white', () => {
-  assert.equal(tokens['--surface-canvas'], '#dedcd5');
-  assert.equal(tokens['--surface-card'], '#eeeae1');
-  assert.ok(luminance(tokens['--surface-canvas']) < .82);
-  assert.ok(luminance(tokens['--surface-card']) < .90);
-  assert.ok(luminance(tokens['--surface-card']) > luminance(tokens['--surface-canvas']));
-  assert.ok(luminance(tokens['--surface-subtle']) < luminance(tokens['--surface-card']));
-});
-
-test('studio navigation and teal actions have contrast and do not add media transforms', () => {
-  const shell = declarations(scope);
-  assert.equal(declarations(`${scope} .header`).background, 'transparent');
-  assert.equal(declarations(`${scope} .maker-nav`).background, 'var(--brand-navy)');
-  assert.equal(shell['--primary-bg'], 'var(--brand-teal)');
-  assert.ok(contrast(shell['--primary-ink'], tokens['--brand-teal']) >= 4.5);
-  assert.ok(contrast(shell['--primary-ink'], tokens['--brand-action-hover']) >= 4.5);
-  assert.ok(contrast(tokens['--studio-chalk'], tokens['--brand-navy']) >= 4.5);
-  assert.match(declarations(scope)['background-image'], /radial-gradient/);
-});
-
-test('original blues are visibly used, not only declared in the palette', () => {
-  assert.equal(declarations(`${scope} .brand-text`).background, 'var(--brand-navy)');
-  assert.equal(tokens['--brand-link'], tokens['--brand-navy']);
-  assert.equal(declarations(`${scope} .main :is(.maker-preview, .pi-deploy-panel, .debug-page-content)`)['border-top'], '3px solid var(--brand-blue)');
-  assert.equal(declarations(`${scope} :is(.maker-eyebrow, .workflow-eyebrow)::before`).background, 'var(--brand-blue)');
-  const nav = declarations(`${scope} .maker-nav`);
-  assert.ok(contrast(nav['--text-faint'], tokens['--brand-navy']) >= 4.5);
-  assert.ok(contrast(tokens['--studio-chalk'], nav['--control-hover']) >= 4.5);
-});
-
-test('new theme loads last and excludes optical HUD without rewriting camera geometry', () => {
-  const main = read('../src/main.tsx');
-  assert.ok(main.indexOf('./tinkro.css') > main.indexOf('./responsive.css'));
-  css.walkRules(rule => {
-    if (rule.selector === ':root' || rule.selector === '.brand-logo') return;
-    assert.match(rule.selector, /\.tinkro-theme:not\(\.display-mode-active\)/);
+    for(const [ink,bg] of [['--status-ok','--surface-teal'],['--status-warn','--surface-warning'],['--status-danger','--surface-danger'],['--brand-link','--surface-blue']]){
+      assert.ok(contrast(rgb(tokens[ink]),paint(tokens[bg],panel))>=4.5,theme+ink);
+    }
+    const evidence=paint(tokens['--surface-evidence'],panel);
+    assert.ok(contrast(rgb(tokens['--tonal-ink']),paint(tokens['--tonal-bg'],evidence))>=4.5);
+    const diff=rgb(tokens['--diff-bg']);
+    assert.ok(contrast(rgb(tokens['--diff-add-ink']),paint(tokens['--diff-add-bg'],diff))>=4.5);
+    assert.ok(contrast(rgb(tokens['--status-danger']),paint(tokens['--diff-del-bg'],diff))>=4.5);
+    assert.ok(contrast(rgb('#04241f'),rgb(tokens['--brand-teal']))>=4.5);
+    assert.ok(contrast(rgb('#04241f'),rgb(tokens['--brand-action-hover']))>=4.5);
   });
-  css.walkDecls(d => assert.ok(!['transform', 'translate', 'scale'].includes(d.prop), d.prop));
-  assert.equal(declarations(`${scope} :is(.video-shell, .circuit-viewport, .concept-canvas)`)['color-scheme'], 'dark');
+}
+
+test('theme paints load last but never transform camera geometry or change electrical tokens',()=>{
+  const main=read('../src/main.tsx');
+  assert.ok(main.indexOf('./tinkro.css')>main.indexOf('./guideAi.css'));
+  css.walkDecls(d=>assert.ok(!['transform','translate','scale'].includes(d.prop),d.prop));
+  assert.doesNotMatch(css.toString(),/--cap-|--wire-/);
+  assert.equal(declarations(scope+' :is(.video-shell, .circuit-viewport, .concept-canvas)')['color-scheme'],'dark');
+  assert.equal(declarations(scope+' .ai-debug-panel .ai-photo-card img')['color-scheme'],'dark');
+  assert.equal(declarations('.app.display-mode-active')['color-scheme'],'dark');
+  assert.equal(declarations('html:has(.display-mode-active)').background,'var(--bg)');
+  const code=declarations(scope+' :is(.pi-code-editor, .pi-console, .debug-page pre, .component-test-card pre)');
+  assert.equal(code['color-scheme'],'dark');
+  assert.ok(contrast(rgb(code.color),rgb(code.background))>=4.5);
 });
 
-test('public titles and accessible logo use Tinkro in both languages', () => {
-  for (const language of ['en', 'zh-TW']) {
-    const locale = JSON.parse(read(`../src/locales/${language}.json`));
-    assert.equal(locale['app.title'], 'Tinkro');
-    assert.doesNotMatch(JSON.stringify(locale), /Board ?Vision/);
-  }
-  assert.match(read('../index.html'), /<title>Tinkro<\/title>/);
-  assert.match(read('../src/App.tsx'), /className="brand-logo"[^>]*alt=\{t\("app.title"\)\}/);
-  const logo = readFileSync(new URL('../public/brand/tinkro-dark.png', import.meta.url));
-  assert.equal(logo.subarray(1, 4).toString(), 'PNG');
-  assert.equal(logo.readUInt32BE(16), 2048);
-  assert.equal(logo.readUInt32BE(20), 1024);
-  for (const color of ['#203065', '#417ABE', '#16B9A6']) {
-    assert.ok(read('../public/brand/tinkro-symbol.svg').toUpperCase().includes(color.toUpperCase()));
-  }
+test('only the brand and prompt use aurora blur, with independent keyboard focus and reduced motion',()=>{
+  css.walkDecls('filter',d=>{
+    if(d.value!=='none')assert.match(d.parent.selector,/brand-text::before|compose-row\)::before/);
+  });
+  assert.equal(declarations(scope+' :is(button, summary, select, input, textarea, a):focus-visible').outline,'2px solid var(--accent)');
+  assert.equal(declarations(scope+' :is(.maker-compose-row,.ai-debug-compose-row):focus-within').outline,'2px solid var(--brand-link)');
+  assert.match(css.toString(),/@media \(prefers-reduced-motion: reduce\)/);
+  assert.equal(declarations(scope+' .ws-dot')['box-shadow'],'none');
+  assert.equal(declarations(scope+' .camera-tools-popover .status-metrics > .pill')['flex-basis'],'auto');
 });
 
-test('branding retains saved drafts, calibration keys and remote service identity', () => {
-  assert.match(read('../src/lib/makerMigration.ts'), /boardvision\.maker\.v1/);
-  assert.match(read('../src/components/VideoView.tsx'), /boardvision\.gpio-pin-calibration\.v1/);
-  assert.match(read('../../backend/app/pi_deploy.py'), /SERVICE = "boardvision-pi\.service"/);
-  assert.match(read('../src/lib/debugSessions.ts'), /boardvision\.ai-debug-session\.v1/);
+test('branding retains accessible title, saved drafts, calibration and remote service identity',()=>{
+  for(const locale of ['en','zh-TW'])assert.equal(JSON.parse(read('../src/locales/'+locale+'.json'))['app.title'],'Tinkro');
+  assert.match(read('../src/App.tsx'),/brand-title[^]*?t\("app.title"\)/);
+  assert.match(read('../src/App.tsx'),/brand-logo[^>]*src="\/brand\/tinkro-dark\.png"[^>]*alt=\{t\("app.title"\)\}/);
+  assert.match(read('../src/lib/makerMigration.ts'),/boardvision\.maker\.v1/);
+  assert.match(read('../src/components/VideoView.tsx'),/boardvision\.gpio-pin-calibration\.v1/);
+  assert.match(read('../../backend/app/pi_deploy.py'),/SERVICE = "boardvision-pi\.service"/);
+  assert.match(read('../src/lib/debugSessions.ts'),/boardvision\.ai-debug-session\.v1/);
+  assert.doesNotMatch(read('../src/lib/theme.ts'),/fetch\(|WebSocket|reload\(|maker\.v1|ai-debug-session/);
 });
 
-test('light guide resets dark overlay variables and text shadow', () => {
-  const guide = declarations(`${scope} .photo-guide.component-guide`);
-  assert.equal(guide['--text-dim'], 'var(--ink-secondary)');
-  assert.equal(guide['--border'], 'var(--line-default)');
-  assert.equal(guide['text-shadow'], 'none');
-  assert.equal(guide['backdrop-filter'], 'none');
+test('original supplied wordmark is unmodified, keeps its tagline and stays legible in light mode',()=>{
+  const image=readFileSync(new URL('../public/brand/tinkro-dark.png',import.meta.url));
+  assert.equal(createHash('sha256').update(image).digest('hex'),'8f1e0d78ea6bd5f278ce34309c17906f7ffb7b906c351c2b80e0940b43f59345');
+  const app=read('../src/App.tsx');
+  assert.match(app,/brand-subtitle">Vibe Maker Studio/);
+  assert.doesNotMatch(app,/src="\/brand\/tinkro-symbol.svg"/);
+  assert.match(read('./tinkro-preview.tsx'),/brand-logo[^>]*src="\/brand\/tinkro-dark\.png"[^>]*alt="Tinkro"/);
+  assert.equal(declarations(':root[data-theme="light"] '+scope+' .brand-title').background,'#12141b');
+  const wordmark=declarations(scope+' .brand-logo');
+  assert.equal(wordmark.width,'128px');
+  assert.equal(wordmark.height,'40px');
+  assert.equal(wordmark['object-fit'],'cover');
+  assert.equal(wordmark['object-position'],'center 44%');
+  const compactWordmark=declarations(scope+' .maker-header-main .brand-logo');
+  assert.equal(compactWordmark.width,'112px');
+  assert.equal(compactWordmark.height,'35px');
 });
 
-test('base inputs use low specificity so code editors retain the dark surface', () => {
-  assert.equal(declarations(`${scope} :where(input:not([type=checkbox]):not([type=radio]), textarea)`)['background-color'], 'var(--control-bg)');
-  const code = declarations(`${scope} :is(.pi-code-editor, .pi-console, .debug-page pre, .component-test-card pre)`);
-  assert.equal(code['color-scheme'], 'dark');
-  assert.ok(contrast(code.color, code.background) >= 4.5);
+test('proposal presentation preserves raw diff text and the existing explicit confirmation path',()=>{
+  const debug=read('../src/components/DebugPage.tsx');
+  assert.match(debug,/data-proposal=\{!record.candidate.applied\}/);
+  assert.ok(debug.includes('record.candidate.diff.split(/(?<=\\n)/)'));
+  assert.match(debug,/onClick=\{\(\)=>setConfirmAction\("apply"\)\}/);
+  assert.match(debug,/action:"apply",context,candidate_id:record.candidate.id,confirmed:true/);
+  assert.match(read('../src/components/DesignStudio.tsx'),/data-proposal=\{Boolean\(state.candidate\)\}/);
+  assert.equal(declarations(scope+' .main .maker-preview[data-proposal="true"]').border,'1px dashed var(--border-strong)');
 });
 
-test('primary action, semantic outcomes and keyboard focus remain distinguishable', () => {
-  assert.equal(declarations(`${scope} :is(button, summary, select, input, textarea, a):focus-visible`).outline, '2px solid var(--accent)');
-  assert.equal(declarations(`${scope} :is(.test-outcome.passed, .workflow-state.good)`).color, 'var(--ok)');
-  assert.equal(declarations(`${scope} :is(.test-outcome.failed, .debug-check-feedback.is-error)`).color, 'var(--danger)');
-  const variables = declarations(scope);
-  for (const [status, surface] of [['--ok', '--surface-teal'], ['--warn', '--surface-warning'], ['--danger', '--surface-danger']]) {
-    assert.ok(contrast(variables[status], tokens[surface]) >= 4.5, `${status} on ${surface}`);
-    assert.ok(contrast(variables[status], tokens['--surface-card']) >= 4.5, `${status} on card`);
-  }
-});
-
-test('isolated visual preview cannot proxy production or contact Pi/cloud', () => {
-  const server = read('./tinkro-preview.mjs');
-  assert.match(server, /connect-src 'none'/);
-  assert.match(server, /startPreview\(port=18770\)/);
-  assert.match(server, /server\.listen\(port,'127\.0\.0\.1'/);
-  assert.match(server, /No API in this preview/);
-  assert.match(read('./tinkro-preview.tsx'), /window.fetch=async\(\)=>\{throw Error/);
-  assert.match(read('./tinkro-preview.tsx'), /window.WebSocket=class \{constructor\(\)\{throw Error/);
+test('isolated preview cannot contact Pi, cloud or production storage',()=>{
+  const server=read('./tinkro-preview.mjs');
+  assert.match(server,/connect-src 'none'/);
+  assert.match(server,/startPreview\(port=18770\)/);
+  assert.match(server,/server\.listen\(port,'127\.0\.0\.1'/);
+  assert.match(read('./tinkro-preview.tsx'),/window.fetch=async\(\)=>\{throw Error/);
+  assert.match(read('./tinkro-preview.tsx'),/window.WebSocket=class \{constructor\(\)\{throw Error/);
 });

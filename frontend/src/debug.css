@@ -163,15 +163,14 @@
 .debug-capture-feedback strong { font-size:12px; }
 .ai-debug-panel { margin:12px 0 20px; padding:16px; border:1px solid #357463; border-radius:14px; background:#111e23; }
 .debug-page .ai-debug-panel section { margin:14px 0; padding:14px; }
-.ai-debug-head { display:flex; align-items:start; justify-content:space-between; flex-wrap:wrap; gap:12px; }
-.ai-debug-head h3 { margin:0 0 6px; font-size:20px; }
-.ai-debug-head-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.ai-debug-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px 12px; }
+.ai-debug-head > .guide-ai-mode-picker { margin:0; margin-right:auto; min-width:0; }
+.ai-debug-head-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; min-width:0; }
 .debug-page .ai-debug-head-actions button { min-height:34px; padding:6px 9px; font-size:11px; margin:0; }
 .debug-page .ai-debug-head-actions button[aria-expanded=true] { border-color:#73cbbb; background:#193831; }
 .ai-debug-panel h4 { margin:0 0 8px; font-size:14px; }
 .ai-debug-panel p { margin:9px 0; }
 .ai-debug-disclosure { padding:10px 12px; border-left:3px solid #5cc3a9; background:#17372d; font-size:12px; }
-.ai-debug-model { color:var(--text-dim); font-size:12px; }
 .ai-debug-next-step { padding:10px 12px; border-left:3px solid #5cc3a9; background:#17372d; }
 .ai-debug-busy { color:#a8e7d2; }
 .ai-debug-camera-verdict { font-size:12px; color:#bad9d0; }
@@ -181,6 +180,8 @@
 .ai-debug-quick,.ai-debug-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .ai-debug-quick button[aria-pressed=true] { border-color:#78ddbf; background:#225345; }
 .ai-debug-current { border-color:#38685a !important; background:#112920; }
+.ai-debug-chat-content { display:flex; flex-direction:column; gap:12px; flex:0 0 auto; min-width:0; }
+.ai-debug-latest { align-self:center; flex:0 0 auto; margin:4px 0; }
 .ai-debug-current-title { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
 .ai-debug-current-title strong { font-size:17px; }
 .ai-debug-capture-hint { color:#b6ecd9; }

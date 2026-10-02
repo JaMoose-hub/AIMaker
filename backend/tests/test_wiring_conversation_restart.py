@@ -103,3 +103,77 @@ def test_restart_api_validates_binding_and_does_not_clear_foreign_round(setup):
     assert fresh["id"] == response.json()["conversation"]["id"] and fresh["messages"] == []
     assert client.get(f"/api/debug/conversations/{old['conversation_id']}").json()["messages"]
     assert not state.pi_execution.jobs and not state.design_service.bridge.calls
+
+
+def migrated_check(setup):
+    service, state = setup
+    context = _context()
+    old = service.create(context, "Wi-Fi 接線檢查", purpose="wiring_review", request_id="wifi")
+    # The connection target includes the SSH host, so switching to the direct
+    # Ethernet IP changes it even when the physical Pi is unchanged.
+    state.component_tests.target = "wired-pi-target"
+    state.pi_deployer.snapshot = lambda: dict(program="stopped", connected=True)
+    restored = DebugSessions(state, service.store, service.capture_fn, autostart=False)
+    assert restored.active()["active"] is None
+    assert restored.get(old["id"])["phase"] == "backend_restarted"
+    return restored, state, old, context
+
+
+def test_restart_after_ssh_address_change_archives_read_only_history_without_stopping_hardware(setup):
+    service, state, old, context = migrated_check(setup)
+    history = service.conversation(old["conversation_id"])
+    session_before = deepcopy(service.sessions[old["id"]])
+    app = FastAPI()
+    app.state.debug_sessions, app.state.pi_deployer = service, state.pi_deployer
+    app.include_router(router)
+    client = TestClient(app)
+    body = dict(project_id=context["project"]["id"], request_id="wired-restart",
+                expected_conversation_id=old["conversation_id"])
+    response = client.post("/api/debug/conversations/restart", json=body)
+    assert response.status_code == 200, response.text
+    fresh = response.json()["conversation"]
+    assert fresh["id"] != old["conversation_id"] and fresh["messages"] == fresh["check_ids"] == []
+    assert service.conversation(old["conversation_id"])["messages"] == history["messages"]
+    # Do not claim a previous target's hardware has stopped or mutate its check.
+    assert service.sessions[old["id"]] == session_before
+    assert not service.get(old["id"])["conversation_current"]
+    assert client.post("/api/debug/conversations/restart", json=body).json() == response.json()
+    assert not state.component_tests.actions and not state.pi_execution.jobs
+    assert not state.design_service.bridge.calls
+
+
+@pytest.mark.parametrize("blocker", ["queued", "reserved_test", "reserved_trial", "running", "unknown_pid", "busy"])
+def test_migrated_history_never_bypasses_current_hardware_checks(setup, blocker):
+    service, state, old, context = migrated_check(setup)
+    if blocker == "queued":
+        state.pi_execution.jobs.append(dict(id="external", state="queued"))
+    elif blocker in {"reserved_test", "reserved_trial"}:
+        runner = state.component_tests if blocker == "reserved_test" else state.integration_trials
+        runner.runs.append(dict(project_id=context["project"]["id"], reserved=True))
+    else:
+        status = {"running": dict(program="running"), "unknown_pid": dict(program="unknown", pid=12),
+                  "busy": dict(program="stopped", busy=True)}[blocker]
+        state.pi_deployer.snapshot = lambda: status
+    before = deepcopy(service.conversations)
+    with pytest.raises(ValueError, match="hardware_work_active"):
+        service.restart_conversation(context["project"]["id"], "blocked-restart", old["conversation_id"])
+    assert service.conversations == before
+    assert not state.component_tests.actions and not state.design_service.bridge.calls
+
+
+@pytest.mark.parametrize("variant", ["same_target", "live", "different_pause", "has_context"])
+def test_only_restored_read_only_checks_on_previous_targets_can_be_archived(setup, variant):
+    service, state, old, context = migrated_check(setup)
+    session = service.sessions[old["id"]]
+    if variant == "same_target":
+        session["binding"]["target_id"] = state.component_tests.target
+    elif variant == "live":
+        session.update(status="awaiting_capture", phase="capture_needed")
+    elif variant == "different_pause":
+        session["phase"] = "waiting_for_stop"
+    else:
+        session["context"] = context
+    before = deepcopy(service.conversations)
+    with pytest.raises(ValueError, match="ai_stop_unconfirmed"):
+        service.restart_conversation(context["project"]["id"], "blocked-restart", old["conversation_id"])
+    assert service.conversations == before

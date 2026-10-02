@@ -97,7 +97,7 @@ test('manual tool region stays outside chat and remembers which controls to reve
 });
 
 test('merged wiring workspace defaults closed and restores its controlled chat intent without an action',()=>{
-  const renderAssistant=({intent})=>React.createElement('section',{'data-intent':intent},'shared conversation');
+  const renderAssistant=({intent,headerControls})=>React.createElement('section',{'data-intent':intent},headerControls,'shared conversation');
   const closed=renderDebug({variant:'wiring',assistant:renderAssistant});
   assert.match(closed,/data-open="false"/);
   assert.match(closed,/id="guide-ai-content" hidden=""/);

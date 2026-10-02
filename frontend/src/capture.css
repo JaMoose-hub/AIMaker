@@ -1,0 +1,7 @@
+.capture-countdown { display:flex; align-items:center; flex:0 0 auto; gap:12px; margin:8px 0; padding:12px; border:1px solid var(--brand-link,#7faee6); border-radius:8px; background:var(--surface-blue,#182333); color:var(--text,#e8eaf0); }
+.capture-countdown-number { flex:0 0 44px; font-size:32px; line-height:1.2; font-weight:600; text-align:center; font-variant-numeric:tabular-nums; }
+.capture-countdown > div { flex:1; min-width:0; }
+.capture-countdown strong { display:block; font-size:14px; }
+.capture-countdown small { display:block; margin-top:4px; font-size:12px; }
+.capture-countdown button { flex:0 0 auto; min-height:36px; margin:0; }
+@media (max-width: 700px) { .capture-countdown { gap:8px; padding:8px; } .capture-countdown button { min-height:44px; } }

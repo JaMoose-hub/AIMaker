@@ -7,8 +7,8 @@ test('design and debug chat distinguish messages from notices with consistent bu
   const maker=read('../src/maker.css'),theme=read('../src/tinkro.css');
   assert.match(maker,/\.maker-assistant \.maker-conversation\s*\{[^}]*display: flex; flex-direction: column/);
   assert.match(maker,/\.maker-message\.user\s*\{[^}]*align-self: flex-end/);
-  assert.match(theme,/:is\(\.maker-message, \.ai-debug-message\)\s*\{[^}]*border: 1px solid[^}]*border-radius: 16px 16px 16px 4px/);
-  assert.match(theme,/:is\(\.maker-message\.user, \.ai-debug-message\.is-user\)\s*\{[^}]*border-radius: 16px 16px 4px 16px/);
+  assert.match(theme,/:is\(\.maker-message, \.ai-debug-message\)\s*\{[^}]*border: 1px solid[^}]*border-radius: var\(--radius-card\)/);
+  assert.match(theme,/:is\(\.maker-message\.user, \.ai-debug-message\.is-user\)\s*\{[^}]*border-radius: var\(--radius-card\)/);
   assert.doesNotMatch(theme,/:is\(\.maker-message, \.ai-debug-message\)\s*\{[^}]*border-left:/);
 });
 

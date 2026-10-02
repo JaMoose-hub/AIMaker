@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { postCalibrate } from "../lib/api";
 import { toDisplay, toSource, type DisplayPoint, type Letterbox } from "../lib/geometry";
 import { useI18n } from "../lib/i18n";
 import type { DetectionMessage } from "../lib/types";
+import { useCaptureCountdown } from "../lib/useCaptureCountdown";
+import { CaptureCountdown } from "./CaptureCountdown";
 
 /**
  * "新增/校正板型" (Add/Calibrate board type) — admin/onboarding action that
@@ -231,18 +233,24 @@ export function CalibratePanel({
     if (tracked) return tracked;
     return outlineMm ? computeManualGuide(videoSize, letterbox, outlineMm) : null;
   }, [detection, letterbox, videoSize, outlineMm]);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const latestGuide = useRef(guide);
+  useLayoutEffect(() => { latestGuide.current = guide; }, [guide]);
+  const countdown = useCaptureCountdown(JSON.stringify([open, videoSize, outlineMm]),
+    open && phase !== "capturing" && phase !== "success" && Boolean(guide && guide.scaleStatus !== "reject"), surfaceRef);
 
   if (!open) return null;
 
   const handleCapture = () => {
-    if (!guide || phase === "capturing") return;
-    const cornersPx = guide.sourceCorners.map((p) => [p[0], p[1]] as [number, number]);
+    const currentGuide = latestGuide.current;
+    if (!currentGuide || currentGuide.scaleStatus === "reject" || phase === "capturing") return;
+    const cornersPx = currentGuide.sourceCorners.map((p) => [p[0], p[1]] as [number, number]);
 
     const myRequestId = ++requestIdRef.current;
     setPhase("capturing");
     setMessage(null);
 
-    postCalibrate(cornersPx)
+    return postCalibrate(cornersPx)
       .then((result) => {
         if (requestIdRef.current !== myRequestId) return; // superseded/stale
         if (result.ok) {
@@ -275,7 +283,7 @@ export function CalibratePanel({
   const busy = phase === "capturing";
 
   return (
-    <div className="calibrate-overlay" role="dialog" aria-modal="true" aria-label={t("calibrate.title")}>
+    <div ref={surfaceRef} className="calibrate-overlay" role="dialog" aria-modal="true" aria-label={t("calibrate.title")}>
       {guide && (
         <svg
           className={`calibrate-guide-svg${guide.source === "tracked" ? " tracked" : " manual"}`}
@@ -292,6 +300,7 @@ export function CalibratePanel({
       )}
       <div className="calibrate-panel-card">
         <h3 className="calibrate-title">{t("calibrate.title")}</h3>
+        <CaptureCountdown remaining={countdown.remaining} onCancel={countdown.cancel} />
 
         {phase !== "success" && (
           <>
@@ -325,8 +334,8 @@ export function CalibratePanel({
             <button
               type="button"
               className="calibrate-btn primary"
-              disabled={busy || !guide || guide.scaleStatus === "reject"}
-              onClick={handleCapture}
+              disabled={busy || countdown.remaining !== null || !guide || guide.scaleStatus === "reject"}
+              onClick={() => void countdown.run(handleCapture)}
             >
               {busy && <span className="calibrate-spinner" aria-hidden="true" />}
               {busy

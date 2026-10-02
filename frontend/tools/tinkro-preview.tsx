@@ -3,7 +3,7 @@
 import React, {useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {LocaleProvider, useI18n} from '../src/lib/i18n';
-import {initialMaker, makerCatalog, currentWire, enterDebug, reviewProjectWire, confirmConcept, newMakerProject, wireSignature, validDesign, type MakerStage} from '../src/lib/maker';
+import {initialMaker, makerCatalog, currentWire, enterDebug, reviewProjectWire, confirmConcept, newMakerProject, previewDemo, wireSignature, validDesign, type MakerStage} from '../src/lib/maker';
 import {useMaker} from '../src/lib/useMaker';
 import {MAKER_STORAGE} from '../src/lib/makerMigration';
 import {MakerSplitLayout} from '../src/components/MakerSplitLayout';
@@ -23,8 +23,8 @@ import '../src/maker.css';
 import '../src/styles.css';
 import '../src/debug.css';
 import '../src/responsive.css';
-import '../src/tinkro.css';
 import '../src/guideAi.css';
+import '../src/tinkro.css';
 
 const deny = () => { throw Error('Hardware/cloud actions are disabled in this isolated preview'); };
 const noop = () => {};
@@ -50,8 +50,12 @@ const project:any = {
   bom:[{id:'pi',name:'Raspberry Pi 5',quantity:1,price:2500,purpose:'控制與執行程式'},...makerCatalog.modules.map(m=>({id:m.id,name:m.name['zh-TW'],quantity:1,price:150,purpose:m.functionalTest['zh-TW']}))],
   instructions:['斷電後依照 Blueprint 逐條接線。','接好一個零件，即可執行固定功能測試。'],tests:[],unresolved:[],features:[],
   code:'# Tinkro · isolated preview\nwhile True:\n    distance = read_distance()\n    display_distance(distance)\n',logic:'',requirements:{imports:[],devices:[]},
-  image:{url:illustration,width:1000,height:700},assembly:{description:'兩層圓盤與支柱，僅示範結構。',parts:[{kind:'standoff',quantity:4},{kind:'acrylic-panel',quantity:2}]},
+  image:{url:illustration,width:1000,height:700},assembly:{description:'兩層圓盤與支柱，僅示範結構。',parts:[{kind:'standoff',quantity:4,purpose:'Offline structural fixture'},{kind:'acrylic-panel',quantity:2,purpose:'Offline structural fixture'}]},
 };
+if(options.has('conceptMotors')) project.concept_only_parts=[{kind:'motor',quantity:2,purpose:'Image-only layout fixture'}];
+// Exercise the real Demo's missing image field against the bundled sample.
+if(options.has('demoImage')) Object.assign(project,{image:undefined,
+  title:options.get('locale')==='en'?'Desktop distance and display monitor':'桌上型距離與顯示監測器'});
 const discardFixture=options.get('discard');
 if(options.get('deployState')==='blocked') project.unresolved=[
   'Offline layout fixture: verify the module power specification before deployment.',
@@ -96,11 +100,11 @@ function Preview() {
   const videoStageRef=useRef<HTMLDivElement|null>(null);
   const generationFixture=options.get('generation');
   const [generationPhase,setGenerationPhase]=useState<'design'|'image'>('design');
-  const fixtureDesign=generationFixture==='first'?null:generationFixture==='empty'?{...project,image:undefined}:project;
+  const fixtureDesign=options.has('demoImage')||generationFixture==='first'?null:generationFixture==='empty'?{...project,image:undefined}:project;
   const persisted=useMaker();
   const [enqueuing,setEnqueuing]=useState(discardFixture==='enqueue');
   const [previewState,setPreviewState]=useState<any>({...initialMaker(),design:fixtureDesign,code:project.code,aiJobId:generationFixture?'offline-job':null,
-    conversation:[{role:'user',text:'我想做一個放在桌上的距離監測器。'},{role:'assistant',text:replyFixtures[options.get('reply')??'']?.[locale]??'可以用 Pi 5、超音波感測器與螢幕完成桌上型距離監測器。先看看右邊的作品概念與外觀。確認後再到製作藍圖查看零件與接線。接線前請先斷電，實際功能仍需逐項測試。'}]});
+    conversation:options.has('demoImage')?[]:[{role:'user',text:'我想做一個放在桌上的距離監測器。'},{role:'assistant',text:replyFixtures[options.get('reply')??'']?.[locale]??'可以用 Pi 5、超音波感測器與螢幕完成桌上型距離監測器。先看看右邊的作品概念與外觀。確認後再到製作藍圖查看零件與接線。接線前請先斷電，實際功能仍需逐項測試。'}]});
   const state:any=discardFixture||languageAudit?persisted.state:previewState;
   const setState=discardFixture||languageAudit?persisted.setState:setPreviewState;
   if(languageAudit)(window as any).__languageQa={...(window as any).__languageQa,state,events:headerEvents};
@@ -112,7 +116,7 @@ function Preview() {
   const openDebug=(componentId?:string,runId?:string,symptom?:string)=>setState((s:any)=>enterDebug(s,componentId,runId,symptom));
   const inspectWiring=(componentId:string,pin?:string)=>setState((s:any)=>({...s,stage:'guide',guide:reviewProjectWire(project,s.guide,componentId,pin,'debug'),debug:{...s.debug,panelOpen:false}}));
   const assistant:any={ai:{logged_in:true},aiOptions:{estimate:{},selectionValid:true,selectedModel:model,options:{default_model:model.id,models:[model]},refresh:deny},login:deny,busy:enqueuing||Boolean(state.aiJobId),error:'',phase:generationPhase,generate:deny,retryImage:deny,
-    loadDemo:()=>setState((s:any)=>({...s,candidate:project})),clearConversation:()=>setState((s:any)=>({...s,conversation:[]}))};
+    loadDemo:()=>setState((s:any)=>previewDemo(s,project,locale)),clearConversation:()=>setState((s:any)=>({...s,conversation:[]}))};
   const newProject=options.has('newProject')?async()=>{
     if(assistant.busy)return false;
     localStorage.setItem(`${MAKER_STORAGE}.before-new-project`,JSON.stringify(state));
@@ -120,11 +124,11 @@ function Preview() {
   }:undefined;
   return <div className={`app tinkro-theme pi-deploy-layout maker-layout maker-stage-${stage}${stage==='guide'?' maker-wiring-full-width':''}`}><main className="main">
     <WorkspaceHeader
-      brand={<div className="brand"><div className="brand-text"><h1 className="brand-title"><img className="brand-logo" src="/brand/tinkro-dark.png" alt="Tinkro" width={152} height={48}/></h1><div className="brand-subtitle">{t('app.subtitle')}</div></div></div>}
+      brand={<div className="brand"><div className="brand-text"><h1 className="brand-title"><img className="brand-logo" src="/brand/tinkro-dark.png" alt="Tinkro" width={128} height={40}/></h1><div className="brand-subtitle">Vibe Maker Studio</div></div></div>}
       navigation={<nav className="maker-nav" aria-label={locale==='en'?'Maker workflow':'作品工作流程'}>{(['design','guide','deploy'] as MakerStage[]).map((name,i)=><button key={name} className={stage===name?'active':''} aria-current={stage===name?'step':undefined} onClick={()=>navigate(name)}><span>0{i+1}</span>{(locale==='en'?['Design & blueprint','Wiring + AI debug','Deploy & run']:['設計與藍圖','接線引導＋AI 除錯','部署與執行'])[i]}</button>)}</nav>}
-      saveStatus={<small className={`maker-save-status ${options.has('storageError')?'maker-warning':'maker-muted'}`} role={options.has('storageError')?'alert':'status'}>{options.has('storageError')?(locale==='en'?'Storage failed; keep this page open':'儲存失敗，請勿關閉頁面'):(locale==='en'?'Draft saved in this browser':'作品草稿已保存於此瀏覽器')}</small>}>
+      saveStatus={options.has('storageError')?<small className="maker-save-status maker-warning" role="alert">{locale==='en'?'Storage failed; keep this page open':'儲存失敗，請勿關閉頁面'}</small>:null}>
       <MakerModelMenu state={state} setState={setState} assistant={assistant}/><PiConnectionControl/>
-      <RuntimeToolbar controllers={controllers} activeBoardId={board} busy={false} disabled={false}
+      <RuntimeToolbar collapsible controllers={controllers} activeBoardId={board} busy={false} disabled={false}
         error={options.has('runtimeError')?'Offline fixture: controller selection failed. No hardware action was performed.':null}
         onControllerChange={id=>{headerEvents.push(`controller:${id}`);setBoard(id);}}
         onLocaleChange={value=>{headerEvents.push(`locale:${value}`);setLocale(value);}}/>

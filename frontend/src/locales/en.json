@@ -1,4 +1,7 @@
 {
+  "runtime.themeLabel": "Theme",
+  "runtime.themeDark": "Dark",
+  "runtime.themeLight": "Light",
   "camera.resolution": "Camera resolution",
   "camera.debugBlur": "Fine detail is unclear. Move closer or refocus.",
   "camera.debugBright": "Highlights are clipped or reflective. Adjust the angle and lighting.",
@@ -72,6 +75,7 @@
   "pi.actionFailed": "Operation failed. Reconnect and try again.",
   "pi.rebootHint": "Runs after the laptop disconnects. Deploy again after a Pi reboot. HIGH/LOW is not light intensity.",
   "runtime.toolbarLabel": "Runtime toolbar",
+  "runtime.settingsLabel": "Settings",
   "runtime.controllerLabel": "Controller",
   "componentVision.poseInvalid": "{component} · detected {confidence}% · 8-point geometry rejected",
   "runtime.controllerAria": "Select active controller",
@@ -761,4 +765,7 @@
   ,"cameraTune.restart_required": "Restart the Tinkro backend to enable Pi 5-targeted tuning"
   ,"overlay.motion_prediction": "Predicted position · not detected"
   ,"runtime.languageZh": "Traditional Chinese"
+  ,"capture.countdown": "Photo in {seconds} seconds"
+  ,"capture.positionHint": "Position the camera and components, then hold still. Esc to cancel."
+  ,"capture.cancel": "Cancel photo"
 }

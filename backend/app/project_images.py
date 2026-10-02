@@ -104,7 +104,15 @@ class ProjectImageStore:
 def build_image_prompt(design, *, editing=False, mode="fixed"):
     context = {"request": design["prompt"], "title": design["title"], "summary": design["summary"],
                "modules": ["Raspberry Pi 5"] + [MODULES[c]["name"]["en"] for c in design["component_ids"]],
-               "assembly": design.get("assembly"), "preview": design.get("preview")}
+               "assembly": design.get("assembly"), "preview": design.get("preview"),
+               "concept_only_parts": design.get("concept_only_parts", [])}
+    motor_appearance = (
+        "Show the motors listed in concept_only_parts, in the specified quantity and placement, as unpowered "
+        "appearance-only placeholders. Make them visible even when editing an older motor-free image. "
+        "They are excluded from the build, wiring, tests and deployed program. No motor power leads, "
+        "motor-to-Pi connections or implied powered motion.\n"
+        if context["concept_only_parts"] else "No motors: this concept has no requested motor placeholders.\n"
+    )
     appearance = ""
     if "hc-sr04" in design["component_ids"]:
         appearance += "HC-SR04 is the only module with TWO cylindrical silver ultrasonic transducers on a narrow rectangular PCB.\n"
@@ -120,9 +128,10 @@ Asset: Tinkro finished-project modular assembly illustration, not a UI screensho
 Render a polished detailed three-quarter product view with the full object visible and a clean studio backdrop.
 Show the selected electronic modules recognizably, each exactly once. Open or transparent construction
 must make their mounting and relationships visible. Do not hide all the boards inside an opaque enclosure.
-Only the modules in the context are allowed. Passive wheels, axles, brass standoffs, screws, acrylic panels
-and brackets listed in assembly are allowed. No motors, motor drivers, batteries, servos, LEDs or extra sensors.
+Only the functional modules in the context are allowed; concept_only_parts are a separate visual exception.
+Passive wheels, axles, brass standoffs, screws, acrylic panels and brackets listed in assembly are allowed.
+No motor drivers, batteries, servos, LEDs or extra sensors.
 This is an illustrative assembly demo, not proof of function, safe wiring, production dimensions or live hardware.
-For a car, show passive wheels without implying autonomous motion. No wiring pin numbers or invented measurements.
+For a car, do not imply powered or autonomous motion. No wiring pin numbers or invented measurements.
 Display may say DEMO; no fabricated live distance/tilt readings. Keep unnecessary text out of the image.
-""" + appearance + continuity + "Design context: " + json.dumps(context, ensure_ascii=False)
+""" + appearance + continuity + motor_appearance + "Design context: " + json.dumps(context, ensure_ascii=False)

@@ -19,7 +19,7 @@ def build_design_prompt(body):
     # A new silhouette must not inherit a car title, assembly, or conversation.
     # Keep functional parameters; the full current design is used only locally
     # by compile_design to preserve project identity and revision numbers.
-    fields = ("component_ids", "parameters") if fresh else ("title", "summary", "features", "component_ids", "parameters", "logic", "preview", "assembly")
+    fields = ("component_ids", "parameters") if fresh else ("title", "summary", "features", "component_ids", "parameters", "logic", "preview", "assembly", "concept_only_parts")
     current = {k: body.current[k] for k in fields if body.current and k in body.current}
     workflow = body.workflow.model_dump()
     if fresh:
@@ -34,6 +34,8 @@ Return only JSON with answer. This is a question, NOT permission to revise or de
 Use only Raspberry Pi 5 and the catalog modules. Do not introduce replacement modules, new pins or drivers.
 Passive structural accessories are allowed: wheels, axles, acrylic panels, brass standoffs, brackets and screws.
 They are assembly illustrations, not extra electronics; a car without motors cannot drive itself.
+Motors may appear in the concept image ONLY, recorded separately in concept_only_parts.
+They are visual placeholders, not working components: no motor BOM, wiring, tests, code or driving capability.
 You have no live camera, SSH, electrical readings or execution tools. Manual confirmations are not proof.
 Never claim to inspect, connect, deploy, power on, or test hardware. Explain unknowns and pending specs.
 Use catalog steps and variant constraints for wiring questions. The selected HC-SR04+ uses 3.3V supply
@@ -95,8 +97,17 @@ Always provide preview: scene (intended use), interaction, screen_title, 1-3 sho
 accent (teal/blue/amber) and layout (console/tower/flat). It describes a concept, NOT a wiring diagram.
 Always provide assembly: description of a finished modular assembly and parts (kind, quantity, purpose).
 Allowed passive structure kinds: wheel, axle, standoff, acrylic-panel, bracket, screw. Each kind appears once.
-For car-shaped projects include passive wheels/axles and a chassis. Wheels do NOT imply motors or self-driving.
-No motors, motor drivers, batteries, servos, new sensors or other functional electronics. Never claim safe power-on.
+For car-shaped projects include wheels/axles and a chassis. Wheels do NOT imply motors or self-driving.
+CONCEPT-ONLY PARTS: When the user requests visible motors, include them in concept_only_parts as
+{{"kind":"motor","quantity":2,"purpose":"Appearance-only motors under the chassis"}} (choose a reasonable quantity).
+This is a list with at most one motor entry; use [] when motors are not requested. In fixed revisions preserve
+existing concept_only_parts unless the user removes them; a free redesign does not inherit them automatically.
+Do not refuse or silently replace requested concept motors with passive wheels. Briefly tell the user the motors
+are for the image only, outside the build. Keep title, summary, features, assembly, instructions, tests and logic
+focused on the supported build; record motor appearance ONLY in concept_only_parts (and the conversational answer).
+Never add motors to component_ids or assembly.parts. No motor wiring, drivers, control code, test steps,
+materials or claims of powered motion. Do not ask the user to connect, test or confirm the concept motors.
+No motor drivers, batteries, servos, new sensors or other functional electronics. Never claim safe power-on.
 Prefer open construction, transparent acrylic and visible mounting so the existing modules remain recognizable.
 Follow the appearance-continuity policy above. This is a demonstration, not a dimensioned engineering design.
 An image generator will use this design; describe the actual requested object, not a fixed console silhouette.

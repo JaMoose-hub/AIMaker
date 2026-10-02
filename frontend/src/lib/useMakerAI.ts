@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { makerRequest, validDesign, clearMakerConversation, newMakerProject, previewDemo, type MakerState, type ProjectDesign } from "./maker";
+import { makerRequest, validDesign, clearMakerConversation, newMakerProject, previewDemo, retainMakerConversation, type MakerState, type ProjectDesign } from "./maker";
 import { MAKER_STORAGE } from "./makerMigration";
 import { prepareProjectWiringEdit } from "./wiringEdit";
 import { useAIOptions } from "./useAIOptions";
@@ -54,7 +54,7 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
           const text = job.answer || job.explanation || job.design!.title;
           setState(s => s.aiJobId !== jobId ? s : ({ ...s, aiJobId: null,
             candidate: job.answer ? s.candidate : job.design,
-            conversation: [...s.conversation, { role: "assistant" as const, text }].slice(-20) }));
+            conversation: retainMakerConversation([...s.conversation, { role: "assistant", text }]) }));
           return;
         }
         timer = setTimeout(() => void poll(), 1000);
@@ -73,7 +73,7 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
       const job = await makerRequest<{ job_id: string }>("design/generate", request);
       setState(s => ({ ...s, aiJobId: job.job_id,
         prompt: s.prompt === request.prompt ? "" : s.prompt,
-        conversation: [...s.conversation, { role: "user" as const, text: request.prompt }].slice(-20) }));
+        conversation: retainMakerConversation([...s.conversation, { role: "user", text: request.prompt }]) }));
     } catch (e) { setError(String(e)); } finally { sending.current = false; setPending(false); }
   }
   async function login() {
@@ -98,7 +98,7 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
     try {
       const demo = await makerRequest<ProjectDesign>(`design/demo?locale=${locale}`, undefined, controller.signal);
       if (!validDesign(demo) || demo.source !== "demo") throw new Error(locale === "en" ? "Invalid demo" : "示範作品格式不符");
-      if (!controller.signal.aborted) setState(s => previewDemo(s, demo));
+      if (!controller.signal.aborted) setState(s => previewDemo(s, demo, locale));
     } catch (e) { if (!controller.signal.aborted) setError(String(e)); }
     finally { sending.current = false; if (!controller.signal.aborted) setPending(false); }
   }

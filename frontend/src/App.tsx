@@ -115,7 +115,7 @@ export default function App() {
   const makerEnabled = config?.board_id === "raspberry-pi-5";
   const makerStage = displayModeActive ? "guide" : makerEnabled ? maker.stage : "guide";
   const assistantIntent = maker.debug?.intent ?? "wiring";
-  const aiDebug = useDebugSession(maker.design?.id ?? null, makerEnabled && makerStage === "guide");
+  const aiDebug = useDebugSession(maker.design?.id ?? null, makerEnabled && Boolean(maker.design) && makerStage === "guide");
   const debugCaptureSession = makerStage === "guide" && aiDebug.record?.status === "awaiting_capture" &&
     !["awaiting_user", "context_changed", "camera_changed", "backend_restarted"].includes(aiDebug.record.phase) &&
     aiDebug.record.current_target !== false && aiDebug.record.camera_current !== false ? aiDebug.record : null;
@@ -123,7 +123,9 @@ export default function App() {
     ["restoring", "stopping", "switching"].includes(glasses.status?.state ?? ""));
   const debugWebcamReady = config?.camera_source === "device" && !eyeActive && !backendDown;
   const project = makerEnabled && !maker.standalone ? maker.design : null;
-  const fullWidthWiring = Boolean(project) && makerStage === "guide";
+  // A fresh Maker project is not the legacy standalone board workspace.
+  const emptyProjectGuide = makerEnabled && !maker.standalone && !project && makerStage === "guide" && !displayModeActive;
+  const fullWidthWiring = (Boolean(project) || emptyProjectGuide) && makerStage === "guide";
   // A requested photo temporarily reveals the shared camera without changing
   // the user's 2D guide preference or confirmation progress.
   const projectWire = project ? currentWire(project, maker.guide) : undefined;
@@ -535,7 +537,7 @@ export default function App() {
     }
   }, [config, controllerSwitching, guidePinId, t]);
 
-  const assistantPanel = makerEnabled && !displayModeActive && !maker.standalone && makerStage === "guide" ? <DebugPage key={aiDebug.resetVersion} state={maker} variant="wiring"
+  const assistantPanel = project && !displayModeActive && makerStage === "guide" ? <DebugPage key={aiDebug.resetVersion} state={maker} variant="wiring"
     embedded={Boolean(project)} assistantOpen={project ? true : maker.debug?.panelOpen ?? false}
     onAssistantOpenChange={panelOpen=>setMaker(s=>({...s,debug:{...s.debug,panelOpen}}))}
     assistantIntent={assistantIntent}
@@ -546,9 +548,9 @@ export default function App() {
     onCase={caseId=>setMaker(s=>({...s,debug:{...s.debug,caseId}}))}
     onCode={(code,expected)=>setMaker(s=>s.code===expected?({...s,code}):s)} onWiring={inspectWiring} onDeploy={()=>navigateMaker("deploy")}
     onSelect={selectedComponentId=>setMaker(s=>({...s,debug:{...s.debug,selectedComponentId}}))}
-    assistant={({context,codeHash,repairCaseId,repairAppliedHash,repairCandidateReady,onRetest,onTrial,onReviewRepair,onManual,operationCard})=><AiDebugPanel state={maker} context={context} currentCodeHash={codeHash}
+    assistant={({context,codeHash,repairCaseId,repairAppliedHash,repairCandidateReady,onRetest,onTrial,onReviewRepair,onManual,operationCard,headerControls})=><AiDebugPanel state={maker} context={context} currentCodeHash={codeHash}
       variant={assistantIntent} wiringTarget={context.wiring_target} onOpenDebug={()=>openDebug()}
-      operationCard={operationCard}
+      operationCard={operationCard} headerControls={headerControls}
       repairCaseId={repairCaseId} repairAppliedHash={repairAppliedHash} repairCandidateReady={repairCandidateReady} session={aiDebug}
       webcamReady={debugWebcamReady} eyeActive={eyeActive} cameraSource={config?.camera_source ?? null} cameraRuntimeRevision={config?.runtime_revision ?? null} onReturnWebcam={glasses.stop}
       onCase={caseId=>setMaker(s=>s.debug?.caseId===caseId?s:({...s,debug:{...s.debug,caseId}}))}
@@ -566,12 +568,13 @@ export default function App() {
 
   const brand = <div className="brand">
     <div className="brand-text">
-      <h1 className="brand-title"><img className="brand-logo" src="/brand/tinkro-dark.png" alt={t("app.title")} width={152} height={48} /></h1>
-      <div className="brand-subtitle">{t("app.subtitle")}</div>
+      <h1 className="brand-title"><img className="brand-logo" src="/brand/tinkro-dark.png" alt={t("app.title")} width={128} height={40} /></h1>
+      <div className="brand-subtitle">Vibe Maker Studio</div>
     </div>
   </div>;
   const runtimeControls = <>
     <RuntimeToolbar
+      collapsible={makerEnabled && !displayModeActive}
       controllers={controllers}
       activeBoardId={config?.board_id ?? null}
       busy={controllerSwitching}
@@ -590,8 +593,8 @@ export default function App() {
     <div className={`app tinkro-theme${makerEnabled ? ` pi-deploy-layout maker-layout maker-stage-${makerStage}` : ""}${fullWidthWiring ? " maker-wiring-full-width" : ""}${displayModeActive ? ` display-mode-active ${displayMode}` : ""}`}>
       <main className="main">
         {makerEnabled ? <WorkspaceHeader brand={brand}
-          saveStatus={<small className={`maker-save-status ${makerSaved ? "maker-muted" : "maker-warning"}`} role={makerSaved ? "status" : "alert"}>
-            {tr(makerSaved ? "作品草稿已保存於此瀏覽器" : "儲存失敗，請勿關閉頁面", makerSaved ? "Draft saved in this browser" : "Storage failed; keep this page open")}
+          saveStatus={makerSaved ? null : <small className="maker-save-status maker-warning" role="alert">
+            {tr("儲存失敗，請勿關閉頁面", "Storage failed; keep this page open")}
           </small>}
           navigation={<nav className="maker-nav" aria-label={tr("作品工作流程", "Maker workflow")}>
               {(["design", "guide", "deploy"] as const).map((stage, i) => <button key={stage} className={makerStage === stage ? "active" : ""}
@@ -622,7 +625,7 @@ export default function App() {
         <GuidePaneLayout stageRef={videoStageRef}
           className={`video-guide-stage${showWiringDiagram ? " maker-2d" : ""}`}
           visible={makerStage === "guide"}
-          resizable={Boolean(project) && makerStage === "guide" && guideVisible && !displayModeActive}>
+          resizable={fullWidthWiring && guideVisible && !displayModeActive}>
           <button
             type="button"
             className={`guide-visibility-toggle${guideVisible ? " active" : ""}`}
@@ -631,7 +634,7 @@ export default function App() {
             onClick={() => handleGuideVisibilityChange(!guideVisible)}
           >
             <span aria-hidden="true">↯</span>
-            {project ? guideVisible ? tr("隱藏側邊面板", "Hide side panel") : tr("顯示側邊面板", "Show side panel") : t(guideVisible ? "photoGuide.hide" : "photoGuide.show")}
+            {project || emptyProjectGuide ? guideVisible ? tr("隱藏側邊面板", "Hide side panel") : tr("顯示側邊面板", "Show side panel") : t(guideVisible ? "photoGuide.hide" : "photoGuide.show")}
           </button>
           {makerStage !== "deploy" ? <VideoView
             viewControl={videoControls => <>{project && (projectWire || diagramInspection) && makerStage === "guide" && !displayModeActive ? <WiringViewToggle
@@ -680,7 +683,20 @@ export default function App() {
             onRestart={restartWiringConversation}
             onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={openDebug} onHelp={openWiringAssistant} onDeploy={() => navigateMaker("deploy")} />
           </WiringWorkspace> : null}
-          {!project && makerStage === "guide" && config && profile ? (
+          {emptyProjectGuide ? <section className="photo-guide component-guide compact-guide maker-guide-empty"
+            hidden={!guideVisible} aria-labelledby="empty-project-guide-title">
+            <header className="guide-panel-header"><div>
+              <span className="guide-panel-eyebrow">{tr("02 · 接線引導", "02 · Wiring guide")}</span>
+              <h2 id="empty-project-guide-title">{tr("尚未確認作品", "No confirmed project yet")}</h2>
+            </div></header>
+            <div className="guide-panel-body">
+              <p>{tr("請先到 01 建立並確認作品，再依照作品接線。相機仍可使用。", "Create and confirm a project in 01 before following its wiring guide. The camera is still available.")}</p>
+              <button type="button" className="guide-primary-action" onClick={() => navigateMaker("design")}>
+                {tr("前往 01 建立作品", "Go to 01 · Create a project")}
+              </button>
+            </div>
+          </section> : null}
+          {!project && !emptyProjectGuide && makerStage === "guide" && config && profile ? (
             <WiringGuidePanel
               key={`${config.board_id}:${config.runtime_revision}`}
               boardId={config.board_id}
@@ -728,13 +744,11 @@ export default function App() {
             </>
           )}
         </GuidePaneLayout>
-        {!project ? assistantPanel : null}
         {makerEnabled && makerStage === "deploy" ? <div className="maker-deploy-main"><PiDeployPanel project={project ?? undefined} draft={project ? maker.code : undefined}
           onDebug={deployment=>{setGuideTarget(null);setMaker(s=>({...enterDebug(s),debug:{...s.debug,panelOpen:true,intent:"debug",source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined}}));}} onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
         {makerStage === "deploy" ? <div className="deploy-camera-tools">{renderCameraTools()}</div> : null}
       </main>
       {makerStage === "guide" && !fullWidthWiring ? <aside className="side">
-        {!project && makerEnabled ? <PiDeployPanel /> : null}
         <CapabilityCard profile={profile} pin={selectedPin} backendDown={backendDown} />
       </aside> : null}
       <CameraPicker open={cameraPickerOpen} onClose={handleCloseCameraPicker} />

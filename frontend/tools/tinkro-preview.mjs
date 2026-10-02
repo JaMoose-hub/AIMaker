@@ -58,14 +58,15 @@ const result=await build({entryPoints:[fileURLToPath(new URL('tools/tinkro-previ
 }]});
 const js=result.outputFiles.find(f=>f.path.endsWith('.js')).contents;
 const css=result.outputFiles.find(f=>f.path.endsWith('.css')).contents;
-const html='<!doctype html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tinkro · isolated UI preview</title><link rel="icon" href="/brand/tinkro-symbol.svg"><link rel="stylesheet" href="/preview.css"></head><body><div id="root"></div><script type="module" src="/preview.js"></script></body></html>';
+const html='<!doctype html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tinkro · isolated UI preview</title><script src="/theme.js"></script><link rel="icon" href="/brand/tinkro-symbol.svg"><link rel="stylesheet" href="/preview.css"></head><body><div id="root"></div><script type="module" src="/preview.js"></script></body></html>';
 const server=createServer(async(req,res)=>{
   try {
     const path=new URL(req.url,'http://127.0.0.1').pathname;
     requests.push(path);
-    const asset=path==='/'?[html,'text/html']:path==='/preview.js'?[js,'text/javascript']:path==='/preview.css'?[css,'text/css']:
+    const asset=path==='/theme.js'?[await readFile(new URL('public/theme.js',base)),'text/javascript']:path==='/'?[html,'text/html']:path==='/preview.js'?[js,'text/javascript']:path==='/preview.css'?[css,'text/css']:
       path==='/brand/tinkro-dark.png'?[await readFile(new URL('public/brand/tinkro-dark.png',base)),'image/png']:
       path==='/brand/tinkro-symbol.svg'?[await readFile(new URL('public/brand/tinkro-symbol.svg',base)),'image/svg+xml']:
+      path==='/demo/distance-monitor-three-wheel-motors-v2.png'?[await readFile(new URL('public/demo/distance-monitor-three-wheel-motors-v2.png',base)),'image/png']:
       discardImagePaths.includes(path)?[discardImage(path===discardImagePaths[1]),'image/svg+xml']:null;
     if(!asset){res.writeHead(404);res.end('No API in this preview');return;}
     res.writeHead(200,{'Content-Type':asset[1],'Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src 'none'"});res.end(asset[0]);

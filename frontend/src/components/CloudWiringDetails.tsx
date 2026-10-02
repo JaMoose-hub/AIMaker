@@ -1,5 +1,8 @@
 import { cloudContactLabel, cloudEndpointFinding, cloudEvidenceText, cloudPathLabel, cloudPinContactLabel, cloudTargetColorLabel, cloudWireColorLabel, cloudWiringCopy, type CloudCheckViewState } from "../lib/cloudWiring";
 import { useMakerText } from "../lib/useMaker";
+import { useRef } from "react";
+import { useCaptureCountdown } from "../lib/useCaptureCountdown";
+import { CaptureCountdown } from "./CaptureCountdown";
 
 interface Props extends CloudCheckViewState {
   variant?: "card" | "guide";
@@ -12,6 +15,8 @@ interface Props extends CloudCheckViewState {
 
 export function CloudWiringDetails({ job, error, stale, busy, readAgain, target, onCheck, checkDisabled, checkHint, variant = "card", captureHint }: Props) {
   const tr = useMakerText();
+  const surface = useRef<HTMLElement>(null);
+  const countdown = useCaptureCountdown(JSON.stringify([target, job?.id]), Boolean(onCheck && !busy && !checkDisabled), surface);
   const locale = tr("zh-TW", "en");
   const copy = cloudWiringCopy({ job, error, stale, busy, readAgain }, locale);
   const result = busy || error || job?.status === "failed" ? null : job?.result;
@@ -26,7 +31,7 @@ export function CloudWiringDetails({ job, error, stale, busy, readAgain, target,
     pi_contact: tr("Pi 接合處裁切（同張照片）", "Pi contact crop (same photo)"),
     component_contact: tr("零件接合處裁切（同張照片）", "Module contact crop (same photo)") };
   const colors = result?.wire_colors;
-  return <section className={`cloud-wiring-details cloud-result-card tone-${copy.tone}${inline ? " cloud-result-inline" : ""}`} aria-label={tr("雲端接線照片檢查", "Cloud wiring photo check")}>
+  return <section ref={surface} className={`cloud-wiring-details cloud-result-card tone-${copy.tone}${inline ? " cloud-result-inline" : ""}`} aria-label={tr("雲端接線照片檢查", "Cloud wiring photo check")}>
     <header className="cloud-result-header">
       <span className="cloud-result-symbol" aria-hidden="true">{copy.symbol}</span>
       <div><span className="cloud-result-eyebrow">{tr("AI 接線檢查", "AI WIRING CHECK")}</span>
@@ -47,9 +52,10 @@ export function CloudWiringDetails({ job, error, stale, busy, readAgain, target,
     <div className="cloud-result-next">{!inline ? <h4>{tr("下一步", "Next step")}</h4> : null}<p>{copy.next}</p></div>
     {inline && (error || job?.error) ? <p className="cloud-inline-error" role="alert">{error ?? job?.error}</p> : null}
     {onCheck ? <div className="cloud-result-actions"><button type="button" className="cloud-wiring-button" title={checkHint}
-      disabled={busy || checkDisabled} onClick={onCheck}>{busy ? tr("檢查中…", "Checking…") : readAgain ? tr("再讀結果", "Read result")
+      disabled={busy || checkDisabled || countdown.remaining !== null} onClick={() => { if (readAgain) onCheck(); else void countdown.run(onCheck); }}>{busy ? tr("檢查中…", "Checking…") : readAgain ? tr("再讀結果", "Read result")
         : job || error ? tr("重新檢查", "Check again") : tr("AI 檢查本步", "AI check step")}</button></div> : null}
     {captureHint ? <small className="cloud-capture-hint">{captureHint}</small> : null}
+    <CaptureCountdown remaining={countdown.remaining} onCancel={countdown.cancel} />
     {job?.images.length ? <details className="cloud-result-disclosure cloud-result-photos"><summary>{tr("查看檢查照片", "View inspection photos")} <span>({job.images.length})</span></summary>
       <div className="cloud-wiring-images">{job.images.map(view => <a key={view.name} href={view.url} target="_blank" rel="noreferrer">
         <img src={view.url} alt={names[view.name] ?? view.name} loading="lazy" /><span>{names[view.name] ?? view.name} ↗</span>

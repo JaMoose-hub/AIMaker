@@ -1,4 +1,7 @@
 {
+  "runtime.themeLabel": "主題",
+  "runtime.themeDark": "深色",
+  "runtime.themeLight": "淺色",
   "camera.resolution": "鏡頭解析度",
   "camera.debugBlur": "細節不清楚，請靠近或重新對焦。",
   "camera.debugBright": "亮部反光或曝光過高，請調整角度與光線。",
@@ -72,6 +75,7 @@
   "pi.actionFailed": "操作失敗，請重新連線後再試。",
   "pi.rebootHint": "關閉筆電後仍會執行；Pi 重開機後需再次部署。HIGH／LOW 並非光照強度。",
   "runtime.toolbarLabel": "執行環境工具列",
+  "runtime.settingsLabel": "設定",
   "runtime.controllerLabel": "控制器",
   "componentVision.poseInvalid": "{component} · 偵測 {confidence}% · 8 點幾何未通過",
   "runtime.controllerAria": "選擇目前控制器",
@@ -761,4 +765,7 @@
   ,"cameraTune.restart_required": "請重新啟動 Tinkro 後端，再使用 Pi 5 定向優化"
   ,"overlay.motion_prediction": "預測補位 · 非辨識"
   ,"runtime.languageZh": "繁體中文"
+  ,"capture.countdown": "{seconds} 秒後拍攝"
+  ,"capture.positionHint": "請擺好鏡頭與零件，保持穩定。按 Esc 可取消。"
+  ,"capture.cancel": "取消拍攝"
 }

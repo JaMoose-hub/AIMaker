@@ -13,6 +13,7 @@ import {StepDiagramView,WiringViewToggle} from '../src/components/StepDiagramVie
 import {DiagramInspectionView} from '../src/components/DiagramInspectionView';
 import {inspectDiagramInMaker,type DiagramInspection} from '../src/lib/debugEvidence';
 import {StatusBar} from '../src/components/StatusBar';
+import {ThemeSelect} from '../src/components/ThemeSelect';
 import {ComponentOverlayPreview} from './component-overlay-preview';
 import hc from '../../profiles/components/hc-sr04/vision_profile.json';
 import tft from '../../profiles/components/mrd-tf240-8p-cs/vision_profile.json';
@@ -20,8 +21,8 @@ import '../src/styles.css';
 import '../src/maker.css';
 import '../src/debug.css';
 import '../src/responsive.css';
-import '../src/tinkro.css';
 import '../src/guideAi.css';
+import '../src/tinkro.css';
 
 const noop=()=>{};
 const design:any={id:'isolated-wiring-fixture',revision:2,catalog_version:makerCatalog.version,profile_versions:{'hc-sr04':{version:'1',sha256:'fixture'}},
@@ -41,6 +42,8 @@ const initialMessages:any[]=[
 ];
 function Preview(){
   const scenario=new URLSearchParams(location.search).get('scenario')??'flow';
+  const [cameraReady,setCameraReady]=useState(true);
+  const [eventCount,setEventCount]=useState(0);
   const restarting=scenario.startsWith('restart');
   const [resetRound,setResetRound]=useState(restarting&&sessionStorage.getItem(`qa-round:${scenario}`)==='fresh');
   const reviewing=!resetRound&&(['review','partial-review'].includes(scenario)||restarting);
@@ -64,8 +67,8 @@ function Preview(){
   const trial:any={id:'qa-trial',project_id:design.id,binding,phase:'awaiting_visual',outcome:'awaiting_confirmation',reserved:false,created_at:Date.now()/1000,program_stopped:false,evidence:{program_ok:true,structured:true,sample_seq:12,display_seq:12}};
   const diagnostic:any={id:'qa-case',status:'ready',binding,rounds:1,finished_at:1700000030,current_target:true,issues:[],eligible:true,evidence:{environment_ready:true,tests:[],pi:{program:'stopped',logs:[]}},...(scenario==='repair'?{analysis:{facts:'合成程式測試',possible_causes:'合成判斷條件',next_step:'檢查候選差異'},candidate:{id:'qa-candidate',base_hash:'qa-code',code_hash:'qa-repaired',applied:false,diff:'- limit = 10\n+ limit = 20',offline:{passed:true}}}:{} )};
   const record:any=resetRound?null:{id:'qa-check',conversation_id:'qa-history',purpose:scenario==='flow'?'wiring_review':'debug',status:scenario==='repair'?'awaiting_repair':scenario==='trial'?'awaiting_trial_visual':scenario==='tft'?'awaiting_visual':'awaiting_capture',phase:scenario==='repair'?'repair_ready':'awaiting_user',instruction:'請回覆你看到的接腳標籤。',symptom:'請檢查接線',model:'offline-fixture',updated_at:1700000030,
-    messages:[],evidence:[evidence],observations:[],jobs:[],test_results:scenario==='tft'?[run]:[],capture_task:null,diagrams:[],binding,current_target:true,camera_current:true,...(scenario==='repair'?{diagnosis:{case_id:'qa-case'}}:{}),...(scenario==='trial'?{trial_result:trial}:{})};
-  const log=async(kind:string,payload:any)=>{events.current.push({kind,...payload});return {code:'# isolated repaired fixture'};};
+    messages:scenario==='countdown'?messages:[],evidence:[evidence],observations:[],jobs:[],test_results:scenario==='tft'?[run]:[],capture_task:null,diagrams:[],binding,current_target:true,camera_current:true,...(scenario==='repair'?{diagnosis:{case_id:'qa-case'}}:{}),...(scenario==='trial'?{trial_result:trial}:{})};
+  const log=async(kind:string,payload:any)=>{events.current.push({kind,...payload});setEventCount(events.current.length);return {code:'# isolated repaired fixture'};};
   (window as any).__wiringQa={events:events.current,debugNavigations:debugNavigations.current,
     debug:{record:resetRound?null:diagnostic,pending:false,error:'',trials:{active:null,results:scenario==='trial'?[trial]:[]},action:(path:string,body:any)=>log('debug',{path,body})},
     pi:{status:{connected:scenario!=='flow',program:'stopped',deployment:'idle',logs:[],execution:{jobs:[]}},networkError:false,pending:false},
@@ -85,9 +88,10 @@ function Preview(){
   const showDiagram=state.guide.mode==='2d'&&(!captureRequired||captureOverride===captureGeneration);
   const onDiagram=(inspection:DiagramInspection)=>{setStage('guide');setVisible(true);setAssistantOpen(true);setEvidenceDiagram(old=>({...inspection,requestId:(old?.requestId??0)+1}));setCaptureOverride(captureGeneration);setState((s:any)=>inspectDiagramInMaker(s,inspection));};
   const assistantPanel=<DebugPage key={session.resetVersion} state={state} variant="wiring" embedded assistantOpen onAssistantOpenChange={setAssistantOpen} assistantIntent={assistantIntent} onAssistantIntentChange={setAssistantIntent} wiringTarget={target} sessionRecord={record} onCase={noop} onCode={(code)=>setState((s:any)=>({...s,code}))} onWiring={onWiring} onDeploy={()=>setStage('deploy')} onSelect={cid=>setState((s:any)=>({...s,debug:{...s.debug,selectedComponentId:cid}}))}
-    assistant={props=><AiDebugPanel {...props} state={state} currentCodeHash={props.codeHash} session={session} variant={assistantIntent} wiringTarget={target} onOpenDebug={openDebug} webcamReady eyeActive={false} cameraSource="device" cameraRuntimeRevision={1} onReturnWebcam={noop} onCase={noop} onWiring={onWiring} onDiagram={onDiagram}/>} />;
+    assistant={props=><AiDebugPanel {...props} state={state} currentCodeHash={props.codeHash} session={session} variant={assistantIntent} wiringTarget={target} onOpenDebug={openDebug} webcamReady={cameraReady} eyeActive={false} cameraSource="device" cameraRuntimeRevision={1} onReturnWebcam={noop} onCase={noop} onWiring={onWiring} onDiagram={onDiagram}/>} />;
   return <div className={`app tinkro-theme maker-layout pi-deploy-layout maker-stage-${stage}${stage==='guide'?' maker-wiring-full-width':''}`}>
-    <main className="main"><header className="header maker-header"><h1>Tinkro · 隔離接線 QA</h1><small>合成照片、模擬 API、無硬體／模型／正式儲存</small><nav className="maker-nav" aria-label="作品工作流程">{([['design','01 設計與藍圖'],['guide','02 接線引導＋AI 除錯'],['deploy','03 部署與執行']] as const).map(([value,label])=><button key={value} aria-current={stage===value?'step':undefined} onClick={()=>setStage(value)}>{label}</button>)}</nav></header>
+    <main className="main"><header className="header maker-header"><ThemeSelect/><h1>Tinkro · 隔離接線 QA</h1><small>合成照片、模擬 API、無硬體／模型／正式儲存</small><nav className="maker-nav" aria-label="作品工作流程">{([['design','01 設計與藍圖'],['guide','02 接線引導＋AI 除錯'],['deploy','03 部署與執行']] as const).map(([value,label])=><button key={value} aria-current={stage===value?'step':undefined} onClick={()=>setStage(value)}>{label}</button>)}</nav></header>
+    {scenario==='countdown'?<div className="qa-capture-controls"><output aria-label="隔離動作紀錄">{eventCount} · {events.current.map(item=>item.action).join(', ')}</output><button onClick={()=>setCameraReady(value=>!value)}>切換相機就緒（僅測試）</button><button onClick={()=>setMessages(old=>[...old,{id:`long-${old.length}`,role:'assistant',created_at:Date.now()/1000,text:'最新回覆從這裡開始。\n\n'+('這是隔離測試的長回覆，用來確認訊息開頭能完整顯示，不會跳到狀態卡。\n\n').repeat(14)}])}>新增長回覆（僅測試）</button></div>:null}
     {stage==='design'?<section aria-label="隔離設計頁">設計頁替身；導覽返回會保留既有對話。</section>:null}{stage==='deploy'?<section aria-label="隔離部署頁">部署頁替身；不連線或執行作品。</section>:null}
     {stage==='guide'?<>
     <GuidePaneLayout stageRef={videoStageRef} className={`video-guide-stage${showDiagram?' maker-2d':''}`} visible resizable={visible}>
@@ -116,4 +120,6 @@ function Preview(){
 }
 window.fetch=async()=>{throw Error('Unexpected fetch in isolated wiring QA');};
 window.WebSocket=class{constructor(){throw Error('Unexpected WebSocket in isolated wiring QA');}} as any;
+const fixtureLocale=new URLSearchParams(location.search).get('locale');
+if(fixtureLocale==='en'||fixtureLocale==='zh-TW')localStorage.setItem('boardvision.locale.v1',fixtureLocale);
 createRoot(document.getElementById('root')!).render(<LocaleProvider>{new URLSearchParams(location.search).get('scenario')==='overlay'?<ComponentOverlayPreview/>:<Preview/>}</LocaleProvider>);

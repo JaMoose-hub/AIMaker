@@ -2,6 +2,7 @@
 import React,{useState} from 'react';
 import {VideoView} from '../src/components/VideoView';
 import {StatusBar} from '../src/components/StatusBar';
+import {ThemeSelect} from '../src/components/ThemeSelect';
 import {useI18n} from '../src/lib/i18n';
 const noop=()=>{};
 const hc='hc-sr04',tft='mrd-tf240-8p-cs';
@@ -29,7 +30,7 @@ export function ComponentOverlayPreview(){
     ws:{detection,componentPoses:components,connected:true,detectionsPerSec:5,detectionReceivedAtMs:now,
       componentReceivedAtMs:{[hc]:now,[tft]:now},runtime:{board_id:'raspberry-pi-5',runtime_revision:1}}};
   return <div className="app tinkro-theme maker-layout maker-stage-guide maker-wiring-full-width">
-    <main className="main"><header className="header"><h1>Tinkro · 疊圖篩選隔離 QA</h1><small>合成影像與同幀資料，不操作正式相機／Pi／模型</small></header>
+    <main className="main"><header className="header"><h1>Tinkro · 疊圖篩選隔離 QA</h1><small>合成影像與同幀資料，不操作正式相機／Pi／模型</small><ThemeSelect/></header>
       <div className="video-guide-stage" style={{flex:1,minHeight:500}}><VideoView displayMode="standard" glassesStatus={null} onGlassesDisplayFps={noop}
         viewControl={videoControls=><><button onClick={()=>setDiagram(value=>!value)}>{diagram?(locale==='en'?'Back to camera':'返回鏡頭'):(locale==='en'?'Step 2D diagram':'本步驟 2D 接線圖')}</button>
           <StatusBar compact videoControls={videoControls} webcamTuningVisible onOpenCalibrate={noop} calibrateDisabled={false}

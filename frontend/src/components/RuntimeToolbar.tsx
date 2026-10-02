@@ -1,7 +1,10 @@
+import { useEffect, useId, useRef } from "react";
 import { useI18n } from "../lib/i18n";
 import type { ControllerSummary, Locale } from "../lib/types";
+import { ThemeSelect } from "./ThemeSelect";
 
 interface RuntimeToolbarProps {
+  collapsible?: boolean;
   controllers: ControllerSummary[];
   activeBoardId: string | null;
   busy: boolean;
@@ -12,6 +15,7 @@ interface RuntimeToolbarProps {
 }
 
 export function RuntimeToolbar({
+  collapsible = false,
   controllers,
   activeBoardId,
   busy,
@@ -21,8 +25,20 @@ export function RuntimeToolbar({
   onLocaleChange,
 }: RuntimeToolbarProps) {
   const { locale, t, tx } = useI18n();
+  const menu = useRef<HTMLDetailsElement>(null);
+  const settingsId = useId();
+  useEffect(() => {
+    if (!collapsible) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (menu.current?.open && event.target instanceof Node && !menu.current.contains(event.target)) {
+        menu.current.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside, true);
+    return () => document.removeEventListener("pointerdown", closeOutside, true);
+  }, [collapsible]);
 
-  return (
+  const controls = (
     <div className="runtime-toolbar" aria-label={t("runtime.toolbarLabel")}>
       <label className="runtime-select">
         <span>{t("runtime.controllerLabel")}</span>
@@ -50,7 +66,25 @@ export function RuntimeToolbar({
           <option value="en">English</option>
         </select>
       </label>
-      {error ? <span className="runtime-error" role="status">{error}</span> : null}
+      <ThemeSelect />
     </div>
   );
+  return <>
+    {collapsible ? <details className="runtime-settings" ref={menu}
+      onKeyDown={event => {
+        if (event.key === "Escape" && menu.current?.open) {
+          event.preventDefault();
+          event.stopPropagation();
+          menu.current.open = false;
+          menu.current.querySelector("summary")?.focus();
+        }
+      }}
+      onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+      }}>
+      <summary aria-controls={settingsId}><span aria-hidden="true">⚙</span>{t("runtime.settingsLabel")}</summary>
+      <div className="runtime-settings-popover" id={settingsId}>{controls}</div>
+    </details> : controls}
+    {error ? <span className="runtime-error" role="status">{error}</span> : null}
+  </>;
 }

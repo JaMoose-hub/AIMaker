@@ -63,12 +63,12 @@
 .app.maker-layout .wiring-workspace .guide-ai-mode-picker > button[aria-pressed="true"] { color: var(--brand-navy, #203065); background: var(--surface-blue, var(--bg-elev)); border-color: var(--brand-blue, #417abe); }
 .wiring-workspace .debug-chat-view { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .app.maker-layout .wiring-workspace .is-docked .ai-debug-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
-.wiring-workspace .ai-debug-head { flex: none; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.app.maker-layout .wiring-workspace .is-docked .ai-debug-head h3 { font-size: 14px; margin-bottom: 4px; }
-.wiring-workspace .ai-debug-head > div:first-child { flex: 1 1 150px; }
-.wiring-workspace .ai-debug-head small { font-size: 10px; }
+.wiring-workspace .ai-debug-head { flex: none; margin: 0; padding: 0; gap: 4px 8px; }
+.wiring-workspace .ai-debug-head > .guide-ai-mode-picker { flex: 0 1 auto; margin: 0 auto 0 0; }
+.wiring-workspace .ai-debug-head-actions { flex: 0 1 auto; width: auto; margin-left: auto; gap: 4px; }
+.app.maker-layout .wiring-workspace .ai-debug-head button { min-height: 28px; margin: 0; padding: 4px 7px; font-size: 11px; }
 .wiring-workspace .ai-debug-conversation { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
-.app.maker-layout .wiring-workspace .ai-debug-chat { flex: 1; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; padding: 8px 6px 8px 0; }
+.app.maker-layout .wiring-workspace .ai-debug-chat { flex: 1; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; margin-top: 4px; padding: 8px 6px 8px 0; }
 .wiring-workspace .ai-debug-entry { flex: none; margin-top: 8px; }
 .app.maker-layout .wiring-workspace .debug-manual-tools,
 .wiring-workspace .ai-debug-records { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
@@ -77,6 +77,9 @@
 .wiring-workspace .debug-tool-heading button { min-height: 30px; padding: 4px 7px; font-size: 11px; }
 /* Keep hidden chat/tools out of flex layout even when their contents are mounted. */
 .wiring-workspace :is(.debug-chat-view, .debug-tool-view, .ai-debug-conversation)[hidden] { display: none; }
+@media (max-width: 600px), (pointer: coarse) {
+  .app.maker-layout .wiring-workspace .ai-debug-head button { min-height: 44px; padding: 6px 8px; }
+}
 @media (min-width: 961px) and (min-height: 601px) {
   .app.maker-layout.maker-stage-guide:not(.display-mode-active) .video-guide-stage:has(> .wiring-workspace:not([hidden])) {
     display: grid; grid-template-columns: minmax(0, 1fr) var(--guide-column-width, clamp(320px, 30%, 400px));

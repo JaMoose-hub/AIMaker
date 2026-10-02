@@ -22,12 +22,15 @@ export interface ProjectDesign {
   requirements: { imports: string[]; devices: string[] };
   generation?: { model: string; effort: string; design_mode?: DesignMode };
   assembly?: { description: string; parts: { kind: keyof typeof structuralParts; quantity: number; purpose: string }[] } | null;
+  /** Visual placeholders only; excluded from the BOM, wiring and runtime. */
+  concept_only_parts?: { kind: "motor"; quantity: number; purpose: string }[];
   image?: { id: string; url: string; width: number; height: number; provider: string; created_at: string; sha256: string };
   image_required?: boolean; image_error?: string; image_job_id?: string;
   preview?: { scene: string; interaction: string; screen_title: string; screen_lines: string[];
     accent: "teal" | "blue" | "amber"; layout: "console" | "tower" | "flat" } | null;
 }
 export interface Confirmation { signature: string; mode: GuideMode; at: string }
+export interface MakerMessage { role: "user" | "assistant"; text: string; source?: "demo" }
 export interface ProjectGuideState {
   componentIndex: number; index: number; phase: "prepare" | "active" | "review";
   mode: GuideMode; checks: string[]; confirmed: Record<string, Confirmation>; restored: boolean;
@@ -43,7 +46,7 @@ export interface MakerState {
   standalone: boolean;
   stage: MakerStage; designView: DesignView; prompt: string; selected: GuidedComponentId[];
   design: ProjectDesign | null; candidate: ProjectDesign | null; code: string;
-  guide: ProjectGuideState; conversation: { role: "user" | "assistant"; text: string }[];
+  guide: ProjectGuideState; conversation: MakerMessage[];
   hardware: Record<string, string>;
   debug?: { panelOpen?: boolean; intent?: "wiring" | "debug"; caseId?: string; componentId?: string; selectedComponentId?: string; runId?: string; trialId?: string; wireId?: string; source?: "guide" | "deploy"; symptom?: string;
     deployment?: {invocation_id?:string;code_hash?:string;run_id?:string;exit_code:number|null;logs?:string[];captured_at?:number} };
@@ -71,7 +74,7 @@ Requirements:
 
 Based on these requirements, help me choose the electronic components, sensors, controller, display and other necessary parts, and plan the assembly and wiring.`;
 
-export const defaultPrompt = `我想做一個桌上型距離監測器。
+const previousStructuredPrompt = `我想做一個桌上型距離監測器。
 
 需求：
 - 可以偵測前方物體的距離
@@ -82,7 +85,7 @@ export const defaultPrompt = `我想做一個桌上型距離監測器。
 - 整體大小適合放在桌面上
 
 請直接依照以上需求生成完整作品設計與組裝圖片，並規劃所需零件、組裝方式與接線。已提供的需求不要重複詢問，其餘造型與結構細節請自行採用合理配置。`;
-export const defaultPromptEn = `I want to build a desktop distance monitor.
+const previousStructuredPromptEn = `I want to build a desktop distance monitor.
 
 Requirements:
 - Detect the distance to objects in front of it
@@ -94,6 +97,56 @@ Requirements:
 
 Generate the complete project design and assembly image directly from these requirements, including the parts, assembly and wiring plan. Do not ask me to repeat or reconfirm requirements already provided. Choose reasonable defaults for the remaining appearance and structural details.`;
 
+const previousConversationalPrompt = `我想做一個放在桌上的小型距離監測器。
+
+它要能顯示前方物體離它多遠。如果距離小於 20 cm，就在螢幕上顯示警告，還有一台快要碰到障礙物的小車。
+
+我希望機身用兩片圓形壓克力板，底下裝三個輪子。
+
+我不知道該用哪些零件，請幫我全部選好，並教我怎麼組裝和接線。
+
+也請生成完成後的設計與組裝圖片。
+
+不用再問我問題，請直接做合理的選擇，幫我把它設計出來。`;
+const previousConversationalPromptEn = `I want to make a small distance monitor for my desk.
+
+It should show how far away something is in front of it. If something gets closer than 20 cm, show a warning and a small car getting close to an obstacle on the screen.
+
+I want the body to use two round acrylic plates with three wheels underneath.
+
+I don’t know what parts to use, so please choose everything for me and show me how to build and connect it.
+
+Also generate an image of the finished design and assembly.
+
+Don’t ask me questions. Just make reasonable choices and design it for me.`;
+
+export const defaultPrompt = `我想做一台桌上型小車，可以偵測前面的距離。
+
+螢幕要顯示距離，小於 20 cm 就顯示警告和快撞到東西的小車圖案。
+
+外型用兩片圓形壓克力板，下面有馬達和三個輪子。
+
+我不太懂硬體，請直接幫我選零件、教我組裝和接線，並做出完成後的示意圖。
+
+不用問我，直接幫我設計。`;
+export const defaultPromptEn = `I want to make a small desktop car that can detect how far away things are.
+
+The screen should show the distance. If something is closer than 20 cm, show a warning and a small car about to hit an obstacle.
+
+I want to use two round acrylic plates, with motors and three wheels underneath.
+
+I don’t know much about hardware, so please choose the parts for me and show me how to assemble and wire everything.
+
+Also, show me what the finished project will look like.
+
+Don’t ask me questions. Just design it for me.`;
+
+/** Explicitly refill only an empty composer; never submit or replace an edited draft. */
+export function fillStarterPrompt(state: MakerState, locale: string): MakerState {
+  if (state.aiJobId || state.prompt.trim()) return state;
+  return { ...state, prompt: locale === "en" ? defaultPromptEn : defaultPrompt };
+}
+
 /** Only built-in starter text follows language; empty/custom/in-flight drafts stay intact. */
 export function localizeStarterPrompt(state: MakerState, locale: string): MakerState {
   if (state.aiJobId || ![defaultPrompt, defaultPromptEn].includes(state.prompt)) return state;
@@ -102,10 +155,12 @@ export function localizeStarterPrompt(state: MakerState, locale: string): MakerS
 }
 // Upgrade only known starters, ignoring surrounding whitespace from textarea input.
 // Custom drafts (including a deliberately cleared input) must stay untouched.
-const previousStarterPrompts = new Set([
-  previousDefaultPrompt, previousDefaultPromptEn,
-  "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與警告狀態，距離小於 20 公分時顯示警告。",
-  "幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與顯示狀態，距離小於 20 公分時顯示警告的小車車",
+const previousStarterPrompts = new Map([
+  [previousDefaultPrompt, defaultPrompt], [previousDefaultPromptEn, defaultPromptEn],
+  [previousStructuredPrompt, defaultPrompt], [previousStructuredPromptEn, defaultPromptEn],
+  [previousConversationalPrompt, defaultPrompt], [previousConversationalPromptEn, defaultPromptEn],
+  ["幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與警告狀態，距離小於 20 公分時顯示警告。", defaultPrompt],
+  ["幫我做一個桌上型距離與顯示監測器，使用 Pi 5、超音波和螢幕。顯示距離與顯示狀態，距離小於 20 公分時顯示警告的小車車", defaultPrompt],
 ]);
 export const initialMaker = (): MakerState => ({ standalone: false, stage: "design", designView: "concept", prompt: defaultPrompt,
   aiModel: "", aiEffort: "low", aiExpectedOutputTokens: null,
@@ -215,7 +270,7 @@ export function designRequest(state: MakerState, locale: string, model: string |
     current: state.aiIntent !== "design" && (state.stage !== "design" || viewingBlueprint) ? state.design : state.candidate ?? state.design,
     locale, model, effort: state.aiEffort, expected_output_tokens: state.aiExpectedOutputTokens,
     intent: state.aiIntent, design_mode: state.designMode, generate_image: state.aiIntent !== "ask",
-    conversation: fresh ? [] : state.conversation.slice(-20).map(m => ({ ...m, text: m.text.slice(0, 4000) })),
+    conversation: fresh ? [] : state.conversation.filter(m => m.source !== "demo").slice(-20).map(m => ({ role: m.role, text: m.text.slice(0, 4000) })),
     workflow: { stage: viewingBlueprint ? "blueprint" : state.stage, active_wire: state.design && state.guide.phase === "active" ? currentWire(state.design, state.guide)?.id ?? null : null,
       manual_confirmations: Object.keys(state.guide.confirmed).length,
       code_draft: state.stage === "deploy" || state.stage === "guide" ? state.code.slice(0, 16000) : "" } };
@@ -233,10 +288,24 @@ export function newMakerProject(state: MakerState): MakerState {
     aiExpectedOutputTokens: state.aiExpectedOutputTokens, selected: [...state.selected] };
 }
 
-/** Demo is a local preview, never a deployment or implicit project replacement. */
-export function previewDemo(state: MakerState, demo: ProjectDesign): MakerState {
+/** Sample bubbles do not consume the existing twenty-message real-history budget. */
+export function retainMakerConversation(messages: MakerMessage[]): MakerMessage[] {
+  let real = 0, demo = 0;
+  return messages.slice().reverse().filter(message => message.source === "demo" ? ++demo <= 2 : ++real <= 20).reverse();
+}
+
+/** Demo is a local preview with clearly labelled sample chat, never an AI request. */
+export function previewDemo(state: MakerState, demo: ProjectDesign, locale = "zh-TW"): MakerState {
   if (state.aiJobId || !validDesign(demo) || demo.source !== "demo") return state;
-  return {...state, candidate: demo, stage: "design", designView: "concept", standalone: false};
+  const text = locale === "en"
+    ? "Here’s a ready-made desktop car example using a Raspberry Pi 5, an HC-SR04+ distance sensor and an MRD-TFT240 display.\n\nThe sample image shows two round acrylic plates, three wheels and two motors. The motors are for the concept image only; they are not included in the blueprint, wiring, tests or deployment. The car will not drive itself.\n\nReview the image on the right, then confirm the project to see the blueprint and wiring steps. This is a built-in demo, not a newly generated design or a hardware test result."
+    : "先幫你準備好一台桌上型小車的示範：使用 Raspberry Pi 5、HC-SR04+ 距離感測器和 MRD-TFT240 螢幕。\n\n右邊的示範圖有兩片圓形壓克力板、三個輪子和兩個馬達。馬達只呈現在概念圖，不會加入藍圖、接線、測試或部署，小車不會自行行駛。\n\n先看看右邊的造型，確認作品後就能查看藍圖並跟著步驟接線。這是內建示範，並非這次即時生成，也不代表硬體已測試通過。";
+  const conversation: MakerMessage[] = [
+    ...state.conversation.filter(message => message.source !== "demo"),
+    { role: "user", text: locale === "en" ? defaultPromptEn : defaultPrompt, source: "demo" },
+    { role: "assistant", text, source: "demo" },
+  ];
+  return {...state, candidate: demo, stage: "design", designView: "concept", standalone: false, conversation};
 }
 
 export function validDesign(value: unknown): value is ProjectDesign {
@@ -246,6 +315,9 @@ export function validDesign(value: unknown): value is ProjectDesign {
     || !Number.isFinite(d.image.width) || !Number.isFinite(d.image.height))) return false;
   if (d.assembly && (typeof d.assembly.description !== "string" || !Array.isArray(d.assembly.parts) || d.assembly.parts.length > 6
     || !d.assembly.parts.every(p => p && Object.prototype.hasOwnProperty.call(structuralParts, p.kind) && Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 32 && typeof p.purpose === "string"))) return false;
+  if (d.concept_only_parts !== undefined && (!Array.isArray(d.concept_only_parts) || d.concept_only_parts.length > 1
+    || !d.concept_only_parts.every(p => p && p.kind === "motor" && Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 32
+      && typeof p.purpose === "string" && p.purpose.length > 0 && p.purpose.length <= 180))) return false;
   const preview = d.preview;
   if (preview && (!(typeof preview === "object") || ![preview.scene, preview.interaction, preview.screen_title].every(v => typeof v === "string")
     || !Array.isArray(preview.screen_lines) || preview.screen_lines.length > 3 || !preview.screen_lines.every(v => typeof v === "string")
@@ -291,7 +363,7 @@ export function restoreMaker(raw: string | null): MakerState {
       debug: legacyDebug ? { ...stored.debug, panelOpen: true, intent: "debug" } : stored.debug,
       prompt: typeof stored.prompt !== "string" ? defaultPrompt
         : !stored.aiJobId && previousStarterPrompts.has(stored.prompt.trim())
-          ? stored.prompt.trim() === previousDefaultPromptEn ? defaultPromptEn : defaultPrompt
+          ? previousStarterPrompts.get(stored.prompt.trim())!
           : stored.prompt,
       aiModel: typeof stored.aiModel === "string" && stored.aiModel.length <= 150 ? stored.aiModel : "",
       aiEffort: ["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(stored.aiEffort) ? stored.aiEffort : "low",
@@ -303,7 +375,9 @@ export function restoreMaker(raw: string | null): MakerState {
         : ["design", "guide", "deploy"].includes(stored.stage) && (design || stored.stage === "design" || stored.standalone || stored.stage === "guide" && stored.debug?.panelOpen) ? stored.stage as MakerStage : "design",
       designView: design && (stored.stage === "blueprint" || stored.designView === "blueprint") ? "blueprint" : "concept",
       hardware: {},
-      conversation: Array.isArray(stored.conversation) ? stored.conversation.filter(m => m && ["user", "assistant"].includes(m.role) && typeof m.text === "string").slice(-20) : [],
+      conversation: Array.isArray(stored.conversation) ? retainMakerConversation(stored.conversation
+        .filter(m => m && ["user", "assistant"].includes(m.role) && typeof m.text === "string")
+        .map(m => ({ role: m.role, text: m.text, ...(m.source === "demo" ? { source: "demo" as const } : {}) }))) : [],
       selected: Array.isArray(stored.selected) ? [...new Set(stored.selected.filter(id => catalog.modules.some(m => m.id === id)))] : base.selected,
       code: typeof stored.code === "string" ? stored.code : design?.code ?? "" };
   } catch { return initialMaker(); }
