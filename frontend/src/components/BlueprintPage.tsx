@@ -6,7 +6,6 @@ import { systemText } from "../lib/systemText";
 import { MATERIAL_USD_REFERENCE, materialUsdEstimate } from "../lib/materialPricing";
 import { guideFor } from "../lib/componentWiringGuides";
 import { CircuitDiagram } from "./CircuitDiagram";
-import { MakerSplitLayout } from "./MakerSplitLayout";
 import { DesignViewSwitch, type DesignView } from "./DesignViewSwitch";
 
 export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandidate, generating }: {
@@ -54,7 +53,7 @@ export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandid
     </div>
   </article>; })}</div>;
 
-  return <MakerSplitLayout stage="blueprint" left={
+  return <div className="assistant-blueprint">
     <section className="maker-preview maker-blueprint-page" aria-label={tr("作品 Blueprint", "Project Blueprint")}>
       <div className="maker-view-heading"><span className="maker-eyebrow">01 / BLUEPRINT · v{design.revision}</span>
         <DesignViewSwitch view="blueprint" hasBlueprint onChange={onViewChange} /></div>
@@ -66,7 +65,7 @@ export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandid
       <CircuitDiagram design={design} readableDefault selectedId={selectedId} onClearSelection={() => setSelectedId(null)}
         onSelect={wire => { setSelectedId(wire.id); setTab("steps"); }} />
     </section>
-  }>
+    <details className="assistant-build-details" open={Boolean(selectedId)}><summary>{tr("材料與組裝說明", "Materials & assembly instructions")}</summary>
     <aside className="maker-preview maker-blueprint-sidebar" aria-label={tr("製作資料", "Build information")}>
       <div className="blueprint-tabs" role="tablist" aria-label={tr("Blueprint 製作資料", "Blueprint build information")} ref={tabs}>
         {(["materials", "steps"] as const).map(value => <button key={value} id={`${id}-${value}-tab`} data-tab={value}
@@ -118,5 +117,6 @@ export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandid
         <footer><button type="button" onClick={() => setProduct(null)}>{tr("返回材料清單", "Back to parts")}</button></footer>
       </> : null}</dialog>
     </aside>
-  </MakerSplitLayout>;
+    </details>
+  </div>;
 }

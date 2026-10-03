@@ -7,7 +7,6 @@ import { CompactGuide } from "./CompactGuide";
 import { useComponentTests } from "../lib/useComponentTests";
 import { componentComplete, componentTestKey, selectTestModule } from "../lib/componentTests";
 import { ComponentTestCard } from "./ComponentTestCard";
-import { PiRowLocator } from "./PiRowLocator";
 import { ComponentRowLocator } from "./ComponentRowLocator";
 import { componentHeaderGuideText, componentModelName } from "../lib/componentHeaderGuide";
 import { piHeaderGuideText } from "../lib/piHeaderGuide";
@@ -25,14 +24,15 @@ interface Props {
   /** Owner commits the fresh guide and cleared AI state together. */
   onRestart?: (session: ProjectGuideState) => Promise<boolean>;
   embedded?: boolean;
-  onHelp?: () => void;
+  floating?: boolean;
 }
-export function ProjectGuidePanel({ design, session, visible, disabled, pinsById, onChange, onTargetChange, onVisibleChange, onDeploy, onDebug, onBeforeEdit, onRestart, embedded, onHelp }: Props) {
+export function ProjectGuidePanel({ design, session, visible, disabled, pinsById, onChange, onTargetChange, onVisibleChange, onDeploy, onDebug, onBeforeEdit, onRestart, embedded, floating = false }: Props) {
   const tr = useMakerText();
   const { t, tx } = useI18n();
   const tests = useComponentTests(design, session);
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState("");
+  const [openedAt] = useState(() => Date.now() / 1000);
   const editFlight = useRef(false);
   const latest = useRef({design, session, mounted:true});
   latest.current = {design, session, mounted:true};
@@ -109,13 +109,22 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
   const boardPin = pinsById.get(step.boardPin);
   const piGuide = piHeaderGuideText(boardPin, t);
   const componentGuide = componentHeaderGuideText(cid, step.componentPin, t);
+  // When browsing wires, saved/idle test information is reference material.
+  // A live test (including a disconnected/foreign run) stays visible with Stop.
+  const recentTest = lastTest && (lastTest.finished_at ?? lastTest.created_at) >= openedAt;
+  const testJobNeedsAttention = tests.status.execution?.jobs.some(job => job.kind === "test" && job.project_id === design.id
+    && job.component_id === cid && job.guide_key === componentTestKey(design, session, cid)
+    && (!["finished", "failed", "cancelled"].includes(job.state) || (job.state === "failed" && (job.created_at ?? 0) >= openedAt)));
+  const testInfoInDetails = active && !tests.status.active && !tests.pending && !tests.error && !recentTest && !testJobNeedsAttention;
+  const testInstructions = showTestCard ? <ComponentTestCard design={design} session={session} tests={tests} view={floating ? "dock" : "instructions"} onDebug={floating ? onDebug : undefined}
+    onViewWiring={() => onChange(reviewProjectWire(design, session, cid))} /> : null;
   return <CompactGuide contextKey={`${design.id}:${design.revision}:${cid}:${session.phase}:${session.index}:${session.run ?? 0}`} phase={reviewing ? "review" : session.phase}
     headerActions={<button type="button" className="guide-restart-action"
           title={tr("清除本輪接線與 AI 協作對話，回到第一步；保留作品、程式與歷史測試紀錄", "Clear this wiring run and AI conversation, then return to the first step; keep the project, code and historical test records")}
       disabled={tests.pending || editing} onClick={() => void edit(true)}>
       <span aria-hidden="true">↻</span>{tr("重新開始", "Restart")}
     </button>}
-    embedded={embedded} visible={visible} title={componentGuide?.name ?? tx(guide.name)} progress={<>
+    embedded={embedded} floating={floating} visible={visible} title={componentGuide?.name ?? tx(guide.name)} progress={<>
       <div className="guide-progress-label"><span>{tr("作品人工紀錄", "Project manual records")}</span><strong>{count}<span> / {design.wiring.length}</span></strong></div>
       <progress max={design.wiring.length} value={count} aria-label={tr("作品人工接線進度", "Project manual wiring progress")} />
       <div className="guide-module-track">{design.component_ids.map((id, i) => <button type="button" key={id} disabled={tests.pending} aria-current={i === session.componentIndex ? "step" : undefined}
@@ -138,9 +147,18 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
         {session.componentIndex < design.component_ids.length - 1
           ? <button type="button" className={complete && !passed ? "guide-back-action" : "guide-primary-action"} onClick={() => onChange({ ...session, componentIndex: session.componentIndex + 1, index: 0, phase: "prepare", checks: [] })}>{complete && !passed ? tr("稍後測試，繼續 →", "Test later · Continue →") : tr("下一模組 →", "Next module →")}</button>
           : <button type="button" className={complete && !passed ? "guide-back-action" : "guide-primary-action"} onClick={onDeploy}>{complete && !passed ? tr("稍後測試，前往部署 →", "Test later · Deploy →") : tr("前往部署 →", "Deploy →")}</button>}
-      </>}</div>{onHelp ? <button type="button" className="guide-ai-help" onClick={onHelp}>{active ? tr("這一步需要幫忙", "Help with this step") : tr("問 AI 接法", "Ask AI about wiring")}<span aria-hidden="true"> →</span></button> : null}<small>{tr("接線由你逐腳確認；略過測試不會記錄為通過。", "Confirm each wire yourself; skipping a test never records a pass.")}</small></>}
+      </>}</div>
+      {showTestCard && !floating ? <div className="guide-test-controls">
+        <ComponentTestCard design={design} session={session} tests={tests} view="actions" onDebug={onDebug}
+          onViewWiring={() => onChange(reviewProjectWire(design, session, cid))} />
+      </div> : null}</>}
     details={<>
     {active ? <p>{tx(step.hint)}</p> : null}
+    {active ? <ComponentRowLocator componentId={cid} pinId={step.componentPin} /> : null}
+    {testInfoInDetails ? testInstructions : null}
+    {guide.unresolved.map(item => <p key={item.pin} className="guide-caution">{item.pin} · {tx(item.reason)}</p>)}
+    {session.phase === "review" && session.componentIndex === design.component_ids.length - 1
+      ? <p>{tr("核對接線與供電規格後，接上 Pi USB-C 電源；開機後前往部署。", "After checking wiring and supply ratings, connect Pi USB-C power; deploy after boot.")}</p> : null}
     <div className="maker-module-progress">{design.component_ids.map((id, i) => <span key={id} className={i === session.componentIndex ? "active" : ""}>{i + 1}. {id} · {design.wiring.filter(w => w.componentId === id && confirmed(w)).length}/{design.wiring.filter(w => w.componentId === id).length}</span>)}</div>
     {session.mode !== "camera" ? <button onClick={() => onChange({ ...session, mode: "camera" })}>{tr("返回鏡頭 Pin 引導", "Return to camera Pin guide")}</button> : null}
     <p className="wiring-safety">{tx(guide.safety)}</p>
@@ -148,6 +166,7 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     {active ? <button type="button" onClick={() => onChange({ ...session, phase: "review" })}>{tr("暫停並看總覽", "Pause & review")}</button> : null}
     <p className="wiring-status">{tr("功能測試透過 Pi 執行，不需要鏡頭定位。", "Function tests run on Pi and do not require camera tracking.")}</p>
     <p className="wiring-status">{tr("人工確認不代表導通、電壓或硬體功能通過。", "Manual confirmation does not verify continuity, voltage or functionality.")}</p>
+    <small className="guide-step-note">{tr("接線由你逐腳確認；略過測試不會記錄為通過。", "Confirm each wire yourself; skipping a test never records a pass.")}</small>
     <details className="wiring-summary" open={session.phase === "review" ? true : undefined}><summary>{tr("接線總覽", "Wiring summary")} · {count}/{design.wiring.length}</summary>
       <table><tbody>{design.wiring.map(w => <tr key={w.id}><td>{w.componentId} · {w.componentPin}</td><td>{w.boardLabel}</td><td>{confirmed(w) ? `${tr("人工確認", "Manual")} (${session.confirmed[w.id].mode})` : tr("未確認", "Not confirmed")}</td></tr>)}</tbody></table></details>
     </>}>
@@ -155,30 +174,32 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     {tests.status.results.some(r => r.program_stop_requested && !r.program_stopped) ? <p className="guide-caution">{tr("已送出停止原作品要求，狀態待確認；請重新連線核對。", "A stop request was sent to the original project; reconnect to confirm its state.")}</p> : null}
     {session.phase === "prepare" && !complete ? <div className="guide-prepare-message">
       <strong>{tr("準備開始接線", "Ready to start wiring")}</strong>
-      <p>{tr("按下方「開始接線」，再跟著腳位指引操作。", "Press Start wiring below to see the pin instructions.")}</p>
+      <p>{tr("先關閉硬體電源，再按「開始接線」。", "Turn off hardware power, then press Start wiring.")}</p>
     </div> : null}
     {active ? <>
       <section className={`guide-connection-card ${step.connectionKind}`} aria-label={tr("本步接線", "Current connection")}>
-        <div className="guide-step-label"><span>{tr("這一步", "THIS STEP")}</span><strong>{session.index + 1}<span> / {steps.length}</span></strong></div>
+        <div className="guide-step-label"><span>{tr("這一步要接", "CONNECT THIS WIRE")}</span><strong>{session.index + 1}<span> / {steps.length}</span></strong></div>
         <div className="guide-pin-pair">
-          <div><span>{componentGuide?.name ?? cid.toUpperCase()}</span><strong>{step.componentPin}</strong>
-            <small>{componentGuide ? t("componentGuide.ordinal", { number: componentGuide.number }) : tr("零件端", "Module pin")}</small></div>
+          <div className="guide-endpoint"><span>{componentGuide?.name ?? cid.toUpperCase()}</span><strong>{step.componentPin}</strong>
+            <small>{componentGuide ? tr(`零件端第 ${componentGuide.number} 腳`, `Module pin ${componentGuide.number}`) : tr("零件端", "Module pin")}</small></div>
           <span className="guide-pin-link" aria-hidden="true">{step.connectionKind === "divider" ? "⇢" : "→"}</span>
-          <div><span>Raspberry Pi 5</span><strong>{piGuide?.ordinalLabel ?? boardPhysical}</strong>
-            {piGuide ? <span className="guide-pi-row-label">{piGuide.rowLabel}</span> : null}
-            <small>{piGuide?.reference ?? (boardSignals.join(" · ") || tr("實體腳位", "Physical pin"))}</small></div>
+          <div className="guide-endpoint"><span>Raspberry Pi 5 · {tr("實體腳位", "Physical pin")}</span>
+            <strong>{piGuide ? `Pin ${piGuide.physical}` : boardPhysical}</strong>
+            <small>{piGuide ? `${piGuide.signal} · ${piGuide.rowLabel}` : boardSignals.join(" · ")}</small></div>
         </div>
-        {piGuide ? <PiRowLocator pin={boardPin} /> : <p className="guide-step-instruction">{tx(step.instruction)}</p>}
-        <ComponentRowLocator componentId={cid} pinId={step.componentPin} />
+        {step.connectionKind === "divider" || cid === "mrd-tf240-8p-cs" ? <p className="guide-connect-hint">
+          {step.connectionKind === "divider" ? tr("保持斷電，依下方分壓接法連接；不可直連 GPIO。", "Keep power off and use the divider below; do not wire directly to GPIO.") : null}
+          {cid === "mrd-tf240-8p-cs" ? <span className="guide-pin-caution">{tr("BLK 留空，勿接 GPIO／5V。", "Leave BLK unconnected — no GPIO or 5V.")}</span> : null}</p> : null}
+        {!piGuide ? <p className="guide-step-instruction">{tx(step.instruction)}</p> : null}
       </section>
       {step.connectionKind === "divider" ? <div className="guide-caution"><strong>{tr("ECHO 需分壓，不可直連 GPIO", "ECHO needs a divider, not a direct GPIO wire")}</strong>
         <div className="wiring-divider"><code>ECHO ─ 330Ω ─ ● ─ GPIO18</code><code>● ─ 470Ω ─ GND</code></div></div> : null}
-    </> : reviewing ? <section className="guide-module-review"><span>{tr("本模組人工紀錄", "MODULE MANUAL RECORDS")}</span>
-      <strong>{moduleCount} / {steps.length}</strong><p>{complete ? tr("本零件必要接線已逐腳確認，現在可以測試。", "All required wires confirmed. You can now test this component.") : tr("這是暫停總覽；請繼續完成剩餘接線。", "Paused overview; finish the remaining wires first.")}</p></section> : null}
-    {guide.unresolved.map(item => <p key={item.pin} className="guide-caution">{item.pin} · {tx(item.reason)}</p>)}
-    {session.phase === "review" && session.componentIndex === design.component_ids.length - 1
-      ? <p className="guide-caution">{tr("核對接線與供電規格後，接上 Pi USB-C 電源；開機後前往部署。", "After checking wiring and supply ratings, connect Pi USB-C power; deploy after boot.")}</p> : null}
+    </> : reviewing && !complete ? <section className="guide-module-review"><span>{tr("本模組人工紀錄", "MODULE MANUAL RECORDS")}</span>
+      <strong>{moduleCount} / {steps.length}</strong>{!complete ? <p>{tr("請繼續完成剩餘接線。", "Finish the remaining wires first.")}</p> : null}</section> : null}
+    {!testInfoInDetails ? testInstructions : null}
+    {!active ? guide.unresolved.map(item => <p key={item.pin} className="guide-caution">{cid === "mrd-tf240-8p-cs" && item.pin === "BLK"
+      ? tr("BLK 留空；背光不亮先查規格，勿接 GPIO／5V。", "Leave BLK unconnected. If dark, check its specs — no GPIO or 5V.")
+      : <>{item.pin} · {tx(item.reason)}</>}</p>) : null}
     {disabled ? <p role="status">{tr("本機服務未連線；接線紀錄保留。", "Local service offline; wiring records are kept.")}</p> : null}
-    {showTestCard ? <ComponentTestCard design={design} session={session} tests={tests} onDebug={onDebug} onViewWiring={() => onChange(reviewProjectWire(design, session, cid))} /> : null}
   </CompactGuide>;
 }

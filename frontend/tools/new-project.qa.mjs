@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {startPreview,discardImagePaths} from './tinkro-preview.mjs';
 const {chromium}=createRequire(import.meta.url)('C:/Users/james/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const artifacts=fileURLToPath(new URL('./new-project-artifacts/',import.meta.url));await mkdir(artifacts,{recursive:true});
-const preview=await startPreview(0),allowed=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg',...discardImagePaths];
+const preview=await startPreview(0),allowed=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg',...discardImagePaths];
 const report={fixture:'Actual new-project confirmation, pure reset and useMaker restore; synthetic project, no hardware/model calls.',results:[],errors:[]};
 let browser,page;
 try{

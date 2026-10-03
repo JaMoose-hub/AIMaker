@@ -1,5 +1,6 @@
 """AI jobs are isolated from video/GPIO and never auto-deploy their result."""
 import copy
+import inspect
 import threading
 from uuid import uuid4
 from typing import Literal
@@ -37,7 +38,7 @@ class DesignService:
             self.jobs[job_id] = {"id": job_id, "status": "generating", "phase": "design", "design": None, "error": None,
                                  "model": body.model, "effort": body.effort, "estimate": estimate,
                                  "design_mode": body.design_mode,
-                                 "persisted": body.generate_image and body.intent in {"design", "auto"}}
+                                 "persisted": True}
             try:
                 if self.jobs[job_id]["persisted"]:
                     self.images.save_job(self.jobs[job_id])
@@ -66,7 +67,12 @@ class DesignService:
     def _generate(self, job_id, body):
         try:
             prompt = build_design_prompt(body)
-            raw = self.bridge.generate(prompt, proposal_schema(body.intent), model=body.model, effort=body.effort)
+            metadata = {}
+            parameters = inspect.signature(self.bridge.generate).parameters
+            options = {"response_metadata": metadata} if "response_metadata" in parameters else {}
+            raw = self.bridge.generate(prompt, proposal_schema(body.intent), model=body.model, effort=body.effort, **options)
+            with self.lock:
+                self.jobs[job_id]["response_metadata"] = metadata
             if body.intent == "auto":
                 reply = ConversationReply.model_validate(raw)
                 with self.lock:
@@ -86,6 +92,7 @@ class DesignService:
                 answer = AssistantReply.model_validate(raw).answer
                 with self.lock:
                     self.jobs[job_id].update(status="completed", answer=answer)
+                    self.images.save_job(self.jobs[job_id])
                     self.busy = False
                 return
             proposal = DesignProposal.model_validate(raw)

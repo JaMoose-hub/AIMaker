@@ -10,6 +10,7 @@ export const catalog = JSON.parse(readFileSync(new URL('../../profiles/component
 const dataUrl = js => `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;
 function compile(path, replacements = {}) {
   const source = readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8')
+    .replace(/^import ["'][^"']+\.css["'];?\r?\n/gm, '')
     .replace(/import catalog from [^;]+;/, `const catalog = ${JSON.stringify(catalog)};`);
   let js = ts.transpileModule(source, {compilerOptions: {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.ReactJSX,
@@ -36,14 +37,14 @@ export function designFor(ids = ['hc-sr04']) {
     code: '', tests: [], features: [], instructions: [], unresolved: [], bom: []};
 }
 
-export async function renderTestCard(props) {
-  const textUrl=dataUrl(`export const useMakerText = () => (zh,en) => zh;`);
+export async function renderTestCard({locale='zh-TW',...props}) {
+  const textUrl=dataUrl(`export const useMakerText = () => (zh,en) => ${JSON.stringify(locale)} === 'zh-TW' ? zh : en;`);
   const {ComponentTestCard}=await import(compile('components/ComponentTestCard.tsx', {'../lib/useMaker':textUrl,'../lib/componentTests':testsUrl}));
   return renderToStaticMarkup(createElement(ComponentTestCard,{onViewWiring(){},...props}));
 }
 
 export async function renderGuide({design = designFor(), session = maker.initialMaker().guide,
-  locale = 'zh-TW', check = {}, poseReady = true, cloudAI = {}, visible = true, tests = {}, capture = null, pinsById = new Map(board.pins.map(p => [p.id, p]))} = {}) {
+  locale = 'zh-TW', check = {}, poseReady = true, cloudAI = {}, visible = true, embedded = false, floating = false, tests = {}, capture = null, pinsById = new Map(board.pins.map(p => [p.id, p]))} = {}) {
   const textUrl = dataUrl(`export const useMakerText = () => (zh, en) => ${JSON.stringify(locale)} === 'zh-TW' ? zh : en;`);
   const messages = JSON.parse(readFileSync(new URL(`../src/locales/${locale}.json`, import.meta.url), 'utf8'));
   const i18nUrl = dataUrl(`export const useI18n = () => ({locale: ${JSON.stringify(locale)},
@@ -71,7 +72,7 @@ export async function renderGuide({design = designFor(), session = maker.initial
     '../lib/useCloudWiringCheck': checkUrl,
   });
   const {ProjectGuidePanel} = await import(projectUrl);
-  const html = renderToStaticMarkup(createElement(ProjectGuidePanel, {design, session, visible, pinsById, disabled: false,
+  const html = renderToStaticMarkup(createElement(ProjectGuidePanel, {design, session, visible, embedded, floating, pinsById, disabled: false,
     cloudAI: {model: 'fixture', effort: 'low', available: true, supportsImages: true, busy: false, ...cloudAI},
     onChange(){throw Error('Rendering must never change manual progress');}, onTargetChange(){}, onVisibleChange(){}, onDeploy(){},
   }));

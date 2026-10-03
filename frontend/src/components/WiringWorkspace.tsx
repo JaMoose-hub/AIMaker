@@ -6,10 +6,11 @@ import { useMakerText } from "../lib/useMaker";
 
 /** Keep both panels mounted: changing tabs must not restart work or erase drafts. */
 export function WiringWorkspace({ design, guide, visible, assistantOpen, onAssistantOpenChange, onClose,
-  assistant, children, busy = false, replyId }: {
+  assistant, children, busy = false, replyId, guideOnly = false, panelId }: {
   design: ProjectDesign; guide: ProjectGuideState; visible: boolean;
   assistantOpen: boolean; onAssistantOpenChange: (open: boolean) => void; onClose: () => void;
   assistant: ReactNode; children: ReactNode; busy?: boolean; replyId?: string;
+  guideOnly?: boolean; panelId?: string;
 }) {
   const tr = useMakerText();
   const { t } = useI18n();
@@ -31,8 +32,8 @@ export function WiringWorkspace({ design, guide, visible, assistantOpen, onAssis
     onAssistantOpenChange(next);
     if (focus) (next ? assistantTab : guideTab).current?.focus();
   }
-  return <section className="wiring-workspace" hidden={!visible} aria-label={tr("接線與 AI 工作區", "Wiring and AI workspace")}>
-    <div className="wiring-workspace-tabs" role="tablist" aria-label={tr("接線工作區內容", "Wiring workspace views")}
+  return <section id={panelId} className="wiring-workspace" hidden={!visible} aria-label={tr("接線與 AI 工作區", "Wiring and AI workspace")}>
+    <div hidden={guideOnly} className="wiring-workspace-tabs" role="tablist" aria-label={tr("接線工作區內容", "Wiring workspace views")}
       onKeyDown={event => {
         const next = event.key === "Home" ? false : event.key === "End" ? true
           : ["ArrowLeft", "ArrowRight"].includes(event.key) ? !assistantOpen : undefined;
@@ -47,12 +48,12 @@ export function WiringWorkspace({ design, guide, visible, assistantOpen, onAssis
       </button>
     </div>
     <header className="wiring-workspace-context">
-      <div><strong>{name}</strong>{wire ? <small>{wire.componentPin} → {wire.boardLabel}</small> : null}</div>
+      <div><strong>{guideOnly ? `${tr("接線引導", "Wiring guide")} · ` : ""}{name}</strong>{wire && !guideOnly ? <small>{wire.componentPin} → {wire.boardLabel}</small> : null}</div>
       <span className="wiring-workspace-count" title={tr("已人工確認的接線", "Manually confirmed wires")}>{confirmed} / {design.wiring.length}</span>
-      <button type="button" className="wiring-workspace-close" onClick={onClose} aria-label={tr("收合側邊面板", "Collapse side panel")}>×</button>
+      <button type="button" className="wiring-workspace-close" onClick={onClose} aria-label={guideOnly ? tr("收合接線引導", "Hide wiring guide") : tr("收合側邊面板", "Collapse side panel")}>×</button>
     </header>
     <progress className="wiring-workspace-progress" max={design.wiring.length} value={confirmed} aria-label={tr("作品人工接線進度", "Project manual wiring progress")} />
-    <div id={`${id}-guide`} className="wiring-workspace-view" role="tabpanel" aria-labelledby={`${id}-guide-tab`} hidden={assistantOpen}>{children}</div>
-    <div id={`${id}-ai`} className="wiring-workspace-view" role="tabpanel" aria-labelledby={`${id}-ai-tab`} hidden={!assistantOpen}>{assistant}</div>
+    <div id={`${id}-guide`} className="wiring-workspace-view" role={guideOnly ? "region" : "tabpanel"} aria-label={guideOnly ? tr("接線引導", "Wiring guide") : undefined} aria-labelledby={guideOnly ? undefined : `${id}-guide-tab`} hidden={!guideOnly && assistantOpen}>{children}</div>
+    {!guideOnly ? <div id={`${id}-ai`} className="wiring-workspace-view" role="tabpanel" aria-labelledby={`${id}-ai-tab`} hidden={!assistantOpen}>{assistant}</div> : null}
   </section>;
 }

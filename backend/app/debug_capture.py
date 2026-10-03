@@ -41,7 +41,7 @@ def _source_binding(state):
                  getattr(source, "current_index", None), getattr(source, "device_name", None),
                  getattr(source, "capture_mode", None),
                  [getattr(camera, key, None) for key in ("width", "height", "fps")]]
-    camera_id = "webcam-" + hashlib.sha256(json.dumps(signature, sort_keys=True,
+    camera_id = ("phone-" if camera.source == 'phone' else "webcam-") + hashlib.sha256(json.dumps(signature, sort_keys=True,
         separators=(",", ":"), default=str).encode("utf-8")).hexdigest()[:24]
     return source, camera_id
 
@@ -63,8 +63,12 @@ def _check_binding(state, revision, binding):
 
 
 def _runtime(state):
-    if state.config.camera.source != "device":
+    if state.config.camera.source not in {"device", "phone"}:
         raise DebugCaptureError("webcam_required")
+    if state.config.camera.source == 'phone':
+        from app.capture.phone import PhoneFrameSource
+        if not isinstance(state.source, PhoneFrameSource):
+            raise DebugCaptureError('camera_source_unavailable')
     glasses = getattr(state, "glasses_stream", None)
     if glasses is not None:
         status = glasses.snapshot()
@@ -95,7 +99,7 @@ def _thumbnail(frame):
     return cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (96, 64), interpolation=cv2.INTER_AREA)
 
 
-def _encode(slot, revision, camera_id, target, quality, stability):
+def _encode(slot, revision, camera_id, target, quality, stability, source='device'):
     # Always encode the actual decoded source; never trust an unrelated JPEG cache.
     ok, image = cv2.imencode(".jpg", slot.frame, [cv2.IMWRITE_JPEG_QUALITY, 94])
     if not ok:
@@ -104,7 +108,7 @@ def _encode(slot, revision, camera_id, target, quality, stability):
     if len(raw) > MAX_BYTES:
         raise DebugCaptureError("camera_frame_too_large")
     metadata = {
-        "capture_id": uuid.uuid4().hex, "target": target, "source": "device",
+        "capture_id": uuid.uuid4().hex, "target": target, "source": source,
         "camera_id": camera_id,
         "runtime_revision": revision, "frame_id": slot.frame_id, "seq": slot.seq,
         "ts_ms": slot.ts_ms, "capture_ts_ms": slot.ts_ms,
@@ -197,7 +201,7 @@ def _encode_located(state, body, located, revision, camera_id, target, stability
     frame, message, frame_id, ts_ms = located[0][0]
     quality = image_quality(frame)
     quality["framing_ready"] = stability["stable"] and not quality["warnings"]
-    metadata.update(capture_id=uuid.uuid4().hex, target=target, source="device", camera_id=camera_id,
+    metadata.update(capture_id=uuid.uuid4().hex, target=target, source=state.config.camera.source, camera_id=camera_id,
                     runtime_revision=revision, frame_id=frame_id, seq=message.get("seq", frame_id), ts_ms=ts_ms,
                     size=[frame.shape[1], frame.shape[0]], sha256=hashlib.sha256(images["overview"]).hexdigest(),
                     quality=quality, stability=deepcopy(stability), current=True, visibility_verified=False,
@@ -258,7 +262,7 @@ def capture_debug_evidence(state, target="overview", *, wiring_target=None, resp
                 min(item["score"] for item in endpoint_quality) if endpoint_quality else quality["score"])
         if best is None or rank >= best[0]:
             # FrameSlot is immutable but ndarray need not be: encode while selected.
-            encoded = _encode_located(state, body, located, revision, binding[1], target, stability, response_mode) if located else _encode(slot, revision, binding[1], target, quality, stability)
+            encoded = _encode_located(state, body, located, revision, binding[1], target, stability, response_mode) if located else _encode(slot, revision, binding[1], target, quality, stability, state.config.camera.source)
             best = (rank, encoded, len(reports)-1)
     _check_binding(state, revision, binding)
     if best is None:
@@ -287,7 +291,7 @@ def inspect_debug_wiring(wiring_target, images, metadata, *, generate, model, ef
     body.model, body.effort, body.locale = model, effort, locale
     capture = deepcopy(metadata)
     prepared = dict(images)
-    if "overview" not in prepared or metadata.get("source") != "device":
+    if "overview" not in prepared or metadata.get("source") not in {"device", "phone"}:
         raise DebugCaptureError("physical_webcam_frame_required")
     # Existing endpoint inspection uses pi_overview, debug cards use overview.
     prepared["pi_overview"] = prepared.pop("overview")
@@ -389,7 +393,7 @@ class TFTPhaseSampler:
         self.previous = thumb
         quality = image_quality(slot.frame)
         stability = {"stable": difference is not None and difference <= 8., "mean_difference": difference, "heuristic": True}
-        images, metadata = _encode(slot, self.revision, self.binding[1], "tft_screen", quality, stability)
+        images, metadata = _encode(slot, self.revision, self.binding[1], "tft_screen", quality, stability, self.state.config.camera.source)
         try:
             _check_binding(self.state, self.revision, self.binding)
         except DebugCaptureError as error:

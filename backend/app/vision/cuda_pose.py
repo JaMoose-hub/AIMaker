@@ -16,6 +16,7 @@ from app.vision.yolo_pose import (
 )
 from app.vision.cuda_preprocess import CudaPreprocessor
 from app.vision.eye_yolo_decode import prefilter_class_scores
+from app.vision.model_lock import serialized_model_call
 
 log = logging.getLogger(__name__)
 _extra_dlls = {}
@@ -169,6 +170,7 @@ class CudaYoloPoseLocator:
             return candidate(frame_bgr, candidate_threshold)
         return self._fallback.locate(frame_bgr)
 
+    @serialized_model_call
     def _locate(self, frame_bgr, candidate_threshold=None):
         if frame_bgr is None or frame_bgr.size == 0:
             return None
@@ -201,6 +203,7 @@ class CudaYoloPoseLocator:
             self._use_cpu(exc)
             return self._locate_fallback(frame_bgr, candidate_threshold)
 
+    @serialized_model_call
     def close(self):
         if self._fallback is not None:
             self._fallback.close()

@@ -70,3 +70,38 @@ export function keyGuideRatio(key: string, shift: boolean, right: number, width:
   if (key === "ArrowRight") return guideRatioForRight(right - step, width);
   return null;
 }
+
+// The stacked workspace must not reinterpret the old side-by-side preference.
+// Preserve the old preference, but start the new stream-first layout at 70:30.
+export const GUIDE_HEIGHT_STORAGE_KEY = "boardvision.guide-height.v2";
+export const GUIDE_HEIGHT_HANDLE_SIZE = 18;
+
+export function guideHeightGeometry(height: number, ratio: number | null, minimumGuideHeight = 160) {
+  const available = Math.max(0, (Number.isFinite(height) ? height : 0) - GUIDE_HEIGHT_HANDLE_SIZE);
+  const minTop = Math.min(180, available * .4);
+  const guideMinimum = Number.isFinite(minimumGuideHeight) ? Math.max(160, minimumGuideHeight) : 160;
+  const maxTop = Math.max(minTop, available - Math.min(guideMinimum, available - minTop));
+  const fallback = available * .7;
+  const requested = ratio !== null && Number.isFinite(ratio) ? available * ratio : fallback;
+  const top = Math.min(maxTop, Math.max(minTop, requested));
+  return { available, minTop, maxTop, top, bottom: available - top };
+}
+
+export function guideRatioForTop(top: number, height: number, minimumGuideHeight = 160) {
+  const { available, minTop, maxTop } = guideHeightGeometry(height, null, minimumGuideHeight);
+  return available ? Math.min(maxTop, Math.max(minTop, Number.isFinite(top) ? top : minTop)) / available : .5;
+}
+
+export function dragGuideHeightRatio(startTop: number, startY: number, clientY: number, height: number, minimumGuideHeight = 160) {
+  return guideRatioForTop(startTop + clientY - startY, height, minimumGuideHeight);
+}
+
+export function keyGuideHeightRatio(key: string, shift: boolean, top: number, height: number, minimumGuideHeight = 160): number | null {
+  const { minTop, maxTop } = guideHeightGeometry(height, null, minimumGuideHeight);
+  const step = shift ? 80 : 24;
+  if (key === "Home") return guideRatioForTop(minTop, height, minimumGuideHeight);
+  if (key === "End") return guideRatioForTop(maxTop, height, minimumGuideHeight);
+  if (key === "ArrowUp") return guideRatioForTop(top - step, height, minimumGuideHeight);
+  if (key === "ArrowDown") return guideRatioForTop(top + step, height, minimumGuideHeight);
+  return null;
+}

@@ -40,7 +40,8 @@ class ServerConfig(BaseModel):
 
 
 class CameraConfig(BaseModel):
-    source: Literal["synthetic", "device", "window", "xreal"] = "synthetic"
+    # phone is selected at runtime with a paired session, never persisted.
+    source: Literal["synthetic", "device", "window", "xreal", "phone"] = "synthetic"
     device_index: int = 0  # cold-start default only; POST /api/cameras/select
                            # changes the *running* source without touching this
     width: int = 1280      # device/synthetic only; source=window follows the

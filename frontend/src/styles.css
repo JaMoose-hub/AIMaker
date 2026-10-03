@@ -1720,6 +1720,11 @@ html[lang="en"] .pi-row-label-text { font-size: 11px; }
   pointer-events: none;
 }
 
+.video-hint button {
+  pointer-events: auto;
+  margin-left: 8px;
+}
+
 .hint-pill {
   padding: 13px 26px;
   border-radius: 999px;

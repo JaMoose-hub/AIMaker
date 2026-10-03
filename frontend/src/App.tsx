@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { CameraPicker } from "./components/CameraPicker";
 import { GlassesControls } from "./components/GlassesControls";
 import { useGlassesStream } from "./lib/useGlassesStream";
@@ -10,6 +11,7 @@ import { PiConnectionControl } from "./components/PiConnectionControl";
 import { WiringGuidePanel } from "./components/WiringGuidePanel";
 import { RuntimeToolbar } from "./components/RuntimeToolbar";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
+import { DeviceConnectionGroups } from "./components/DeviceConnectionGroups";
 import { StatusBar } from "./components/StatusBar";
 import { VideoView, type LegendInfo } from "./components/VideoView";
 import {
@@ -43,16 +45,25 @@ import type { ActiveGuideTarget } from "./lib/componentWiringGuides";
 import { wsClient } from "./lib/wsClient";
 import { DesignStudio } from "./components/DesignStudio";
 import { BlueprintPage } from "./components/BlueprintPage";
-import { MakerAssistant } from "./components/MakerAssistant";
+import { UnifiedAssistant, DemoWorkspace } from "./components/UnifiedAssistant";
+import { AssistantWorkspace } from "./components/AssistantWorkspace";
+import { useAssistant } from "./lib/assistant";
 import { MakerModelMenu } from "./components/MakerModelMenu";
-import { MakerSplitLayout } from "./components/MakerSplitLayout";
 import { useMakerAI } from "./lib/useMakerAI";
 import { useDebugSession } from "./lib/debugSessions";
 import { ProjectGuidePanel } from "./components/ProjectGuidePanel";
 import { GuidePaneLayout } from "./components/GuidePaneLayout";
 import { WiringWorkspace } from "./components/WiringWorkspace";
-import { StepDiagramView, WiringViewToggle } from "./components/StepDiagramView";
+import { StepDiagramView } from "./components/StepDiagramView";
+import { ImageViewControls } from './components/ImageViewControls';
+import './floatingGuide.css';
 import { DiagramInspectionView } from "./components/DiagramInspectionView";
+import { GpioPhotoWorkspace } from "./components/GpioPhotoWorkspace";
+import { GpioCaptureAction } from "./components/GpioCaptureAction";
+import { useGpioPhotoCapture } from "./lib/useGpioPhotoCapture";
+import { photoGuideWire, photoRecordCurrent, type GpioPhotoRecord, type GpioView } from "./lib/gpioPhotoWorkspace";
+import type { MobileCapture, MobileContext, MobileSession } from "./lib/mobile";
+import { useLiveCamera } from "./lib/useLiveCamera";
 import { createDiagramInspection, inspectDiagramInMaker, type DiagramInspection } from "./lib/debugEvidence";
 import { confirmConcept, currentWire, enterDebug, reviewProjectWire, type MakerStage, type ProjectGuideState } from "./lib/maker";
 import { prepareProjectWiringEdit } from "./lib/wiringEdit";
@@ -84,6 +95,7 @@ export default function App() {
   const fullscreenFallbackTimerRef = useRef<number | null>(null);
 
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const liveCamera = useLiveCamera(config, setConfig);
   const [profile, setProfile] = useState<BoardProfile | null>(null);
   const [controllers, setControllers] = useState<ControllerSummary[]>([]);
   const [controllerSwitching, setControllerSwitching] = useState(false);
@@ -94,6 +106,7 @@ export default function App() {
   const [guideTarget, setGuideTarget] = useState<ActiveGuideTarget | null>(null);
   const guidePinId = guideTarget?.boardPinId ?? null;
   const [guideVisible, setGuideVisible] = useState(initialGuideVisibility);
+  const guideToggleRef = useRef<HTMLButtonElement>(null);
   const [calibrateOpen, setCalibrateOpen] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [diagramCaptureOverride, setDiagramCaptureOverride] = useState<string | null>(null);
@@ -108,21 +121,89 @@ export default function App() {
   const [opticalHudCalibration, setOpticalHudCalibration] =
     useState<OpticalHudCalibration | null>(null);
   const [fullscreenFallback, setFullscreenFallback] = useState(false);
+  const [imageView, setImageView] = useState<GpioView>('webcam');
+  const [gpioPhotos, setGpioPhotos] = useState<GpioPhotoRecord[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState('');
   const displayModeActive = isDisplayOnlyMode(displayMode);
   const opticalHudActive = isOpticalHudMode(displayMode);
   const displayModeDisabled = backendDown || config === null;
   const opticalHudDisabled = displayModeDisabled || profile === null;
   const makerEnabled = config?.board_id === "raspberry-pi-5";
   const makerStage = displayModeActive ? "guide" : makerEnabled ? maker.stage : "guide";
-  const assistantIntent = maker.debug?.intent ?? "wiring";
-  const aiDebug = useDebugSession(maker.design?.id ?? null, makerEnabled && Boolean(maker.design) && makerStage === "guide");
+  const assistantIntent = maker.debug?.intent ?? (makerStage === "deploy" ? "debug" : "wiring");
+  const aiDebug = useDebugSession(maker.design?.id ?? null, makerEnabled && Boolean(maker.design));
+  const assistant = useAssistant(maker, setMaker, aiDebug.conversation, aiDebug.record, makerAI.aiOptions.selectedModel?.id);
+  const [aiOpen, setAiOpen] = useState(true);
+  const [aiOpenRequest, setAiOpenRequest] = useState(0);
+  const [mobileTriggerHost, setMobileTriggerHost] = useState<HTMLDivElement | null>(null);
+  const [mobileControlsHost, setMobileControlsHost] = useState<HTMLDivElement | null>(null);
+  const [cameraSettingsHost, setCameraSettingsHost] = useState<HTMLDivElement | null>(null);
+  const phoneMainActive = imageView === 'phone' && makerStage === "guide" && !displayModeActive && !assistant.demoOpen;
+  const photoMainActive = imageView === 'photo' && makerStage === "guide" && !displayModeActive && !assistant.demoOpen;
+  const lastLiveView = useRef<'webcam' | 'phone'>('webcam');
+  const changeImageView = useCallback((view: GpioView) => {
+    setImageView(view);
+    if (view !== 'photo') lastLiveView.current = view;
+    setEvidenceDiagram(null); setDiagramCaptureOverride(null);
+    setMaker(s => s.guide.mode === "camera" ? s : ({...s, guide: {...s.guide, mode: "camera"}}));
+  }, [setMaker]);
+  const liveViewIntent = useRef(0);
+  const selectLiveView = useCallback(async (view: 'phone' | 'webcam', session?: MobileSession | null, isCurrent: () => boolean = () => true): Promise<boolean> => {
+    if (!canShowPhoto.current) return false;
+    const intent = ++liveViewIntent.current;
+    if (!isCurrent() || !await liveCamera.select(view, session) || intent !== liveViewIntent.current || !isCurrent()) return false;
+    changeImageView(view);
+    return true;
+  }, [liveCamera.select, changeImageView]);
+  const changePhonePreview = useCallback((show: boolean, session?: MobileSession | null, isCurrent?: () => boolean): Promise<boolean> => {
+    return selectLiveView(show ? 'phone' : 'webcam', session, isCurrent);
+  }, [selectLiveView]);
+  useEffect(() => {
+    const view = config?.camera_source === 'phone' ? 'phone' : 'webcam';
+    lastLiveView.current = view;
+    setImageView(current => current === 'photo' ? current : view);
+  }, [config?.camera_source, assistant.mobileContext?.conversation_id, assistant.demoOpen]);
+  const openAssistant = () => { setAiOpen(true); setAiOpenRequest(value => value + 1); };
   const debugCaptureSession = makerStage === "guide" && aiDebug.record?.status === "awaiting_capture" &&
     !["awaiting_user", "context_changed", "camera_changed", "backend_restarted"].includes(aiDebug.record.phase) &&
     aiDebug.record.current_target !== false && aiDebug.record.camera_current !== false ? aiDebug.record : null;
   const eyeActive = Boolean(glasses.status?.active || config?.camera_source === "xreal" ||
     ["restoring", "stopping", "switching"].includes(glasses.status?.state ?? ""));
-  const debugWebcamReady = config?.camera_source === "device" && !eyeActive && !backendDown;
+  const phoneReady = config?.camera_source === 'phone' && liveCamera.status?.kind === 'phone' && liveCamera.status.ready && !liveCamera.status.error;
   const project = makerEnabled && !maker.standalone ? maker.design : null;
+  const activeGpioPhoto = gpioPhotos.find(p => `${p.source}:${p.capture.capture_id}` === selectedPhoto) ?? null;
+  const historicalPhoto = !!activeGpioPhoto && !photoRecordCurrent(activeGpioPhoto, project, maker.guide.run ?? 0);
+  const cameraAvailable = !calibrateOpen && !debugCaptureSession && !aiDebug.record?.model_busy && !eyeActive && !liveCamera.pending && !cameraPickerOpen;
+  const canShowPhoto = useRef(false);
+  const keepGpioPhoto = useCallback((record: GpioPhotoRecord, show: boolean) => {
+    const key = `${record.source}:${record.capture.capture_id}`;
+    setGpioPhotos(previous => [...previous.filter(p => `${p.source}:${p.capture.capture_id}` !== key), record].slice(-20));
+    if (show) { setSelectedPhoto(key); changeImageView('photo'); }
+    else setSelectedPhoto(previous => previous || key);
+  }, [changeImageView]);
+  const receiveMobilePhoto = useCallback((capture: MobileCapture, show: boolean, context: MobileContext | null) => {
+    const saved = context?.context;
+    keepGpioPhoto({ source: 'phone', capture, projectId: saved?.workspace_project_id ?? '',
+      revision: saved?.project_version ?? 0, round: context?.round ?? -1 }, show && canShowPhoto.current);
+  }, [keepGpioPhoto]);
+  const captureSource = config?.camera_source === 'phone' ? 'phone' : 'webcam';
+  const captureDisabledReason = !project ? tr('先確認作品，再擷取接線照片', 'Confirm a project before capturing')
+    : backendDown ? tr('相機服務未連線', 'Camera service is offline')
+    : !cameraAvailable ? tr('請先完成目前相機操作', 'Finish the current camera operation')
+    : !liveCamera.status?.ready || liveCamera.status.error || liveCamera.status.kind !== captureSource
+      || liveCamera.status.runtime_revision !== config?.runtime_revision ? tr('等待即時影像', 'Waiting for live video') : '';
+  const gpioCapture = useGpioPhotoCapture({ project, round: maker.guide.run ?? 0,
+    source: { kind: captureSource, runtimeRevision: config?.runtime_revision ?? -1 },
+    active: makerStage === 'guide' && !displayModeActive && !assistant.demoOpen,
+    allowed: !captureDisabledReason }, keepGpioPhoto);
+  const photoOperationBusy = gpioCapture.busy || gpioCapture.needsResume;
+  const canChangeImage = cameraAvailable && !photoOperationBusy;
+  canShowPhoto.current = canChangeImage;
+  const debugWebcamReady = (config?.camera_source === 'device' || phoneReady) && !eyeActive && !backendDown
+    && !photoMainActive && !liveCamera.pending && !photoOperationBusy;
+  const gpioCaptureAction = <GpioCaptureAction source={captureSource} busy={gpioCapture.busy} needsResume={gpioCapture.needsResume}
+    error={gpioCapture.error} disabledReason={captureDisabledReason} retake={photoMainActive && !!activeGpioPhoto}
+    onCapture={() => void gpioCapture.capture()} onResume={() => void gpioCapture.resume()} />;
   // A fresh Maker project is not the legacy standalone board workspace.
   const emptyProjectGuide = makerEnabled && !maker.standalone && !project && makerStage === "guide" && !displayModeActive;
   const fullWidthWiring = (Boolean(project) || emptyProjectGuide) && makerStage === "guide";
@@ -140,13 +221,10 @@ export default function App() {
     if (stage === "guide") setGuideVisible(true);
   };
   const openDebug = (componentId?: string, runId?: string, symptom?: string) => {
+    openAssistant();
     setGuideTarget(null);
     setGuideVisible(true);
-    setMaker(s => enterDebug(s, componentId, runId, symptom));
-  };
-  const openWiringAssistant = () => {
-    setGuideVisible(true);
-    setMaker(s => ({ ...s, debug: { ...s.debug, panelOpen: true, intent: "wiring" } }));
+    setMaker(s => ({ ...enterDebug(s, componentId, runId, symptom), stage: s.stage === "deploy" ? "deploy" : "guide" }));
   };
   const inspectWiring = (cid:string, pin?:string) => {
     setEvidenceDiagram(null);
@@ -168,6 +246,7 @@ export default function App() {
   async function restartWiringConversation(guide: ProjectGuideState) {
     const projectId = maker.design?.id;
     if (!projectId || !await aiDebug.restartConversation()) return false;
+    if (!await assistant.archiveWiring(guide.run ?? 0)) return false;
     setEvidenceDiagram(null);
     setDiagramCaptureOverride(null);
     setMaker(s => s.design === maker.design ? ({ ...s, guide, debug: { panelOpen: s.debug?.panelOpen, intent: "wiring" } }) : s);
@@ -175,15 +254,21 @@ export default function App() {
   }
   const adoptDesign = (replaceManual = false) => {
     setGuideTarget(null);
-    setMaker(s => confirmConcept(s, replaceManual));
+    setMaker(s => confirmConcept(s.design && s.candidate?.source === "demo" ? { ...s,
+      candidate: { ...s.candidate, id: s.design.id, revision: s.design.revision + 1 } } : s, replaceManual));
   };
   const startNewProject = async () => {
+    if (assistant.busy) return false;
+    try {
+    const nextConversation = await assistant.prepareConversation();
     if (!await makerAI.newProject()) return false;
+    assistant.activateConversation(nextConversation);
     setGuideTarget(null);
     setSelectedPinId(null);
     setEvidenceDiagram(null);
     setDiagramCaptureOverride(null);
     return true;
+    } catch (error) { assistant.reportError(error); return false; }
   };
 
   const handleLocaleChange = useCallback(
@@ -194,6 +279,9 @@ export default function App() {
   );
 
   const handleGuideVisibilityChange = useCallback((visible: boolean) => {
+    if (!visible && document.getElementById('maker-floating-guide')?.contains(document.activeElement)) {
+      guideToggleRef.current?.focus({ preventScroll: true });
+    }
     setGuideVisible(visible);
     try {
       window.localStorage.setItem(GUIDE_VISIBILITY_STORAGE_KEY, String(visible));
@@ -537,7 +625,7 @@ export default function App() {
     }
   }, [config, controllerSwitching, guidePinId, t]);
 
-  const assistantPanel = project && !displayModeActive && makerStage === "guide" ? <DebugPage key={aiDebug.resetVersion} state={maker} variant="wiring"
+  const assistantPanel = project && !displayModeActive ? <div className="unified-debug-tools" hidden={assistant.demoOpen || makerStage === "design"}><DebugPage key={aiDebug.resetVersion} state={maker} variant="wiring"
     embedded={Boolean(project)} assistantOpen={project ? true : maker.debug?.panelOpen ?? false}
     onAssistantOpenChange={panelOpen=>setMaker(s=>({...s,debug:{...s.debug,panelOpen}}))}
     assistantIntent={assistantIntent}
@@ -548,21 +636,22 @@ export default function App() {
     onCase={caseId=>setMaker(s=>({...s,debug:{...s.debug,caseId}}))}
     onCode={(code,expected)=>setMaker(s=>s.code===expected?({...s,code}):s)} onWiring={inspectWiring} onDeploy={()=>navigateMaker("deploy")}
     onSelect={selectedComponentId=>setMaker(s=>({...s,debug:{...s.debug,selectedComponentId}}))}
-    assistant={({context,codeHash,repairCaseId,repairAppliedHash,repairCandidateReady,onRetest,onTrial,onReviewRepair,onManual,operationCard,headerControls})=><AiDebugPanel state={maker} context={context} currentCodeHash={codeHash}
+    assistant={({context,codeHash,repairCaseId,repairAppliedHash,repairCandidateReady,onRetest,onTrial,onReviewRepair,onManual,operationCard,headerControls})=><AiDebugPanel actionsOnly state={maker} context={context} currentCodeHash={codeHash}
       variant={assistantIntent} wiringTarget={context.wiring_target} onOpenDebug={()=>openDebug()}
       operationCard={operationCard} headerControls={headerControls}
       repairCaseId={repairCaseId} repairAppliedHash={repairAppliedHash} repairCandidateReady={repairCandidateReady} session={aiDebug}
-      webcamReady={debugWebcamReady} eyeActive={eyeActive} cameraSource={config?.camera_source ?? null} cameraRuntimeRevision={config?.runtime_revision ?? null} onReturnWebcam={glasses.stop}
+      webcamReady={debugWebcamReady} cameraStatusInView={makerStage === 'guide' && !assistant.demoOpen}
+      eyeActive={eyeActive} cameraSource={config?.camera_source ?? null} cameraRuntimeRevision={config?.runtime_revision ?? null} onReturnWebcam={glasses.stop}
       onCase={caseId=>setMaker(s=>s.debug?.caseId===caseId?s:({...s,debug:{...s.debug,caseId}}))}
-      onRetest={onRetest} onTrial={onTrial} onReviewRepair={onReviewRepair} onManual={onManual} onWiring={inspectWiring} onDiagram={inspectDiagram} />} /> : null;
+      onRetest={onRetest} onTrial={onTrial} onReviewRepair={onReviewRepair} onManual={onManual} onWiring={inspectWiring} onDiagram={inspectDiagram} />} /></div> : null;
 
-  const renderCameraTools = (videoControls?: ReactNode) => <StatusBar compact videoControls={videoControls} active={(!makerEnabled || makerStage !== "design") && !displayModeActive}
-    webcamTuningVisible={displayMode === "standard" && config?.camera_source === "device"}
-    onOpenCalibrate={handleOpenCalibrate} calibrateDisabled={!profile || backendDown}
-    onOpenCameraPicker={handleOpenCameraPicker} cameraPickerVisible={config?.camera_source === "device"} cameraPickerDisabled={backendDown}
+  const renderCameraTools = (videoControls?: ReactNode) => <StatusBar compact embedded={makerEnabled} videoControls={videoControls} active={(!makerEnabled || makerStage !== "design") && !displayModeActive}
+    webcamTuningVisible={displayMode === "standard" && config?.camera_source === "device" && !phoneMainActive}
+    onOpenCalibrate={handleOpenCalibrate} calibrateDisabled={!profile || backendDown || phoneMainActive || photoOperationBusy}
+    onOpenCameraPicker={handleOpenCameraPicker} cameraPickerVisible={config?.camera_source === "device"} cameraPickerDisabled={backendDown || phoneMainActive || photoOperationBusy}
     onEnterSmartGlassesDemo={enterSmartGlassesDemo}
-    smartGlassesDemoDisabled={displayModeDisabled || glasses.pending || glasses.status?.state === "restoring"}
-    onEnterOpticalHud={enterOpticalHud} opticalHudDisabled={opticalHudDisabled}
+    smartGlassesDemoDisabled={displayModeDisabled || photoOperationBusy || glasses.pending || glasses.status?.state === "restoring"}
+    onEnterOpticalHud={enterOpticalHud} opticalHudDisabled={opticalHudDisabled || photoOperationBusy}
     accuracy={config?.accuracy ?? null} pinsById={pinsById}
     boardId={config?.board_id ?? null} runtimeRevision={config?.runtime_revision ?? null} />;
 
@@ -580,6 +669,7 @@ export default function App() {
       busy={controllerSwitching}
       disabled={backendDown}
       error={controllerError}
+      cameraToolsRef={makerEnabled && !displayModeActive ? setCameraSettingsHost : undefined}
       onControllerChange={(boardId) => void handleControllerChange(boardId)}
       onLocaleChange={handleLocaleChange}
     />
@@ -588,6 +678,18 @@ export default function App() {
       <button type="button" className="camera-trigger" onClick={glasses.stop}>{t("glasses.retryRestore")}</button>
     </div>}
   </>;
+
+  const floatingGuide = makerEnabled && !maker.standalone && !displayModeActive && Boolean(project || emptyProjectGuide);
+  const guideVisibilityControl = <button ref={guideToggleRef} type="button"
+    className={`guide-visibility-toggle${guideVisible ? " active" : ""}`}
+    aria-expanded={guideVisible} aria-controls={floatingGuide ? 'maker-floating-guide' : undefined}
+    disabled={!config || !profile} onClick={() => handleGuideVisibilityChange(!guideVisible)}>
+    <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h3M10 5h6M10 10h6M10 15h6" />
+    </svg>
+    {project || emptyProjectGuide ? guideVisible ? tr("收合接線引導", "Hide wiring guide") : tr("展開接線引導", "Show wiring guide") : t(guideVisible ? "photoGuide.hide" : "photoGuide.show")}
+    {floatingGuide ? <span className="floating-guide-chevron" aria-hidden="true">{guideVisible ? '⌄' : '⌃'}</span> : null}
+  </button>;
 
   return (
     <div className={`app tinkro-theme${makerEnabled ? ` pi-deploy-layout maker-layout maker-stage-${makerStage}` : ""}${fullWidthWiring ? " maker-wiring-full-width" : ""}${displayModeActive ? ` display-mode-active ${displayMode}` : ""}`}>
@@ -600,8 +702,12 @@ export default function App() {
               {(["design", "guide", "deploy"] as const).map((stage, i) => <button key={stage} className={makerStage === stage ? "active" : ""}
                 aria-current={makerStage === stage ? "step" : undefined} onClick={() => navigateMaker(stage)}><span>{String(i + 1).padStart(2, "0")}</span>{stage === "design" ? tr("設計與藍圖", "Design & blueprint") : stage === "guide" ? tr("接線引導＋AI 除錯", "Wiring + AI debug") : tr("部署與執行", "Deploy & run")}</button>)}
           </nav>}>
-          <MakerModelMenu state={maker} setState={setMaker} assistant={makerAI} />
-          <PiConnectionControl />
+          {displayModeActive ? <MakerModelMenu state={maker} setState={setMaker} assistant={makerAI} /> : null}
+          {!displayModeActive ? <DeviceConnectionGroups
+            phoneLabel={tr("手機連線", "Phone connection")} piLabel={tr("Pi 執行", "Pi runtime")}
+            phoneName={tr("手機", "Phone")} piName="Pi"
+            phone={<div className="mobile-toolbar-slot mobile-header-slot" ref={setMobileTriggerHost} />}
+            pi={<PiConnectionControl />} /> : <div className="maker-connection-controls"><PiConnectionControl /></div>}
           {runtimeControls}
         </WorkspaceHeader> : <header className="header">
           {brand}
@@ -609,48 +715,70 @@ export default function App() {
             {runtimeControls}
           </div>
         </header>}
+        <AssistantWorkspace active={makerEnabled && !displayModeActive} aiOpen={aiOpen} onAiOpen={setAiOpen}
+          openRequest={aiOpenRequest} latestReply={assistant.record?.messages.filter(message => message.role === "assistant").at(-1)?.id ?? ""}
+          assistant={<UnifiedAssistant state={maker} setState={setMaker} controller={assistant} legacy={makerAI} debugTools={assistantPanel} onNewProject={startNewProject}
+            mobileWorkspace={{ trigger: !displayModeActive ? mobileTriggerHost : null,
+              controls: makerStage === "guide" && !assistant.demoOpen && !displayModeActive ? mobileControlsHost : null,
+              preview: null, showing: phoneMainActive,
+              source: config?.camera_source === 'phone' ? 'phone' : 'webcam',
+              selectedPhoneSource: liveCamera.status?.kind === 'phone' && liveCamera.status.session_id && liveCamera.status.generation !== null
+                ? { session_id: liveCamera.status.session_id, generation: liveCamera.status.generation } : null,
+              pinsById, guideTarget,
+              canShow: canChangeImage, onShow: changePhonePreview,
+              onPhoto: receiveMobilePhoto }} />}>
+        {assistant.demoOpen && makerEnabled && !displayModeActive ? <DemoWorkspace controller={assistant} /> : null}
+        <div className="assistant-project-workspace" hidden={assistant.demoOpen && !displayModeActive}>
         {makerEnabled && makerStage === "design" ? <div className="maker-design-stage">
+          <div className="assistant-design-tools"><button type="button" className="assistant-demo-entry" onClick={() => assistant.setDemoOpen(true)}>{tr("體驗 AI 設計 Demo", "Try AI design demo")}</button></div>
           {maker.designView === "blueprint" && maker.design ? <BlueprintPage key={`${maker.design.id}:${maker.design.revision}`}
             design={maker.design} onGuide={() => navigateMaker("guide")}
             onEdit={() => setMaker(s => ({ ...s, designView: "concept" }))}
             onViewChange={view => setMaker(s => ({ ...s, designView: view }))}
             hasCandidate={Boolean(maker.candidate)} generating={Boolean(maker.aiJobId)} /> :
-            <MakerSplitLayout stage="design"
-              left={<MakerAssistant state={maker} setState={setMaker} assistant={makerAI} onNewProject={startNewProject}
-                onReview={() => setMaker(s => ({ ...s, designView: "concept" }))} />}>
-              <DesignStudio state={maker} setState={setMaker} onAdopt={adoptDesign} generationPhase={makerAI.phase} busy={makerAI.busy}
+              <DesignStudio state={maker} setState={setMaker} onAdopt={adoptDesign} generationPhase={makerAI.phase} busy={makerAI.busy || assistant.busy}
                 onViewChange={view => setMaker(s => ({ ...s, designView: view }))} />
-            </MakerSplitLayout>}
+            }
         </div> : null}
         <GuidePaneLayout stageRef={videoStageRef}
-          className={`video-guide-stage${showWiringDiagram ? " maker-2d" : ""}`}
+          className={`video-guide-stage assistant-wiring-stage${floatingGuide ? " guide-floating" : ""}${showWiringDiagram ? " maker-2d" : ""}`}
           visible={makerStage === "guide"}
-          resizable={fullWidthWiring && guideVisible && !displayModeActive}>
-          <button
-            type="button"
-            className={`guide-visibility-toggle${guideVisible ? " active" : ""}`}
-            aria-expanded={guideVisible}
-            disabled={!config || !profile}
-            onClick={() => handleGuideVisibilityChange(!guideVisible)}
-          >
-            <span aria-hidden="true">↯</span>
-            {project || emptyProjectGuide ? guideVisible ? tr("隱藏側邊面板", "Hide side panel") : tr("顯示側邊面板", "Show side panel") : t(guideVisible ? "photoGuide.hide" : "photoGuide.show")}
-          </button>
-          {makerStage !== "deploy" ? <VideoView
-            viewControl={videoControls => <>{project && (projectWire || diagramInspection) && makerStage === "guide" && !displayModeActive ? <WiringViewToggle
-              diagramVisible={showWiringDiagram} captureRequired={Boolean(debugCaptureSession)} disabled={calibrateOpen}
-              onChange={mode=>{
-                setEvidenceDiagram(null);
-                setDiagramCaptureOverride(mode === "2d" ? diagramCaptureKey : null);
-                setMaker(s=>({...s,guide:{...s.guide,mode}}));
-              }} /> : null}{renderCameraTools(videoControls)}</>}
-            alternateView={project && showWiringDiagram ? diagramInspection ? <DiagramInspectionView key={diagramInspection.requestId}
+          stacked={makerEnabled && !maker.standalone && !displayModeActive}
+          resizable={makerEnabled && Boolean(project) && guideVisible && !displayModeActive && !floatingGuide}>
+          <VideoView
+            viewControl={videoControls => <>{!floatingGuide ? <div className="assistant-guide-tools">{guideVisibilityControl}</div> : null}
+              {makerStage === "guide" && makerEnabled && !displayModeActive ? <ImageViewControls
+                view={photoMainActive ? 'photo' : showWiringDiagram ? 'diagram' : 'live'}
+                disabled={calibrateOpen || liveCamera.pending || photoOperationBusy}
+                photoDisabled={!canChangeImage}
+                diagramAvailable={Boolean(project && (projectWire || diagramInspection))}
+                onChange={view => {
+                  if (view === 'diagram') {
+                    setImageView(lastLiveView.current);
+                    if (projectWire) setEvidenceDiagram(null);
+                    setDiagramCaptureOverride(diagramCaptureKey);
+                    setMaker(s => ({ ...s, guide: { ...s.guide, mode: '2d' } }));
+                  } else changeImageView(view === 'photo' ? 'photo' : lastLiveView.current);
+                }} /> : null}
+              {makerEnabled ? cameraSettingsHost ? createPortal(renderCameraTools(videoControls), cameraSettingsHost) : null : renderCameraTools(videoControls)}
+              </>}
+            alternateView={photoMainActive ? <GpioPhotoWorkspace key={selectedPhoto || 'empty'} record={activeGpioPhoto}
+              historical={historicalPhoto} wire={activeGpioPhoto ? photoGuideWire(activeGpioPhoto.capture, projectWire) : undefined}
+              records={gpioPhotos} onRecord={record => setSelectedPhoto(`${record.source}:${record.capture.capture_id}`)}
+              captureAction={gpioCaptureAction} busy={photoOperationBusy}
+              onReturn={() => changeImageView(lastLiveView.current)} /> : project && showWiringDiagram ? diagramInspection ? <DiagramInspectionView key={diagramInspection.requestId}
               inspection={diagramInspection} currentDesign={project} capturePending={Boolean(debugCaptureSession)} onReturn={() => setEvidenceDiagram(null)} />
               : projectWire ? <StepDiagramView design={project} wire={projectWire} capturePending={Boolean(debugCaptureSession)} /> : null : null}
             displayMode={displayMode}
             glassesStatus={glasses.status}
             onGlassesDisplayFps={setGlassesDisplayFps}
             config={config}
+            sourceControl={makerStage === 'guide' && makerEnabled && !displayModeActive
+              ? <><div className="image-source-host" ref={setMobileControlsHost} />{gpioCaptureAction}</> : null}
+            sourceError={liveCamera.error}
+            sourceChanging={liveCamera.pending}
+            sourceUnavailable={config?.camera_source === 'phone' && !phoneReady}
+            onRetrySource={() => { if (!photoOperationBusy) void liveCamera.reconnect(); }}
             pinsById={pinsById}
             highlightIds={highlightIds}
             selectedPinId={selectedPinId}
@@ -663,6 +791,7 @@ export default function App() {
             onCloseCalibrate={handleCloseCalibrate}
             onCalibrationSuccess={() => void refreshAccuracy()}
             guideTarget={guideTarget}
+            overlayOverview={Boolean(project) && !displayModeActive && (!guideVisible || makerStage !== "guide" || maker.guide.phase !== "active")}
             overlayComponentId={project && makerStage === "guide" && !displayModeActive ? project.component_ids[maker.guide.componentIndex] ?? null : null}
             opticalHudCalibration={opticalHudCalibration}
             onOpticalHudCalibrationComplete={handleOpticalHudCalibrationComplete}
@@ -670,20 +799,22 @@ export default function App() {
             debugCaptureTask={debugCaptureSession?.capture_task}
             debugEvidence={debugCaptureSession?.evidence?.at(-1)}
             debugFramingFeedback={debugCaptureSession?.framing_feedback}
-          /> : null}
-          {project && makerStage === "guide" ? <WiringWorkspace design={project} guide={maker.guide} visible={guideVisible && !displayModeActive}
+          />
+          {floatingGuide ? <div className="floating-guide-dock">{guideVisibilityControl}</div> : null}
+          {project && makerStage === "guide" ? <WiringWorkspace guideOnly design={project} guide={maker.guide} visible={guideVisible && !displayModeActive}
+            panelId={floatingGuide ? 'maker-floating-guide' : undefined}
             assistantOpen={maker.debug?.panelOpen ?? false}
             onAssistantOpenChange={panelOpen=>setMaker(s=>({...s,debug:{...s.debug,panelOpen}}))}
-            onClose={()=>handleGuideVisibilityChange(false)} assistant={assistantPanel} busy={Boolean(aiDebug.record?.model_busy)}
+            onClose={()=>handleGuideVisibilityChange(false)} assistant={null} busy={Boolean(aiDebug.record?.model_busy)}
             replyId={(aiDebug.conversation?.messages ?? aiDebug.record?.messages)?.filter(message=>message.role==="assistant").at(-1)?.id}>
-            <ProjectGuidePanel design={project} session={maker.guide} visible embedded disabled={backendDown}
+            <ProjectGuidePanel design={project} session={maker.guide} visible embedded floating={floatingGuide} disabled={backendDown}
             pinsById={pinsById}
             onChange={guide => setMaker(s => ({ ...s, guide }))}
             onBeforeEdit={prepareWiringEdit}
             onRestart={restartWiringConversation}
-            onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={openDebug} onHelp={openWiringAssistant} onDeploy={() => navigateMaker("deploy")} />
+            onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={openDebug} onDeploy={() => navigateMaker("deploy")} />
           </WiringWorkspace> : null}
-          {emptyProjectGuide ? <section className="photo-guide component-guide compact-guide maker-guide-empty"
+          {emptyProjectGuide ? <section id={floatingGuide ? 'maker-floating-guide' : undefined} className="photo-guide component-guide compact-guide maker-guide-empty"
             hidden={!guideVisible} aria-labelledby="empty-project-guide-title">
             <header className="guide-panel-header"><div>
               <span className="guide-panel-eyebrow">{tr("02 · 接線引導", "02 · Wiring guide")}</span>
@@ -745,8 +876,9 @@ export default function App() {
           )}
         </GuidePaneLayout>
         {makerEnabled && makerStage === "deploy" ? <div className="maker-deploy-main"><PiDeployPanel project={project ?? undefined} draft={project ? maker.code : undefined}
-          onDebug={deployment=>{setGuideTarget(null);setMaker(s=>({...enterDebug(s),debug:{...s.debug,panelOpen:true,intent:"debug",source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined}}));}} onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
-        {makerStage === "deploy" ? <div className="deploy-camera-tools">{renderCameraTools()}</div> : null}
+          onDebug={deployment=>{openAssistant();setGuideTarget(null);setMaker(s=>({...s,debug:{...s.debug,panelOpen:true,intent:"debug",source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined}}));}} onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
+        </div>
+        </AssistantWorkspace>
       </main>
       {makerStage === "guide" && !fullWidthWiring ? <aside className="side">
         <CapabilityCard profile={profile} pin={selectedPin} backendDown={backendDown} />

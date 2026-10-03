@@ -1,0 +1,34 @@
+.image-view-controls { display:flex; align-items:center; flex-wrap:wrap; gap:10px; min-width:0; }
+.image-view-segments { display:flex; align-items:center; padding:3px; gap:2px; border:1px solid var(--border); border-radius:9px; background:var(--bg-panel); }
+.app.tinkro-theme:not(.display-mode-active) .image-view-segments>button { appearance:none; border:1px solid transparent; background:transparent; border-radius:6px; color:var(--muted); padding:5px 10px; font:inherit; font-size:11px; line-height:1.4; white-space:nowrap; cursor:pointer; }
+.app.tinkro-theme:not(.display-mode-active) .image-view-segments>button[aria-pressed="true"] { color:var(--brand-link); background:var(--surface-blue); border-color:var(--line-blue); }
+.app.tinkro-theme:not(.display-mode-active) .image-view-segments>button:not(:disabled):hover { color:var(--brand-link); background:var(--surface-blue); }
+.image-view-segments>button:disabled { cursor:not-allowed; opacity:.5; }
+.image-view-segments>button:focus-visible { outline:2px solid var(--brand-link); outline-offset:2px; }
+.image-source-host[hidden] { display:none; }
+.image-source-select { position:relative; width:146px; }
+.app.tinkro-theme:not(.display-mode-active) .image-source-trigger { appearance:none; display:flex; align-items:center; gap:8px; width:100%; min-height:34px; padding:0 11px; font:inherit; font-size:12px; font-weight:500; white-space:nowrap; color:#e3edf4; border:1px solid rgba(174,204,225,.24); border-radius:999px; background:rgba(16,24,35,.86); backdrop-filter:blur(14px); box-shadow:0 2px 10px #0002; cursor:pointer; }
+.image-source-trigger>svg { pointer-events:none; flex:none; color:#96b8d0; }
+.image-source-select .image-source-chevron { margin-left:auto; }
+.image-source-trigger[aria-expanded="true"] .image-source-chevron { transform:rotate(180deg); }
+.app.tinkro-theme:not(.display-mode-active) .image-source-trigger:is(:hover,[aria-expanded="true"]):not(:disabled) { color:#eff8ff; border-color:#73b9e789; background:#1b2a3bed; }
+.app.tinkro-theme:not(.display-mode-active) .image-source-trigger:focus-visible { outline:2px solid #88caff; outline-offset:3px; }
+/* Portalled above the resizable video: use a self-contained dark camera surface. */
+.image-source-menu { position:fixed; z-index:180; width:min(236px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); overflow:auto; box-sizing:border-box; padding:7px; border:1px solid #8db6d038; border-radius:15px; background:linear-gradient(145deg,#1c2938f5,#111923fa); backdrop-filter:blur(22px); box-shadow:0 16px 48px #0007,0 2px 8px #0004,inset 0 1px #c4e7ff0a; color:#e6f0f8; font-family:var(--font-sans,system-ui,sans-serif); color-scheme:dark; }
+.image-source-menu-heading { padding:6px 9px 8px; font-size:10px; font-weight:500; letter-spacing:.06em; color:#8da5b9; }
+.image-source-menu .image-source-option { appearance:none; display:flex; align-items:center; gap:10px; width:100%; min-height:60px; margin:0; padding:9px; border:1px solid transparent; border-radius:10px; background:transparent; color:#c5d3df; font:inherit; text-align:left; cursor:pointer; }
+.image-source-menu .image-source-option+.image-source-option { margin-top:3px; }
+.image-source-menu .image-source-option[aria-checked="true"] { background:#3c80ba25; border-color:#70b5ec35; color:#eaf6ff; }
+.image-source-menu .image-source-option:hover { background:#7bb4db1b; }
+.image-source-menu .image-source-option:focus-visible { outline:2px solid #86c8ff; outline-offset:-2px; background:#4986b42b; }
+.image-source-option-icon { display:grid; place-items:center; flex:none; width:32px; height:34px; border-radius:9px; background:#8cb3d00d; color:#9db8ce; }
+.image-source-option[aria-checked="true"] .image-source-option-icon { background:#619ed426; color:#9dd6ff; }
+.image-source-option-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; }
+.image-source-option-copy strong { font-size:12px; font-weight:600; }
+.image-source-option-copy small { font-size:11px; color:#8ea5b8; line-height:1.35; }
+.image-source-check { flex:none; color:#89caff; }
+@media(max-width:700px) {
+  .image-view-controls { gap:6px; }
+  .app.tinkro-theme:not(.display-mode-active) .image-view-segments>button { min-height:40px; padding:6px 9px; }
+  .app.tinkro-theme:not(.display-mode-active) .image-source-trigger { min-height:40px; }
+}

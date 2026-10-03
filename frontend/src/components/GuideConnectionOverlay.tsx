@@ -1,6 +1,7 @@
 import { useMemo, type CSSProperties } from "react";
 import { toDisplay, type Letterbox } from "../lib/geometry";
 import { useSmoothedDetection } from "../lib/useSmoothedDetection";
+import { guideConnectionColor } from "../lib/recognitionStyle";
 import type { ComponentPoseMessage, DetectionMessage } from "../lib/types";
 
 interface GuideConnectionOverlayProps {
@@ -14,12 +15,6 @@ interface GuideConnectionOverlayProps {
   boardDisplayOffsetPx: { x: number; y: number };
   held?: boolean;
 }
-
-const CONNECTION_COLORS: Readonly<Record<string, string>> = {
-  VCC: "#ff9a56",
-  GND: "#b4becd",
-  AO: "#5ee0b2",
-};
 
 /**
  * Visual-only link for the active wiring lesson. It connects the two live
@@ -82,7 +77,7 @@ export function GuideConnectionOverlay({
 
   if (!geometry) return null;
 
-  const color = CONNECTION_COLORS[componentPinId ?? ""] ?? "#66dfff";
+  const color = guideConnectionColor(componentPinId ?? "");
   const style = { "--guide-connection-color": color } as CSSProperties;
   // Display-only clearance: leave the real Pin centres unobstructed. Never
   // change the detected coordinates or feed this shortened line to checking.

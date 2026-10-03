@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, wait
 from copy import deepcopy
 import logging
 import math
 import threading
 import time
+from types import MappingProxyType
 
 import cv2
 
 from app.component_worker import component_pose_message, ComponentPoseTracker
+from app.eye_timing import wait_eye_deadline
 from app.vision.component_identity import hc_tft_conflict
 from app.vision.motion_tracking import MotionTrack, warm_motion_runtime
 from app.vision.body_tracking import BodyTrack
@@ -24,6 +27,30 @@ log = logging.getLogger(__name__)
 # Each supported component owns its template, loss state and semantic lease.
 TRACKED_COMPONENT_IDS = ('hc-sr04', 'mrd-tf240-8p-cs')
 PREDICTED_COMPONENT_IDS = ('hc-sr04', 'mrd-tf240-8p-cs')
+
+
+class _OrderedSearchBudget:
+    """Keep serial rotating recovery priority while independent LK runs overlap."""
+    def __init__(self, keys):
+        self.keys = keys
+        self.finished = set()
+        self.count = 0
+        self.condition = threading.Condition()
+
+    def claim(self, key):
+        with self.condition:
+            earlier = self.keys[:self.keys.index(key)]
+            self.condition.wait_for(lambda: self.count or all(k in self.finished for k in earlier))
+            if self.count:
+                return False
+            self.count = 1
+            self.condition.notify_all()
+            return True
+
+    def finish(self, key):
+        with self.condition:
+            self.finished.add(key)
+            self.condition.notify_all()
 
 
 def tracking_gray(frame):
@@ -95,7 +122,7 @@ class MotionFrameState:
 
 
 class MotionOverlayWorker:
-    def __init__(self, bus, detection_state, component_state, runtime_manager, state, hz=30, body_state=None, background_recovery_enabled=False):
+    def __init__(self, bus, detection_state, component_state, runtime_manager, state, hz=30, body_state=None, background_recovery_enabled=False, phone_parallel=None):
         self.bus, self.detection_state = bus, detection_state
         self.component_state, self.runtime_manager = component_state, runtime_manager
         self.state = state
@@ -103,6 +130,9 @@ class MotionOverlayWorker:
         self.set_target_fps(hz)
         self._stop = threading.Event()
         self._thread = None
+        self._process_lock = threading.Lock()
+        self._executor = None
+        self.phone_parallel = phone_parallel or (lambda: False)
         self.tracks: dict[str, MotionTrack] = {}
         self.body_tracks: dict[str, BodyTrack] = {}
         self.context = None
@@ -130,9 +160,22 @@ class MotionOverlayWorker:
             if self._thread.is_alive():
                 raise RuntimeError('motion worker did not stop')
             self._thread = None
+        # A timeout retains the executor and track ownership. A later stop can
+        # finish draining; never reset state underneath native OpenCV work.
+        if not self._process_lock.acquire(timeout=2):
+            raise RuntimeError('motion processing did not stop')
+        try:
+            self._close_executor()
+        finally:
+            self._process_lock.release()
         if self.background_recovery is not None:
             self.background_recovery.close()
             self.background_recovery = None
+
+    def _close_executor(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            self._executor = None
 
     def set_target_fps(self, hz):
         hz = float(hz)
@@ -144,6 +187,15 @@ class MotionOverlayWorker:
         """Call while stopped; keep the shared bus sequence monotonic."""
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError('stop motion worker before resetting tracking')
+        if not self._process_lock.acquire(blocking=False):
+            raise RuntimeError('stop motion processing before resetting tracking')
+        try:
+            self._close_executor()
+            self._reset_tracking()
+        finally:
+            self._process_lock.release()
+
+    def _reset_tracking(self):
         self.tracks.clear()
         self.body_tracks.clear()
         self.context = None
@@ -156,7 +208,21 @@ class MotionOverlayWorker:
         self.component_predictions = {key: DisplayPrediction() for key in PREDICTED_COMPONENT_IDS}
 
     def process(self, slot):
+        # The owner never starts another frame while any object task is alive.
+        with self._process_lock:
+            try:
+                return self._process(slot)
+            except Exception:
+                # _process drains every submitted future before propagating.
+                self.tracks.clear()
+                self.body_tracks.clear()
+                raise
+
+    def _process(self, slot):
         started = time.perf_counter()
+        parallel = bool(self.phone_parallel())
+        if not parallel:
+            self._close_executor()
         runtime = self.runtime_manager.snapshot()
         context = (runtime.board_id, runtime.runtime_revision, slot.frame.shape)
         if self.context != context or slot.seq <= self.previous_seq or slot.frame_id <= self.previous_frame_id:
@@ -228,11 +294,41 @@ class MotionOverlayWorker:
         keys = list(templates)
         offset = self.search_turn % len(keys)
         self.search_turn += 1
+        ordered_keys = keys[offset:] + keys[:offset]
         outputs, object_ms, deferred = {}, {}, []
-        for key in keys[offset:] + keys[:offset]:
+        prepare_started = time.perf_counter()
+        if parallel:
+            # All shared image preparation belongs to the frame owner. Object
+            # jobs read the same cache and only mutate their own track/predictor.
+            for key in ordered_keys:
+                track = self.tracks.setdefault(key, MotionTrack())
+                track.fresh_recovery_enabled = key == 'board' or key in PREDICTED_COMPONENT_IDS
+                body_track = self.body_tracks.setdefault(key, BodyTrack())
+                seed = seed_map.get(key)
+                if seed is not None:
+                    source, message = seed
+                    if (0 <= slot.ts_ms - source.ts_ms <= 750
+                            and source.frame_id > track.seen_seed
+                            and track.needs_source_image(message)):
+                        cache_key = (source.frame_id, source.seq)
+                        if cache_key not in gray_cache:
+                            gray_cache[cache_key] = tracking_gray(source.frame)
+                body_seed = body_seed_map.get(key)
+                if body_seed is not None:
+                    source, message = body_seed
+                    if (0 <= slot.ts_ms - source.ts_ms <= 650
+                            and message.get('body') is not None
+                            and source.frame_id > body_track.seen_frame):
+                        cache_key = (source.frame_id, source.seq)
+                        if cache_key not in gray_cache:
+                            gray_cache[cache_key] = tracking_gray(source.frame)
+            gray_cache = MappingProxyType(gray_cache)
+        prepare_ms = (time.perf_counter() - prepare_started) * 1000
+
+        def process_object(key, claim):
             template = templates[key]
             object_started = time.perf_counter()
-            track = self.tracks.setdefault(key, MotionTrack())
+            track = self.tracks[key] if parallel else self.tracks.setdefault(key, MotionTrack())
             track.fresh_recovery_enabled = key == 'board' or key in PREDICTED_COMPONENT_IDS
             seed = seed_map.get(key)
             if seed is not None:
@@ -253,9 +349,8 @@ class MotionOverlayWorker:
                         track.observe(message, source_gray, source_scale)
             if key == 'board':
                 track.flow.background_recovery = self.background_recovery
-            tracked = track.update(gray, slot.frame_id, slot.ts_ms, search_budget=claim_search)
-            if track.flow.search_deferred:
-                deferred.append(key)
+            tracked = track.update(gray, slot.frame_id, slot.ts_ms, search_budget=claim)
+            search_deferred = track.flow.search_deferred
             if tracked is None:
                 # Diagnostics expose short recovery without presenting old
                 # geometry as current. Both original WS and wiring stay intact.
@@ -272,7 +367,6 @@ class MotionOverlayWorker:
                 tracked = self.prediction.apply(tracked)
             elif key in self.component_predictions:
                 tracked = self.component_predictions[key].apply(tracked)
-            outputs[key] = tracked
             # Keep upstream evidence alongside the display decision. A lost
             # flow template alone cannot explain why no fresh seed arrived.
             source_info = {'paired': seed is not None}
@@ -288,7 +382,7 @@ class MotionOverlayWorker:
             tracked.setdefault('pose_quality', {})['model_source'] = source_info
             # Object identity/box transport is independent of semantic pin
             # orientation. Always use the detector's actual paired pixels.
-            body_track = self.body_tracks.setdefault(key, BodyTrack())
+            body_track = self.body_tracks[key] if parallel else self.body_tracks.setdefault(key, BodyTrack())
             body_seed = body_seed_map.get(key)
             if body_seed is not None:
                 body_source, body_message = body_seed
@@ -310,7 +404,45 @@ class MotionOverlayWorker:
                 tracked['outline'] = None
                 tracked['pins'] = []
                 tracked['pose_quality']['reason'] = 'pin_orientation_unverified'
-            object_ms[key] = round((time.perf_counter()-object_started)*1000, 2)
+            return tracked, round((time.perf_counter()-object_started)*1000, 2), search_deferred
+
+        jobs_started = time.perf_counter()
+        if parallel:
+            if self._executor is None:
+                self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='phone-motion')
+            budget = _OrderedSearchBudget(ordered_keys)
+
+            def run_object(key):
+                try:
+                    return process_object(key, lambda: budget.claim(key))
+                finally:
+                    budget.finish(key)
+
+            futures = []
+            try:
+                for key in ordered_keys:
+                    futures.append(self._executor.submit(run_object, key))
+            except BaseException:
+                # submit may queue work before Thread.start raises, without
+                # returning its Future. Drain the executor itself in that case.
+                self._close_executor()
+                raise
+            else:
+                # Even an exception/stop must join all jobs before clearing any
+                # shared context or publishing a subsequent frame.
+                wait(futures)
+            results = [future.result() for future in futures]
+            search_count = budget.count
+        else:
+            results = [process_object(key, claim_search) for key in ordered_keys]
+        object_wall_ms = (time.perf_counter() - jobs_started) * 1000
+        for key, (tracked, elapsed, search_deferred) in zip(ordered_keys, results):
+            outputs[key], object_ms[key] = tracked, elapsed
+            if search_deferred:
+                deferred.append(key)
+        if parallel and (self._stop.is_set() or not self.phone_parallel()
+                         or self.runtime_manager.snapshot().runtime_revision != runtime.runtime_revision):
+            return None
         self._resolve_component_identities(outputs, slot, seed_map)
         detection = outputs['board']
         components = [outputs[key] for key in keys if key != 'board']
@@ -342,7 +474,10 @@ class MotionOverlayWorker:
             'detection': detection, 'components': components,
             'display_only': True,
             'timing_ms': {'gray': round(gray_ms, 2), 'objects': object_ms,
+                          'source_gray': round(prepare_ms, 2),
+                          'objects_wall': round(object_wall_ms, 2),
                           'jpeg': round((time.perf_counter()-jpeg_started)*1000, 2)},
+            'tracking_execution': 'phone_parallel' if parallel else 'serial',
             'recovery_searches': search_count, 'recovery_deferred': deferred,
             'pi_recovery_mode': 'background_predicted_roi' if self.background_recovery is not None else 'synchronous',
             'pi_fresh_source_recovery': True,
@@ -398,17 +533,28 @@ class MotionOverlayWorker:
             if slot is None:
                 continue
             last_seq = slot.seq
-            started = time.monotonic()
+            started = time.perf_counter()
             try:
                 packet = self.process(slot)
-                if packet is not None:
-                    packet['processing_ms'] = round((time.monotonic() - started) * 1000, 2)
+                if packet is not None and not self._stop.is_set():
+                    packet['processing_ms'] = round((time.perf_counter() - started) * 1000, 2)
                     packet['tracking_diagnostics'] = self.diagnostics.record(
                         packet, packet['processing_ms'], self.interval * 1000,
                     )
-                    self.state.set(packet, slot)
+                    current = self.runtime_manager.snapshot()
+                    phone_current = packet.get('tracking_execution') != 'phone_parallel' or (
+                        self.phone_parallel()
+                        and (current.board_id, current.runtime_revision)
+                        == (packet['board_id'], packet['runtime_revision']))
+                    if not self._stop.is_set() and phone_current:
+                        self.state.set(packet, slot)
             except Exception:
                 self.tracks.clear()
                 self.body_tracks.clear()
                 log.exception('motion display failed for frame %s', slot.frame_id)
-            self._stop.wait(max(0, self.interval - (time.monotonic() - started)))
+            if self.phone_parallel():
+                # Keep the rate cap without Windows Event.wait's coarse tick
+                # adding another ~15 ms to the now shorter phone processing.
+                wait_eye_deadline(self._stop, started + self.interval)
+            else:
+                self._stop.wait(max(0, self.interval - (time.perf_counter() - started)))

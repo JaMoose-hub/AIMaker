@@ -49,7 +49,7 @@ try{
     await context.addInitScript(value=>localStorage.setItem('boardvision.locale.v1',value),locale);
     await context.route('**/*',route=>{
       const u=new URL(route.request().url());
-      const allowed=u.origin===new URL(design.url).origin&&['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg'].includes(u.pathname)
+      const allowed=u.origin===new URL(design.url).origin&&['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg'].includes(u.pathname)
         ||u.origin===new URL(wiring.url).origin&&fixtureRequestAllowed(u.pathname+u.search);
       if(allowed)return route.continue();report.denied.push(u.href);return route.abort();
     });

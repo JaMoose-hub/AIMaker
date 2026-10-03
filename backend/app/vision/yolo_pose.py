@@ -20,6 +20,7 @@ from typing import Protocol
 
 import cv2
 import numpy as np
+from app.vision.model_lock import serialized_model_call
 
 log = logging.getLogger(__name__)
 
@@ -487,6 +488,7 @@ class OpenCvYoloPoseLocator:
         """Return an unverified candidate without changing the normal gate."""
         return self._locate(frame_bgr, confidence_threshold)
 
+    @serialized_model_call
     def _locate(self, frame_bgr: np.ndarray, candidate_threshold=None) -> BoardPoseObservation | None:
         if self._net is None or frame_bgr is None or frame_bgr.size == 0:
             return None
@@ -519,6 +521,7 @@ class OpenCvYoloPoseLocator:
                 self._warned = True
             return None
 
+    @serialized_model_call
     def close(self) -> None:
         self._net = None
 
@@ -599,6 +602,7 @@ class DirectMlYoloPoseLocator:
     def available(self) -> bool:
         return self._session is not None and self._input_name is not None
 
+    @serialized_model_call
     def locate(self, frame_bgr: np.ndarray) -> BoardPoseObservation | None:
         if not self.available or frame_bgr is None or frame_bgr.size == 0:
             return None
@@ -633,6 +637,7 @@ class DirectMlYoloPoseLocator:
                 self._warned = True
             return None
 
+    @serialized_model_call
     def close(self) -> None:
         self._session = None
         self._input_name = None

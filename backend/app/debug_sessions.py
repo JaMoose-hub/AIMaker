@@ -356,7 +356,7 @@ class DebugSessions:
             raise ValueError("invalid_response_mode")
         if not symptom.strip():
             raise ValueError("symptom_required")
-        if self.state.config.camera.source != "device":
+        if self.state.config.camera.source not in {"device", "phone"}:
             raise ValueError("webcam_required")
         glasses = getattr(self.state, "glasses_stream", None)
         if glasses is not None:
@@ -547,7 +547,7 @@ class DebugSessions:
                     or metadata.get("ts_ms", -1) < metadata["phase_evidence"].get("received_monotonic_ms", float("inf")) + 150):
                 raise ValueError("stale_camera_phase")
         data = images.get("overview")
-        if not isinstance(data, bytes) or not data or metadata.get("source") != "device":
+        if not isinstance(data, bytes) or not data or metadata.get("source") not in {"device", "phone"}:
             raise ValueError("physical_webcam_frame_required")
         current_camera = self._camera()
         if (metadata.get("runtime_revision") != current_camera["runtime_revision"]

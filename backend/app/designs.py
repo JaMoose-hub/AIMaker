@@ -96,6 +96,7 @@ class WorkflowContext(BaseModel):
     active_wire: str | None = Field(default=None, max_length=150)
     manual_confirmations: int = Field(default=0, ge=0, le=100)
     code_draft: str = Field(default="", max_length=16000)
+    assistant_evidence: dict = Field(default_factory=dict)
 
 
 class AssistantReply(BaseModel):

@@ -1,0 +1,411 @@
+/* Unified workspace: scoped away from optical HUD/Eye and photo-wiring PoC. */
+.mobile-web-app,
+.unified-assistant {
+  --chat-user-bg: #192b46; --chat-user-border: #365b89; --chat-user-ink: #a9ceff;
+  --chat-ai-bg: #142b28; --chat-ai-border: #2f554d; --chat-ai-ink: #80ddcb;
+}
+:root[data-theme="light"] .mobile-web-app,
+:root[data-theme="light"] .unified-assistant {
+  --chat-user-bg: #eaf2ff; --chat-user-border: #b0c8e8; --chat-user-ink: #2a5f9e;
+  --chat-ai-bg: #edf8f4; --chat-ai-border: #b6d8ce; --chat-ai-ink: #0b6f63;
+}
+.assistant-workspace { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.assistant-work-surface, .assistant-project-workspace { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.assistant-workspace.is-unified { display: grid; grid-template-columns: minmax(0, 1fr) 12px var(--assistant-width, 400px); transition: grid-template-columns 240ms cubic-bezier(.22,.68,0,1); }
+.assistant-workspace.is-unified.ai-collapsed { grid-template-columns: minmax(0, 1fr) 8px 64px; }
+.assistant-workspace [hidden] { display: none !important; }
+.assistant-workspace .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.assistant-workspace :is(.unified-assistant, .assistant-demo-workspace, .assistant-mobile-tabs) button,
+.assistant-workspace :is(.assistant-collapse, .assistant-demo-entry) {
+  border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-card); color: var(--ink-primary);
+  padding: 6px 9px; font-family: inherit; line-height: 1.4; cursor: pointer; transition: background-color 120ms, border-color 120ms;
+}
+.assistant-workspace :is(.unified-assistant, .assistant-demo-workspace, .assistant-mobile-tabs) button:not(:disabled):hover { background: var(--surface-blue); border-color: var(--brand-link); }
+.assistant-workspace :is(.unified-assistant, .assistant-demo-workspace) button.maker-primary { background: var(--brand-teal); color: #04241f; border-color: var(--brand-teal); }
+.assistant-workspace :is(.unified-assistant, .assistant-demo-workspace) button.maker-primary:not(:disabled):hover { background: var(--brand-action-hover); }
+.assistant-workspace button:disabled { opacity: .5; cursor: not-allowed; }
+.assistant-workspace button:not(:disabled):active { border-color: var(--brand-link); }
+.assistant-chat-surface { min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; border: 1px solid var(--line-default); border-radius: 8px; background: var(--surface-card); }
+.assistant-chat-content { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.app.tinkro-theme:not(.display-mode-active) .assistant-workspace .assistant-collapse {
+  position: absolute; right: 7px; top: 5px; z-index: 2; display: grid; place-items: center;
+  width: 46px; height: 46px; padding: 0; border-radius: 50%; border: 1px solid transparent;
+  background: transparent; box-shadow: none; isolation: isolate;
+}
+.app.tinkro-theme:not(.display-mode-active) .assistant-workspace .assistant-collapse:hover,
+.app.tinkro-theme:not(.display-mode-active) .assistant-workspace .assistant-collapse:focus-visible {
+  background: transparent; border-color: transparent;
+}
+/* A luminous glass core, rather than another outlined toolbar button. The
+   animated halo only changes opacity; the hit area and layout stay still. */
+.assistant-collapse::before {
+  content: ""; position: absolute; inset: -6px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, rgb(61 211 212 / 28%), rgb(72 128 255 / 12%) 45%, transparent 70%);
+  opacity: .65; pointer-events: none; animation: assistant-orb-breathe 5.6s ease-in-out infinite;
+}
+.assistant-orb {
+  position: relative; display: block; width: 36px; height: 36px; border-radius: 50%; isolation: isolate;
+  border: 1px solid rgb(150 235 245 / 65%); overflow: hidden;
+  background: radial-gradient(ellipse at 28% 18%, rgb(232 255 255 / 90%), rgb(139 244 242 / 24%) 25%, transparent 48%),
+    radial-gradient(ellipse at 74% 84%, #315ac4, transparent 62%), linear-gradient(145deg, #168e91, #195876 55%, #10203e);
+  box-shadow: inset 1px 1px 2px rgb(225 255 255 / 60%), inset -3px -4px 8px rgb(2 15 49 / 55%), 0 3px 10px rgb(0 12 32 / 35%), 0 0 12px rgb(48 190 209 / 18%);
+  transition: transform 220ms ease, box-shadow 220ms ease; pointer-events: none;
+}
+.assistant-orb::before {
+  content: ""; position: absolute; top: 3px; left: 7px; width: 19px; height: 8px; border-radius: 50%;
+  background: linear-gradient(rgb(240 255 255 / 52%), transparent); transform: rotate(-28deg); pointer-events: none;
+}
+.assistant-orb-energy {
+  position: absolute; inset: 3px 1px; border-radius: inherit;
+  background: conic-gradient(from 35deg, transparent 8%, #8bf9e8 28%, transparent 48%, #79abff 72%, transparent 92%);
+  mask-image: radial-gradient(farthest-side, transparent 56%, #000 72%, transparent 96%);
+  opacity: .7; transform: rotate(-30deg) scaleY(.68);
+  transition: transform 650ms ease, opacity 220ms ease; pointer-events: none;
+}
+.assistant-orb-core { position: absolute; width: 21px; height: 21px; inset: 0; margin: auto; color: #e1fffc; filter: drop-shadow(0 0 3px rgb(127 245 239 / 70%)); transition: opacity 180ms ease, transform 220ms ease; }
+.assistant-orb-chevron { position: absolute; width: 18px; height: 18px; inset: 0; margin: auto; color: #efffff; opacity: 0; transition: opacity 180ms ease, transform 240ms ease; }
+.assistant-collapse:is(:hover, :focus-visible) .assistant-orb { transform: scale(1.07); box-shadow: inset 1px 1px 3px rgb(225 255 255 / 70%), inset -3px -4px 8px rgb(2 15 49 / 45%), 0 3px 12px rgb(0 12 32 / 30%), 0 0 18px rgb(48 190 209 / 40%); }
+.assistant-collapse:is(:hover, :focus-visible) .assistant-orb-energy { transform: rotate(65deg) scaleY(.68); opacity: 1; }
+.assistant-collapse:is(:hover, :focus-visible) .assistant-orb-core { opacity: 0; transform: scale(.75); }
+.assistant-collapse:is(:hover, :focus-visible) .assistant-orb-chevron { opacity: 1; }
+.assistant-collapse:active .assistant-orb { transform: scale(.94); }
+:root[data-theme="light"] .assistant-orb { border-color: rgb(36 140 164 / 65%); box-shadow: inset 1px 1px 2px rgb(225 255 255 / 65%), inset -3px -4px 8px rgb(2 15 49 / 40%), 0 3px 9px rgb(25 90 136 / 24%); }
+@keyframes assistant-orb-breathe { 0%, 100% { opacity: .45; } 50% { opacity: .9; } }
+.assistant-orb-label { display: none; }
+.assistant-orb-unread { position: absolute; right: 3px; top: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--brand-teal); box-shadow: 0 0 0 3px var(--surface-card); }
+.ai-collapsed .assistant-chat-content { display: none; }
+.ai-collapsed .assistant-chat-surface { align-items: center; border-color: transparent; background: transparent; }
+.app.tinkro-theme:not(.display-mode-active) .assistant-workspace.ai-collapsed .assistant-collapse { position: relative; top: auto; right: auto; margin-top: 6px; }
+.ai-collapsed .assistant-orb-chevron { transform: rotate(180deg); }
+.ai-collapsed .assistant-orb-label { display: block; position: absolute; top: calc(100% + 6px); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--ink-secondary); }
+.assistant-resizer { cursor: col-resize; touch-action: none; margin: 0 2px; border-radius: 6px; }
+.assistant-resizer:hover, .assistant-resizer:focus-visible { background: var(--surface-blue); }
+.assistant-workspace :focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+.assistant-mobile-tabs { display: none; }
+.unified-assistant { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; color: var(--ink-primary); }
+.unified-assistant-heading { display: flex; align-items: center; justify-content: space-between; padding-right: 52px !important; min-height: 36px; flex: none; gap: 6px; }
+.unified-assistant-heading > div { min-width: 0; }
+.assistant-more { flex: none; }
+.unified-assistant-heading > div { display: flex; flex-direction: column; gap: 3px; }
+.unified-assistant small { color: var(--ink-secondary); font-size: 11px; }
+.unified-assistant button { font-size: 12px; }
+.assistant-media-reference { display:block; padding:5px 8px; border-left:2px solid var(--brand-link); background:var(--surface-blue); overflow-wrap:anywhere; }
+.assistant-more { position: relative; }
+.assistant-more > summary { cursor: pointer; font-size: 12px; }
+.assistant-more[open] > div { position: absolute; right: 0; top: 24px; width: min(260px, 65vw); max-height: 55vh; overflow: auto; z-index: 30; border: 1px solid var(--line-strong); padding: 10px; display: grid; gap: 8px; border-radius: 8px; background: var(--surface-card); box-shadow: var(--shadow-popover); }
+.assistant-more fieldset { min-width: 0; display: grid; gap: 8px; }
+.assistant-more label { display: flex; gap: 6px; font-size: 12px; }
+.unified-message-list { flex: 1 1 180px; min-height: 70px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.unified-message-list .ai-debug-message { max-width: 100%; margin: 0 3px 10px; padding: 12px; border: 1px solid var(--line-default); background: var(--surface-subtle); border-radius: 8px; }
+.unified-message-list .is-user { margin-left: 22px; }
+.unified-message-list .is-assistant { margin-right: 12px; }
+/* Outrank legacy theme bubble rules without recoloring debug/evidence cards. */
+.app.tinkro-theme:not(.display-mode-active) .unified-message-list .ai-debug-message.is-user { background: var(--chat-user-bg); border-color: var(--chat-user-border); }
+.app.tinkro-theme:not(.display-mode-active) .unified-message-list .ai-debug-message.is-assistant { background: var(--chat-ai-bg); border-color: var(--chat-ai-border); }
+.unified-message-list .is-user > header > strong { color: var(--chat-user-ink); }
+.unified-message-list .is-assistant > header > strong { color: var(--chat-ai-ink); }
+.unified-message-list article > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.assistant-message-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; }
+.is-archived { border-style: dashed !important; }
+.assistant-checklist { padding: 12px; border: 1px dashed var(--line-strong); border-radius: 8px; background: var(--surface-subtle); font-size: 13px; }
+.assistant-checklist h3 { margin: 0 0 8px; font-size: 15px; }
+.assistant-checklist h4 { margin: 14px 0 5px; font-size: 13px; }
+.assistant-checklist ul { margin: 0; padding-left: 20px; line-height: 1.75; }
+.assistant-checklist-actions { display: grid; gap: 6px; }
+.assistant-checklist-actions > button { white-space: normal; }
+.assistant-confirm, .assistant-job-error { padding: 8px; border: 1px solid var(--line-warn); border-radius: 6px; font-size: 12px; overflow-wrap: anywhere; }
+.assistant-job-error { margin-bottom: 8px; color: var(--status-warn); }
+.unified-composer { flex: none; display: grid; gap: 6px; }
+.assistant-input-actions { display: flex; align-items: center; gap: 3px; flex: none; padding: 3px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface-card); box-shadow: 0 2px 6px rgb(0 0 0 / 8%); }
+.assistant-input-actions .maker-model-menu { position: static; flex: none; min-width: 0; }
+.assistant-input-actions .maker-model-menu > summary { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; box-sizing: border-box; border: 1px solid transparent; border-radius: 50%; color: var(--ink-secondary); background: transparent; transition: background-color 120ms, color 120ms; }
+.assistant-input-actions .maker-model-menu > summary:hover,
+.assistant-input-actions .maker-model-menu[open] > summary { color: var(--brand-link); border-color: var(--brand-link); background: var(--surface-blue); }
+.assistant-input-actions .maker-model-popover { top: auto; bottom: calc(100% + 8px); left: 0; right: auto; width: 100%; box-sizing: border-box; max-height: min(60dvh, 520px); padding: 12px; }
+.assistant-input-actions .maker-ai-selects { grid-template-columns: minmax(0, 1fr); }
+.assistant-input-actions .maker-ai-selects :is(label, select) { min-width: 0; max-width: 100%; }
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send {
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid rgb(166 240 241 / 65%); border-radius: 50%;
+  background: linear-gradient(140deg,#91ede0,#6bc8e9 62%,#a0b2ff); color: #112c46;
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 65%), 0 2px 7px rgb(33 150 183 / 22%);
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:not(:disabled):hover { transform: translateY(-1px); background: linear-gradient(140deg,#b2f8e9,#8bddf2 62%,#b6c4ff); box-shadow: 0 0 14px rgb(80 193 226 / 35%); }
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:not(:disabled):active { transform: scale(.94); }
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:disabled { opacity: 1; color: var(--ink-secondary); background: var(--surface-blue); border-color: var(--line-default); box-shadow: none; }
+.assistant-send-pending { display: flex; align-items: center; gap: 3px; }
+.assistant-send-pending i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; animation: assistant-send-wait 1.2s ease-in-out infinite; }
+.assistant-send-pending i:nth-child(2) { animation-delay: .15s; }
+.assistant-send-pending i:nth-child(3) { animation-delay: .3s; }
+@keyframes assistant-send-wait { 0%,80%,100% { opacity: .35; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+.assistant-quick { display: flex; gap: 4px; flex-wrap: wrap; }
+.assistant-quick button { padding: 4px 6px; font-size: 11px; }
+.assistant-context-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.assistant-wire-context { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-suggestions { flex: none; }
+.assistant-suggestions > summary { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 6px; border-radius: 6px; color: var(--ink-secondary); cursor: pointer; list-style: none; font-size: 11px; }
+.assistant-suggestions > summary::-webkit-details-marker { display: none; }
+.assistant-suggestions > summary:hover, .assistant-suggestions[open] > summary { background: var(--surface-blue); color: var(--brand-link); }
+.assistant-suggestion-list { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 35; width: min(280px, 100%); box-sizing: border-box; padding: 6px; display: grid; gap: 3px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-card); box-shadow: var(--shadow-popover); }
+.assistant-workspace .assistant-suggestion-list > button { text-align: left; white-space: normal; padding: 9px 10px; border-color: transparent; }
+.assistant-input {
+  position: relative; isolation: isolate; display: flex; align-items: flex-end; gap: 6px;
+  border: 1px solid transparent; border-radius: 14px; padding: 10px;
+  background: linear-gradient(var(--surface-chat),var(--surface-chat)) padding-box,
+    linear-gradient(90deg,rgb(124 92 255 / 90%),rgb(65 122 190 / 95%),rgb(22 185 166 / 90%)) border-box;
+}
+.assistant-input::before {
+  content: ""; position: absolute; inset: -3px; z-index: -1; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(90deg,#7c5cff,#417abe,#16b9a6); filter: blur(18px); opacity: var(--prompt-glow);
+  transition: opacity 140ms ease;
+}
+.assistant-input::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: 13px; background: var(--surface-chat);
+}
+.assistant-input:focus-within { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+.assistant-input:focus-within::before { opacity: calc(var(--prompt-glow) + .14); }
+.assistant-input textarea {
+  --prompt-scroll-thumb: color-mix(in srgb, var(--ink-secondary) 42%, transparent);
+  min-width: 0; flex: 1; width: 100%; min-height: 60px; max-height: 160px;
+  resize: vertical; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  padding-inline-end: 4px; border: 0; background: transparent; color: var(--ink-primary);
+  box-shadow: none; font: inherit; font-size: 13px;
+  scrollbar-width: thin; scrollbar-color: var(--prompt-scroll-thumb) transparent;
+}
+.assistant-input textarea::-webkit-scrollbar { width: 5px; height: 5px; }
+.assistant-input textarea::-webkit-scrollbar-track { background: transparent; }
+.assistant-input textarea::-webkit-scrollbar-thumb { background: var(--prompt-scroll-thumb); border-radius: 999px; }
+.assistant-input textarea::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--ink-secondary) 65%, transparent); }
+.assistant-input textarea::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.assistant-input textarea::-webkit-scrollbar-corner { background: transparent; }
+/* Chromium's standard scrollbar properties override its custom pseudos. */
+@supports selector(::-webkit-scrollbar) {
+  .assistant-input textarea { scrollbar-width: auto; scrollbar-color: auto; }
+}
+.app.tinkro-theme:not(.display-mode-active) .assistant-input textarea { background: transparent; border: 0; box-shadow: none; }
+.app.tinkro-theme:not(.display-mode-active) .assistant-input textarea:focus-visible { outline: none; }
+.assistant-input button { flex: none; min-width: 32px; min-height: 32px; }
+.assistant-demo-workspace { flex: 1; min-height: 0; overflow: auto; }
+.assistant-demo-workspace > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+.assistant-demo-workspace .project-image-concept img { max-height: 48vh; object-fit: contain; }
+.assistant-blueprint { min-height: 0; overflow: auto; }
+.assistant-build-details { margin-top: 10px; }
+.assistant-build-details > summary { padding: 12px; background: var(--surface-card); border: 1px solid var(--line-default); border-radius: 6px; cursor: pointer; }
+.assistant-build-details .maker-blueprint-sidebar { margin-top: 8px; }
+/* Override the legacy side-by-side guide, including display:contents on VideoView.
+   This only resizes the existing camera/overlay tree; it never moves or remounts it. */
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .video-guide-stage.assistant-wiring-stage {
+  display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px; overflow: auto; overscroll-behavior: contain;
+}
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .video-workspace {
+  display: flex; flex-direction: column; flex: 1 0 280px; min-height: 280px; width: 100%; gap: 8px;
+}
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage .video-workspace > :is(.video-shell, .maker-2d-main) {
+  flex: 1; min-height: 0;
+}
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage .video-control-toolbar {
+  position: static; display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; width: 100%; max-width: none; gap: 6px;
+}
+.assistant-guide-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-right: auto; }
+.app:not(.display-mode-active) .is-unified .assistant-guide-tools .guide-visibility-toggle {
+  position: static; transform: none; width: auto; order: 0; margin: 0;
+}
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .wiring-workspace {
+  position: static; flex: 0 0 auto; width: 100%; height: clamp(290px, 36dvh, 350px); min-height: 0; max-height: none; grid-area: auto;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace-view { min-height: 0; overflow: hidden; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .compact-guide {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 26%); grid-template-rows: auto minmax(0, 1fr);
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-panel-header-embedded { grid-column: 1 / -1; padding: 6px 12px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-panel-body { grid-column: 1; grid-row: 2; padding: 10px 12px; }
+/* Temporarily hide the optional disclosure, without deleting wiring records. */
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-panel-reference { display: none; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-panel-footer {
+  grid-column: 2; grid-row: 2; display: flex; flex-direction: column; justify-content: center; min-height: 0; min-width: 0; border-top: 0; border-left: 1px solid var(--line-default); overflow: hidden;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-panel-footer:has(.guide-test-controls) { justify-content: flex-start; gap: 10px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-navigation { flex: none; flex-wrap: wrap; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-navigation > button { min-width: 0; white-space: normal; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; border-top: 1px solid var(--line-default); padding-top: 8px; scrollbar-gutter: stable; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls > h3 { margin: 0 0 6px; color: var(--ink-secondary); font-size: 11px; font-weight: 500; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls .component-test-card { margin: 0; padding: 0; border: 0; border-radius: 0; gap: 8px; font-size: 12px; background: transparent; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls .test-actions { gap: 6px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls .test-actions > button { flex: 1 1 100%; min-height: 34px; padding: 6px 8px; font-size: 12px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls .test-visual-confirm { margin: 0; padding: 8px; gap: 8px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls .test-code-options { gap: 4px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls .test-code-options label { padding: 6px 4px; }
+/* Keep display confirmation compact; these are alternatives, not three steps. */
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .guide-test-controls { scrollbar-gutter: auto; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .test-visual-confirm { gap: 6px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .test-visual-confirm .test-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .test-visual-confirm .test-actions > button:last-child { grid-column: 1 / -1; }
+@media (min-width: 1101px) {
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .compact-guide.review { grid-template-columns: minmax(0, 1fr) minmax(250px, 32%); }
+  .app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .guide-test-controls .component-test-card > .test-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .guide-test-controls .component-test-card > .test-actions > :is(small, .guide-primary-action) { grid-column: 1 / -1; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .test-visual-confirm .test-code-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .test-code-options label { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 6px 2px; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .test-code-options input { margin: 0; }
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-test-controls :is(button, input) { scroll-margin-block: 8px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .compact-guide.review > .guide-panel-body { gap: 6px; padding: 8px 12px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.review .guide-reference-toggle { min-height: 28px; padding: 4px 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-module-review { padding: 2px 10px; gap: 4px 8px; background: transparent; border-color: transparent; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-module-review > strong { font-size: 13px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .component-test-card[data-view="instructions"] { margin: 0; padding: 8px 10px; gap: 6px; font-size: 12px; line-height: 1.5; }
+.app.maker-layout:not(.display-mode-active) .is-unified .component-test-card[data-view="instructions"] header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .component-test-card[data-view="instructions"] .test-outcome { font-size: 16px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .component-test-card[data-view="instructions"] .test-next-step { padding: 8px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .component-test-card[data-view="instructions"] .test-reading { margin: 0; min-height: 0; font-size: 22px; line-height: 1.25; }
+.app.maker-layout:not(.display-mode-active) .is-unified .component-test-card[data-view="instructions"] :is(.test-diagnostics > summary, .test-safety-note) { font-size: 11px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-step-note { display: block; margin: 8px 0; color: var(--ink-secondary); font-size: 11px; line-height: 1.5; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-connection-card { padding: 10px 12px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-pin-pair { grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr); gap: 8px; align-items: center; margin: 8px 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-endpoint { padding: 8px 10px; border: 1px solid var(--line-default); border-radius: 6px; background: var(--surface-card); gap: 4px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-endpoint > span { font-size: 12px; color: var(--ink-secondary); }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-endpoint > strong { font-size: 24px; line-height: 1.2; color: var(--ink-primary); }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-endpoint > small { font-size: 12px; line-height: 1.4; color: var(--ink-secondary); }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-connect-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-secondary); }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-pin-caution { margin-left: 8px; color: var(--status-warn); }
+/* A wire is a short task, not another scroll pane. Grow the active card to its
+   contents; small screens/expanded references use the outer workspace scroll. */
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .wiring-workspace:has(.compact-guide.active) { height: auto; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace-view:has(.compact-guide.active) { flex: none; overflow: visible; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .compact-guide.active { height: auto; max-height: none; grid-template-rows: auto auto; overflow: visible; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .compact-guide.active > .guide-panel-body { flex: none; overflow: visible; gap: 8px; padding: 8px 12px; scrollbar-gutter: auto; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.active .guide-connection-card { padding: 8px 10px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.active .guide-pin-pair { margin: 6px 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.active .guide-endpoint { padding: 6px 8px; gap: 2px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.active .guide-endpoint > strong { font-size: 22px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.active .guide-reference-toggle { min-height: 28px; padding: 4px 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .compact-guide.active > .guide-panel-footer { justify-content: flex-start; overflow: visible; max-height: none; }
+.app.maker-layout:not(.display-mode-active) .is-unified .compact-guide.active .guide-test-controls { flex: none; overflow: visible; scrollbar-gutter: auto; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-prepare-message { min-height: 0; padding: 10px 0; text-align: left; }
+.app.maker-layout:not(.display-mode-active) .is-unified .assistant-wiring-stage > .compact-guide {
+  position: static; transform: none; width: 100%; height: auto; min-height: 0; max-height: none; flex: none;
+}
+.assistant-demo-entry { align-self: flex-start; }
+.assistant-design-tools { display: flex; flex: none; justify-content: flex-end; padding-bottom: 8px; }
+.unified-debug-tools { flex: none; max-height: 32vh; min-height: 0; overflow: auto; border-top: 1px solid var(--line-default); }
+.unified-debug-tools .debug-page, .unified-debug-tools .debug-page-content, .unified-debug-tools .debug-chat-view, .unified-debug-tools .ai-debug-panel, .unified-debug-tools .ai-debug-conversation, .unified-debug-tools .ai-debug-chat { height: auto !important; min-height: 0 !important; overflow: visible !important; flex: none !important; }
+.unified-debug-tools :is(.debug-page, .debug-page-content, .debug-chat-view, .ai-debug-panel, .ai-debug-chat) { padding: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; }
+.unified-debug-tools .ai-debug-chat:empty { display: none; }
+.unified-debug-tools .ai-debug-panel { padding: 6px 0; gap: 6px; }
+.unified-debug-tools .ai-debug-head { margin: 0; padding: 0; flex-wrap: wrap; }
+.unified-debug-tools .ai-debug-current { padding: 8px; }
+.unified-debug-tools .ai-debug-current p, .unified-debug-tools .guide-caution { font-size: 12px; }
+.unified-debug-tools .ai-debug-current-title { font-size: 12px; }
+.unified-debug-tools .debug-manual-tools { max-height: 28vh; overflow: auto; }
+/* Default: a single calm tool row. Details expand in place, not over the chat. */
+.unified-debug-tools .assistant-debug-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-top: 6px; flex-wrap: wrap; }
+.unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker { flex: 1 1 auto; display: flex; flex-wrap: nowrap; gap: 2px; margin: 0; padding: 3px; border-radius: 9px; background: var(--surface-subtle); width: max-content; max-width: max-content; }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker > button { min-height: 30px; padding: 4px 8px; margin: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink-secondary); font-size: 11px; white-space: nowrap; }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker > button[aria-pressed="true"] { background: var(--surface-blue); color: var(--brand-link); border-color: var(--line-strong); box-shadow: 0 1px 3px rgb(0 0 0 / 10%); }
+.unified-debug-tools .assistant-debug-primary { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; margin: 0; padding: 5px 8px; font-size: 11px; border-radius: 8px; }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-capture { color: var(--brand-link); background: var(--surface-blue); border-color: var(--line-strong); white-space: nowrap; }
+.assistant-capture > small { font-size: 10px; font-variant-numeric: tabular-nums; }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-debug-tools-toggle { width: 32px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-secondary); }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-debug-tools-toggle[aria-expanded="true"] { border-color: var(--line-strong); color: var(--brand-link); background: var(--surface-blue); }
+.unified-debug-tools .assistant-debug-settings { display: grid; gap: 8px; margin-top: 6px; padding: 10px; border: 1px solid var(--line-default); border-radius: 9px; background: var(--surface-subtle); }
+.assistant-debug-settings > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+.assistant-debug-settings select { min-width: 0; max-width: 65%; }
+.assistant-debug-secondary { display: flex; gap: 6px; flex-wrap: wrap; }
+.assistant-debug-secondary > button { flex: 1; }
+.unified-debug-tools .assistant-debug-stop { align-self: flex-start; margin-top: 6px; }
+.unified-debug-tools .is-actions-only .ai-debug-chat:not(:has(.ai-debug-current)) { display: none; }
+.app:not(.display-mode-active) .is-unified .deploy-workspace { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.app:not(.display-mode-active) .is-unified .deploy-code-card textarea { height: var(--editor-height, 200px); min-height: 160px; flex: none; }
+.app:not(.display-mode-active) .is-unified :is(.deploy-code-card, .deploy-output) { padding: 12px; gap: 8px; }
+.app:not(.display-mode-active) .is-unified .deploy-output-context { margin: 0; }
+.app:not(.display-mode-active) .is-unified .pi-console { flex: 1 1 160px; }
+.app:not(.display-mode-active) .is-unified .deploy-output-card { min-height: 270px; }
+.app:not(.display-mode-active) .is-unified .pi-console { min-height: 160px; max-height: 40vh; }
+.assistant-code-height { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.assistant-code-height input { flex: 1; max-width: 240px; }
+.assistant-project-workspace > .maker-design-stage > .maker-preview { min-height: 0; flex: 1; overflow: auto; }
+@media (min-width: 701px) {
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .wiring-workspace:has(.compact-guide.review) { height: clamp(350px, 40dvh, 380px); }
+  /* Change only grid tracks, never the mounted camera / guide hierarchy. */
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-height-resizable {
+    display: grid; grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--guide-camera-height) 18px var(--guide-panel-height); gap: 0; overflow: hidden;
+  }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-height-resizable > .video-workspace {
+    grid-column: 1; grid-row: 1; min-height: 0; overflow: hidden;
+  }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-height-resizable > .wiring-workspace:has(.compact-guide) {
+    grid-column: 1; grid-row: 3; height: 100%; min-height: 0; overflow: hidden;
+  }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-height-resizable .wiring-workspace-view {
+    flex: 1; min-height: 0; overflow: hidden;
+  }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-height-resizable .wiring-workspace .compact-guide {
+    height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); overflow: hidden;
+  }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-height-resizable .wiring-workspace .compact-guide > .guide-panel-body {
+    min-height: 0; overflow: auto; overscroll-behavior: contain;
+  }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-height-resizable .wiring-workspace .compact-guide > .guide-panel-footer {
+    min-height: 0; overflow: auto; overscroll-behavior: contain;
+  }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-height-resizable .compact-guide .guide-test-controls {
+    flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-height-resizable > .guide-resize-handle {
+    display: grid; grid-column: 1; grid-row: 2; place-items: center;
+    min-height: 0; cursor: row-resize; touch-action: none; user-select: none; border-radius: 6px;
+  }
+  .guide-height-resizable > .guide-resize-handle > span {
+    width: 56px; height: 4px; border-radius: 4px; background: var(--line-strong);
+    transition: width 120ms ease, background-color 120ms ease;
+  }
+  .guide-height-resizable > .guide-resize-handle:is(:hover, :focus-visible),
+  .guide-height-resizable.is-resizing > .guide-resize-handle { background: var(--surface-blue); }
+  .guide-height-resizable > .guide-resize-handle:is(:hover, :focus-visible) > span,
+  .guide-height-resizable.is-resizing > .guide-resize-handle > span { width: 72px; background: var(--brand-link); }
+  .guide-height-resizable > .guide-resize-handle:focus-visible { outline: 2px solid var(--brand-link); outline-offset: -2px; }
+}
+@media (max-width: 1099px) {
+  .assistant-workspace.is-unified, .assistant-workspace.is-unified.ai-collapsed { display: flex; flex-direction: column; gap: 8px; }
+  .assistant-workspace .assistant-mobile-tabs { display: flex; gap: 6px; flex: none; }
+  .assistant-mobile-tabs button { flex: 1; }
+  .assistant-resizer, .app.tinkro-theme:not(.display-mode-active) .assistant-workspace .assistant-collapse { display: none; }
+  .assistant-chat-surface { flex: 1; }
+  .ai-collapsed .assistant-chat-content { display: flex; }
+  .ai-collapsed .assistant-chat-surface { align-items: stretch; border-color: var(--line-default); background: var(--surface-card); }
+  .assistant-workspace[data-mobile-view="work"] .assistant-chat-surface,
+  .assistant-workspace[data-mobile-view="ai"] .assistant-work-surface { display: none; }
+  .unified-assistant-heading { padding-right: 0 !important; }
+  .assistant-input-actions .maker-model-menu > summary,
+  .assistant-input-actions > button { min-width: 44px; min-height: 44px; }
+  .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker > button,
+  .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > button,
+  .assistant-suggestions > summary, .assistant-workspace .assistant-suggestion-list > button { min-height: 44px; }
+  .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-debug-tools-toggle { width: 44px; }
+}
+@media (max-width: 700px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls:not(:has(> .maker-model-menu)) .pi-global-control { grid-column: 1; grid-row: 1; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .wiring-workspace { height: 460px; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .wiring-workspace:has(.compact-guide.active) { height: auto; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .video-workspace { flex-basis: 360px; min-height: 360px; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .compact-guide { display: flex; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-workspace .guide-panel-footer { flex: none; max-height: 55%; border-left: 0; border-top: 1px solid var(--line-default); }
+  .app:not(.display-mode-active) .is-unified .assistant-guide-tools { width: 100%; }
+  .app:not(.display-mode-active) .is-unified .assistant-guide-tools .guide-visibility-toggle { flex: 1; }
+}
+@media (max-height: 620px) {
+  .unified-assistant { gap: 4px; padding: 6px; }
+  .assistant-quick button { font-size: 10px; padding: 3px; }
+  .assistant-input textarea { min-height: 42px; }
+  .unified-debug-tools { max-height: 25vh; }
+}
+@media (prefers-reduced-motion: reduce) { .assistant-workspace * { scroll-behavior: auto !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { .assistant-input::before { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .assistant-workspace.is-unified { transition: none; }
+  .assistant-send-pending i { animation: none; }
+  .assistant-collapse::before { animation: none; opacity: .65; }
+}

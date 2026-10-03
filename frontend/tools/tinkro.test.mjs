@@ -75,7 +75,8 @@ test('theme paints load last but never transform camera geometry or change elect
 
 test('only the brand and prompt use aurora blur, with independent keyboard focus and reduced motion',()=>{
   css.walkDecls('filter',d=>{
-    if(d.value!=='none')assert.match(d.parent.selector,/brand-text::before|compose-row\)::before/);
+    if(d.value.startsWith('blur('))assert.match(d.parent.selector,/brand-text::before|compose-row\)::before/);
+    else if(d.value!=='none')assert.equal(d.parent.selector,':root[data-theme="light"] '+scope+' .brand-logo');
   });
   assert.equal(declarations(scope+' :is(button, summary, select, input, textarea, a):focus-visible').outline,'2px solid var(--accent)');
   assert.equal(declarations(scope+' :is(.maker-compose-row,.ai-debug-compose-row):focus-within').outline,'2px solid var(--brand-link)');
@@ -102,7 +103,15 @@ test('original supplied wordmark is unmodified, keeps its tagline and stays legi
   assert.match(app,/brand-subtitle">Vibe Maker Studio/);
   assert.doesNotMatch(app,/src="\/brand\/tinkro-symbol.svg"/);
   assert.match(read('./tinkro-preview.tsx'),/brand-logo[^>]*src="\/brand\/tinkro-dark\.png"[^>]*alt="Tinkro"/);
-  assert.equal(declarations(':root[data-theme="light"] '+scope+' .brand-title').background,'#12141b');
+  assert.equal(declarations(':root[data-theme="light"] '+scope+' .brand-title').background,'transparent');
+  assert.equal(declarations(':root[data-theme="light"] '+scope+' .brand-logo').filter,'url("/brand/tinkro-light-filter.svg#wordmark-ink")');
+  assert.equal(declarations(scope+' .brand-logo').filter,undefined,'dark mode retains the original artwork');
+  const filter=read('../public/brand/tinkro-light-filter.svg');
+  assert.match(filter,/color-interpolation-filters="sRGB"/);
+  const matrix=filter.match(/values="([\s\S]*?)"/)[1].trim().split(/\s+/).map(Number);
+  const apply=rgba=>[0,1,2,3].map(row=>Math.min(1,Math.max(0,matrix.slice(row*5,row*5+4).reduce((sum,v,i)=>sum+v*rgba[i],matrix[row*5+4]))));
+  assert.deepEqual(apply([1,1,1,1]).slice(0,3).map(v=>Math.round(v*255)),[16,19,28]);
+  for(const color of [[0,.47,1,1],[0,.75,.65,1],[0,.47,1,.3],[0,0,0,0]])assert.deepEqual(apply(color),color,'brand colors and transparency survive');
   const wordmark=declarations(scope+' .brand-logo');
   assert.equal(wordmark.width,'128px');
   assert.equal(wordmark.height,'40px');

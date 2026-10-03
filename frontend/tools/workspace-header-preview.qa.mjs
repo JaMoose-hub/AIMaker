@@ -101,7 +101,7 @@ try{
     report.results.push({viewport,checks:['storage, connection and runtime warnings remain visible without overflow']});
     await context.close();
   }
-  assert(preview.requests.every(path=>['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg'].includes(path)),'Preview contacted a non-asset endpoint');
+  assert(preview.requests.every(path=>['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg'].includes(path)),'Preview contacted a non-asset endpoint');
 }catch(error){
   report.errors.push(error.stack);process.exitCode=1;
   if(currentPage&&!currentPage.isClosed())await currentPage.screenshot({path:`${artifacts}/failure.png`,fullPage:true});

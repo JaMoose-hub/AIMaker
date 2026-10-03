@@ -55,8 +55,19 @@ function render(record=base, options={}) {
   const Panel = options.effects ? makePanel(effect => options.effects.push(effect)) : AiDebugPanel;
   return renderToStaticMarkup(React.createElement(Panel,{state:{...state,guide:{complete:options.wired??true},debug:{symptom:options.symptom??''}},context,currentCodeHash:options.hash??'hash',repairCaseId:options.repairCaseId??null,repairAppliedHash:options.repairAppliedHash??null,repairCandidateReady:options.repairCandidateReady??false,session,
     webcamReady:options.webcamReady??true,eyeActive:options.eyeActive??false,cameraSource:options.cameraSource??'device',cameraRuntimeRevision:options.revision??4,
-    variant:options.variant??'debug',headerControls:options.headerControls,onReturnWebcam(){},onCase(){},onRetest(){},onTrial(){},onReviewRepair(){},onManual(){},onWiring(){}}));
+    variant:options.variant??'debug',cameraStatusInView:options.cameraStatusInView??false,actionsOnly:options.actionsOnly??false,
+    headerControls:options.headerControls,onReturnWebcam(){},onCase(){},onRetest(){},onTrial(){},onReviewRepair(){},onManual(){},onWiring(){}}));
 }
+
+test('camera status lives in video without duplicating the chat warning or enabling capture',()=>{
+  const options={variant:'wiring',actionsOnly:true,webcamReady:false,cameraStatusInView:true};
+  const html=render(null,options);
+  assert(!html.includes('請確認目前影像來源持續更新'));
+  assert.match(html,/<button[^>]*class="assistant-capture"[^>]*disabled=""/);
+  assert(html.includes('請到即時畫面確認連線'));
+  assert(render(null,{...options,cameraStatusInView:false}).includes('請確認目前影像來源持續更新'));
+  assert(render(null,{...options,eyeActive:true}).includes('返回 Webcam'));
+});
 
 test('Check for me sends a visual session request with the selected cloud model and current context',async()=>{
   let sendNode;

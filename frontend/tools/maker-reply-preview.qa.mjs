@@ -10,7 +10,7 @@ const {chromium}=createRequire(import.meta.url)(`${runtime}/playwright`);
 const artifacts=fileURLToPath(new URL('./maker-reply-preview-artifacts/',import.meta.url));
 await mkdir(artifacts,{recursive:true});
 const preview=await startPreview(0);
-const allowed=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg'];
+const allowed=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg'];
 const report={fixture:'Real MakerAssistant, synthetic paragraph/list/step/historical replies; no model or hardware calls',results:[],errors:[],deniedRequests:[]};
 let browser,currentPage;
 try{

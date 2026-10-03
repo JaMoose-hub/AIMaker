@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Presentation-only mapping for the original transparent wordmark.
+         Neutral white becomes #10131c; the red-free blue/teal accents stay
+         unchanged. Preserve alpha, geometry and the original PNG asset. -->
+    <filter id="wordmark-ink" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+      <feColorMatrix type="matrix" values="
+        0.062745 0 0 0 0
+        -0.925490 1 0 0 0
+        -0.890196 0 1 0 0
+        0 0 0 1 0" />
+    </filter>
+  </defs>
+</svg>

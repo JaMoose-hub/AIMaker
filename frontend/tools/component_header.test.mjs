@@ -37,6 +37,7 @@ test('both module overlays show row direction and preserve ordinals through ever
   for(const locale of ['zh-TW','en']) {
     const {t,i18n}=localeFixture(locale);
     const {ComponentPinOverlay}=await import(compile('components/ComponentPinOverlay.tsx',{
+      '../lib/recognitionStyle':compile('lib/recognitionStyle.ts'),
       '../lib/componentHeaderGuide':componentHeaderUrl,'../lib/wiringLabelLayout':layoutUrl,
       '../lib/headerCountDirection':directionUrl,
       '../lib/geometry':geometryUrl,'../lib/i18n':i18n,'../lib/guidanceCallout':compile('lib/guidanceCallout.ts'),
@@ -100,6 +101,7 @@ test('counting directions follow semantic endpoints across rotation, mirrors and
 
 test('thin connection arrows leave Pin centres clear without changing projected locations', async () => {
   const {GuideConnectionOverlay}=await import(compile('components/GuideConnectionOverlay.tsx',{
+    '../lib/recognitionStyle':compile('lib/recognitionStyle.ts'),
     '../lib/geometry':geometryUrl,
     '../lib/useSmoothedDetection':dataUrl('export const useSmoothedDetection = value => value;'),
   }));

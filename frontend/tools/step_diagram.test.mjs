@@ -132,25 +132,37 @@ test('2D is available with the AI tab open and only requested captures temporari
   assert.equal(shouldShow({},'guide',state,false,null,null,null,true),false,'opening board calibration reveals the camera');
 });
 
-test('the actual App switch changes only the view mode, retaining cursor, chat and test bindings',()=>{
-  const control=find(node=>ts.isJsxSelfClosingElement(node)&&node.tagName.getText(appTree)==='WiringViewToggle');
+test('the actual unified App switch retains the source, cursor, chat and test bindings',()=>{
+  const control=find(node=>ts.isJsxSelfClosingElement(node)&&node.tagName.getText(appTree)==='ImageViewControls');
   const handler=control.attributes.properties.find(prop=>prop.name?.getText(appTree)==='onChange').initializer.expression;
   const code=ts.transpileModule(`const change=${handler.getText(appTree)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const liveHandler=find(node=>ts.isVariableDeclaration(node)&&node.name.getText(appTree)==='changeImageView').initializer.arguments[0];
+  const liveCode=ts.transpileModule(`const change=${liveHandler.getText(appTree)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);
   const original={...maker.initialMaker(),design,guide:{...maker.emptyGuide(),phase:'active',index:2,checks:['position']},
     debug:{panelOpen:true,intent:'wiring',runId:'synthetic-run'},conversation:[{role:'user',text:'GND 要接哪裡？'}]};
   let current=original;
   let override;
   let inspection='previous inspection';
-  const change=new Function('setMaker','setDiagramCaptureOverride','diagramCaptureKey','setEvidenceDiagram',`${code};return change;`)(update=>{current=update(current);},next=>{override=next;},'capture-one',next=>{inspection=next;});
+  let imageView='phone';
+  const lastLiveView={current:'phone'};
+  const setMaker=update=>{current=update(current);};
+  const setOverride=next=>{override=next;};
+  const setInspection=next=>{inspection=next;};
+  const setImageView=next=>{imageView=next;};
+  const changeImageView=new Function('setMaker','setDiagramCaptureOverride','setEvidenceDiagram','setImageView','lastLiveView',`${liveCode};return change;`)(setMaker,setOverride,setInspection,setImageView,lastLiveView);
+  const change=new Function('setMaker','setDiagramCaptureOverride','diagramCaptureKey','setEvidenceDiagram','setImageView','lastLiveView','projectWire','changeImageView',`${code};return change;`)(setMaker,setOverride,'capture-one',setInspection,setImageView,lastLiveView,design.wiring[2],changeImageView);
   const signature=componentTests.componentTestKey(design,original.guide,'hc-sr04');
-  for(const mode of ['2d','camera']) {
-    change(mode);
+  for(const view of ['diagram','live','photo','live']) {
+    const mode=view==='diagram'?'2d':'camera';
+    change(view);
     assert.deepEqual(current,{...original,guide:{...original.guide,mode}});
     assert.equal(current.debug,original.debug);assert.equal(current.conversation,original.conversation);
     assert.equal(current.guide.confirmed,original.guide.confirmed);
     assert.equal(override,mode==='2d'?'capture-one':null);
     assert.equal(inspection,null,'the toolbar returns to the actual current step, not an old AI reference');
+    assert.equal(imageView,view==='photo'?'photo':'phone','view changes keep the last live source');
+    assert.equal(lastLiveView.current,'phone');
     assert.equal(componentTests.componentTestKey(design,current.guide,'hc-sr04'),signature);
   }
 });

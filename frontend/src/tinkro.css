@@ -456,8 +456,8 @@ html:has(.display-mode-active) { color-scheme: dark; background: var(--bg); }
 .app.tinkro-theme:not(.display-mode-active) :is(.pi-row-locator,.component-row-locator,.guide-pin-pair,.pi-code-editor,.pi-console,pre,code,kbd) { font-family: var(--pro-mono); }
 .app.tinkro-theme:not(.display-mode-active) kbd { display: inline-block; min-width: 20px; padding: 0 8px; font-size: 12px; line-height: 18px; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--text-dim); background: var(--bg-elev); }
 
-/* Original transparent Tinkro wordmark. Its white lettering keeps a dark
-   backing in light mode; the PNG supplies the brand's own colors and glow. */
+/* Keep the original transparent wordmark. In light mode only its neutral
+   lettering becomes dark ink; blue/teal accents retain their brand colors. */
 .app.tinkro-theme:not(.display-mode-active) .brand { overflow: hidden; }
 .app.tinkro-theme:not(.display-mode-active) .brand-text,
 .app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-text {
@@ -467,7 +467,8 @@ html:has(.display-mode-active) { color-scheme: dark; background: var(--bg); }
   content: none;
 }
 .app.tinkro-theme:not(.display-mode-active) .brand-title { display: flex; align-items: center; width: fit-content; padding: 0 4px; border-radius: var(--radius-control); color: var(--text); font-size: 16px; line-height: 20px; }
-:root[data-theme="light"] .app.tinkro-theme:not(.display-mode-active) .brand-title { background: #12141b; }
+:root[data-theme="light"] .app.tinkro-theme:not(.display-mode-active) .brand-title { background: transparent; }
+:root[data-theme="light"] .app.tinkro-theme:not(.display-mode-active) .brand-logo { filter: url("/brand/tinkro-light-filter.svg#wordmark-ink"); }
 .app.tinkro-theme:not(.display-mode-active) .brand-logo { width: 128px; height: 40px; object-fit: cover; object-position: center 44%; border-radius: 0; }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-logo { width: 112px; height: 35px; }
 .app.tinkro-theme:not(.display-mode-active) .brand-subtitle,
@@ -485,8 +486,16 @@ html:has(.display-mode-active) { color-scheme: dark; background: var(--bg); }
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
   gap: 4px 16px; padding: 4px 10px;
 }
-.app.tinkro-theme:not(.display-mode-active) .maker-header-main { min-height: 49px; padding: 0; gap: 16px; }
-.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-text { min-width: 132px; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main { min-height: 34px; padding: 0; gap: 12px; }
+/* Keep the original wordmark legible. The descriptor sits beside it rather
+   than adding another line to the height of the whole navigation bar. */
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-text {
+  display: flex; align-items: center; min-width: 0; gap: 10px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-main .brand-subtitle {
+  flex: 0 0 72px; width: 72px; padding-left: 10px; border-left: 1px solid var(--border-strong);
+  text-align: left; color: var(--text-dim); font-size: 11px; line-height: 14px; letter-spacing: .02em;
+}
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls {
   min-width: 0; padding: 0; gap: 8px 12px; border: 0; border-radius: 0;
 }
@@ -512,6 +521,20 @@ html:has(.display-mode-active) { color-scheme: dark; background: var(--bg); }
   padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-card);
   background: var(--bg-panel); color: var(--text); box-shadow: var(--shadow-popover);
 }
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings .camera-tools-embedded {
+  display: flex; flex-direction: column; align-items: stretch; width: 100%; min-width: 0;
+  margin-top: 14px; padding: 12px 0 0; border-top: 1px solid var(--line-default);
+}
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings .camera-tools-embedded[hidden] { display: none; }
+.app.tinkro-theme:not(.display-mode-active) .runtime-settings .camera-tools-embedded > .statusbar-toggle {
+  justify-content: flex-start; width: 100%; min-height: 40px;
+}
+.camera-tools-inline { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; }
+.camera-tools-inline[hidden] { display: none; }
+.camera-tools-inline .status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.camera-tools-inline .distance-assistant { width: 100%; }
+.camera-tools-inline .distance-assistant-panel { position: static; width: 100%; max-width: none; margin-top: 6px; box-shadow: none; }
+.camera-tools-inline .status-actions .camera-auto-message { white-space: normal; overflow-wrap: anywhere; }
 .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-settings .runtime-toolbar {
   display: grid; grid-template-columns: minmax(0, 1fr); width: auto; margin: 0; padding: 0; gap: 12px;
 }
@@ -531,6 +554,12 @@ html:has(.display-mode-active) { color-scheme: dark; background: var(--bg); }
 }
 @media (max-width: 700px) {
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  /* The connection button already shows status. Keep its group label available
+     to assistive technology without squeezing Execution into Settings. */
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+  }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-row { min-width: 0; }
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-model-menu { grid-column: 1; grid-row: 1; min-width: 0; width: auto; }
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .runtime-settings { grid-column: 2; grid-row: 1; }
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .pi-global-control { grid-column: 1 / -1; grid-row: 2; }
@@ -624,4 +653,37 @@ html:has(.display-mode-active) { color-scheme: dark; background: var(--bg); }
 @media (prefers-reduced-motion: reduce) {
   .app.tinkro-theme:not(.display-mode-active) :is(button,select,summary,a,.ws-dot) { transition: none; }
   .app.tinkro-theme:not(.display-mode-active) .pill-dot { animation: none; }
+}
+
+/* Quiet aurora edges on the outer workspace panels, echoing the composer.
+   Shadows only: no extra overlay, image tint, layout change or pointer layer. */
+.app.tinkro-theme:not(.display-mode-active) {
+  --panel-halo:
+    inset 0 1px 0 rgb(153 186 255 / 7%),
+    0 0 0 1px rgb(100 143 214 / 7%),
+    -5px 0 18px -9px rgb(124 92 255 / 24%),
+    5px 2px 18px -9px rgb(22 185 166 / 21%),
+    0 5px 20px -12px rgb(65 122 190 / 24%);
+}
+:root[data-theme="light"] .app.tinkro-theme:not(.display-mode-active) {
+  --panel-halo:
+    inset 0 1px 0 rgb(255 255 255 / 75%),
+    0 0 0 1px rgb(100 143 214 / 5%),
+    -5px 0 18px -9px rgb(124 92 255 / 14%),
+    5px 2px 18px -9px rgb(22 185 166 / 12%),
+    0 5px 20px -12px rgb(65 122 190 / 16%);
+}
+.app.tinkro-theme:not(.display-mode-active) :is(
+  .maker-header-integrated,
+  .video-shell:not(.optical-hud),
+  .maker-2d-main,
+  .wiring-workspace,
+  .maker-preview,
+  .pi-deploy-panel,
+  .assistant-workspace:not(.ai-collapsed) > .assistant-chat-surface
+) {
+  box-shadow: var(--panel-halo);
+}
+@media (forced-colors: active) {
+  :root .app.tinkro-theme:not(.display-mode-active) { --panel-halo: none; }
 }

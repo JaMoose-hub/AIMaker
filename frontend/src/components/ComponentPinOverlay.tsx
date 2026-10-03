@@ -5,6 +5,7 @@ import { componentHeaderGuideText } from "../lib/componentHeaderGuide";
 import { headerCountDirection } from "../lib/headerCountDirection";
 import { pointBounds, placeWiringLabel, type WiringLabel } from "../lib/wiringLabelLayout";
 import { useI18n } from "../lib/i18n";
+import { componentPinColor } from "../lib/recognitionStyle";
 import type { ComponentPoseMessage } from "../lib/types";
 
 interface ComponentPinOverlayProps {
@@ -18,24 +19,6 @@ interface ComponentPinOverlayProps {
   held?: boolean;
   guideLabel?: WiringLabel | null;
 }
-
-const PIN_COLORS: Readonly<Record<string, string>> = {
-  VCC: "#ff7777",
-  GND: "#aab4c4",
-  AO: "#65d6a0",
-  TRIG: "#ffb45f",
-  ECHO: "#c891ff",
-  SCL: "#6fb9ff",
-  SDA: "#65d6a0",
-  XDA: "#8fe3bd",
-  XCL: "#8fc8ff",
-  AD0: "#ffd166",
-  INT: "#c891ff",
-  RES: "#ff9d66",
-  DC: "#f4c95d",
-  CS: "#c891ff",
-  BLK: "#8f9bad",
-};
 
 const COMPACT_LABELS: Readonly<Record<string, string>> = {
   VCC: "V",
@@ -207,7 +190,7 @@ export function ComponentPinOverlay({
       {outline && pose.pose_quality?.stability === 'motion_prediction' && <text x={displayOutline?.[0].x} y={(displayOutline?.[0].y ?? 0) - 10} fill="#64cfff" fontSize="13">{t("overlay.motion_prediction")}</text>}
       {points.map((pin) => {
         const active = targetPinId === pin.id;
-        const color = PIN_COLORS[pin.id] ?? "#61dafb";
+        const color = componentPinColor(pin.id);
         return (
           <g
             key={pin.id}

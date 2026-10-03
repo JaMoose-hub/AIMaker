@@ -1,0 +1,37 @@
+.live-camera-overlay { position:absolute; inset:0; z-index:7; pointer-events:none; }
+.live-camera-dock { --live-control-height:38px; position:absolute; top:12px; right:12px; display:grid; grid-template-columns:minmax(0,132px) minmax(0,auto); align-items:start; column-gap:0; row-gap:6px; width:max-content; max-width:calc(100% - 24px); }
+.live-camera-dock .image-source-host { min-width:0; pointer-events:auto; }
+.live-camera-dock .image-source-select { width:100%; }
+/* Two controls, one compact silhouette; notices get their own full-width row. */
+.live-camera-dock .gpio-capture-action { display:contents; }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-dock :is(.image-source-trigger, .gpio-capture-action .gpio-capture-button) { height:var(--live-control-height); min-height:var(--live-control-height); box-sizing:border-box; margin:0; padding:0 11px; border:1px solid #8db6d03d; background:rgba(16,24,35,.94); backdrop-filter:blur(14px); box-shadow:none; font-size:12px; }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-dock .image-source-trigger { border-radius:12px 0 0 12px; border-right:0; }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-dock .gpio-capture-action .gpio-capture-button { border-radius:0 12px 12px 0; color:#b6e5ed; gap:7px; pointer-events:auto; }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-dock .image-source-trigger:only-child { min-width:0; }
+.live-camera-dock .image-source-trigger > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.live-camera-dock .gpio-capture-action small { grid-column:1 / -1; max-width:280px; margin:0; text-align:left; overflow-wrap:anywhere; }
+.live-camera-dock:not(:has(.gpio-capture-action)) { grid-template-columns:minmax(0,146px); }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-dock:not(:has(.gpio-capture-action)) .image-source-trigger { border-radius:12px; border-right:1px solid #8db6d03d; }
+.live-camera-switch-error { grid-column:1 / -1; max-width:280px; border-radius:8px; padding:7px 10px; color:#f4cb92; background:rgba(24,26,31,.92); font-size:11px; line-height:1.4; }
+.live-camera-message { position:absolute; inset:58px 16px 16px; display:grid; place-items:center; }
+.live-camera-message-card { display:flex; flex-direction:column; align-items:center; gap:9px; max-width:100%; box-sizing:border-box; text-align:center; padding:20px 26px; color:#dbe8f2; border:1px solid rgba(157,190,214,.15); border-radius:16px; background:rgba(15,22,31,.86); backdrop-filter:blur(16px); box-shadow:0 12px 40px #0002; }
+.live-camera-message-icon { color:#86abc7; margin-bottom:3px; }
+.live-camera-message-card strong { font-size:14px; font-weight:500; }
+.live-camera-message-card p { margin:0; font-size:12px; color:#95a9ba; }
+.live-camera-message-card small { font-size:11px; color:#e4bd88; }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-message-card button { pointer-events:auto; display:inline-flex; align-items:center; justify-content:center; gap:7px; margin:5px 0 0; padding:8px 16px; min-height:34px; border:1px solid #6387a05e; border-radius:999px; background:#24374a; color:#c6e7ff; font:inherit; font-size:12px; cursor:pointer; }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-message-card button:hover { background:#314b64; border-color:#8dc9f2; }
+.app .live-camera-message-card button:focus-visible { outline:2px solid #8dc9f2; outline-offset:3px; }
+/* The video remains dark in either app theme so controls stay legible over footage. */
+@media(max-width:700px) {
+  .live-camera-dock { --live-control-height:44px; top:10px; right:10px; grid-template-columns:minmax(0,140px) 44px; }
+  .app.tinkro-theme:not(.display-mode-active) .live-camera-dock .gpio-capture-action .gpio-capture-button { width:44px; padding:0; }
+  .live-camera-dock .gpio-capture-button > span { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .live-camera-message-card { padding:16px 20px; }
+  .app.tinkro-theme:not(.display-mode-active) .live-camera-message-card button { min-height:40px; }
+}
+@media(max-height:600px) {
+  .live-camera-message { inset:50px 10px 10px; }
+  .live-camera-message-card { padding:10px 18px; gap:5px; }
+  .live-camera-message-icon { display:none; }
+}

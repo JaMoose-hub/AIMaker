@@ -27,9 +27,11 @@ async function render(name, status, props={}, connection={}) {
 const status={connected:true,busy:false,component_test_id:null,program:'running',logs:[],execution:{jobs:[],policy:'confirm_then_fifo'}};
 const job={id:'job',kind:'deploy',label:'作品部署',state:'queued',owner:null,error:null};
 
-test('Pi connection lives next to the model selector, not in deployment panel',async()=>{
+test('Pi connection stays in the header while the model selector moves into shared chat',async()=>{
   const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
-  assert.match(app,/<MakerModelMenu[\s\S]{0,250}<PiConnectionControl/);
+  assert.match(app,/<WorkspaceHeader[\s\S]*?<PiConnectionControl/);
+  const chat=readFileSync(new URL('../src/components/UnifiedAssistant.tsx',import.meta.url),'utf8');
+  assert.match(chat,/assistant-input-actions[\s\S]*?<MakerModelMenu[^>]*compact/);
   const top=await render('PiConnectionControl',status), panel=await render('PiDeployPanel',status);
   assert.equal((top.match(/pi-global-connect/g)||[]).length,1);
   assert.ok(!panel.includes('pi-connect-button'));

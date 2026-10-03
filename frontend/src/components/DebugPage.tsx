@@ -349,8 +349,8 @@ const trialOutput = <>      {trial?<section className="debug-trial-result"><h3>{
     : sessionRecord?.status === "awaiting_trial_visual" ? trial?.id === sessionRecord.trial_result?.id ? trialOutput : <p role="status">{tr("正在取得本次試跑紀錄。", "Loading this trial's record.")}</p>
     : sessionRecord?.status === "awaiting_repair" && record?.id === sessionRecord.diagnosis?.case_id ? repairTools : undefined;
   const modePicker = variant === "wiring" ? <div className="guide-ai-mode-picker" role="group" aria-label={tr("協作內容", "Assistant focus")}>
-    <button type="button" aria-pressed={intent === "wiring"} onClick={()=>chooseAssistantIntent("wiring")}>{embedded ? tr("問接法", "Ask about wiring") : tr("接線看圖", "Inspect wiring")}</button>
-    <button type="button" aria-pressed={intent === "debug"} onClick={()=>chooseAssistantIntent("debug")}>{embedded ? tr("功能異常", "Something isn't working") : tr("測試與除錯", "Test & debug")}</button>
+    <button type="button" aria-label={embedded ? tr("問接法", "Ask about wiring") : undefined} aria-pressed={intent === "wiring"} onClick={()=>chooseAssistantIntent("wiring")}>{embedded ? tr("問接法", "Wiring") : tr("接線看圖", "Inspect wiring")}</button>
+    <button type="button" aria-pressed={intent === "debug"} onClick={()=>chooseAssistantIntent("debug")}>{embedded ? tr("功能異常", "Troubleshoot") : tr("測試與除錯", "Test & debug")}</button>
     {!embedded ? <small>{tr("共用同一段對話與測試紀錄", "One conversation and test history")}</small> : null}
   </div> : null;
   return <section className={`debug-page${assistant ? " debug-chat-page" : ""}${variant === "wiring" ? " guide-ai-workspace" : ""}${embedded ? " is-docked" : ""}`} data-open={embedded||variant!=="wiring"||guideAssistantOpen} aria-label={variant === "wiring" ? tr("接線 AI 協作除錯","Wiring AI assistant") : tr("測試與除錯","Test & debug")}>

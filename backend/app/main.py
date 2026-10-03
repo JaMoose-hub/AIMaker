@@ -39,11 +39,14 @@ from app.api import ws as api_ws
 from app.api import vlm as api_vlm
 from app.api import cloud_wiring as api_cloud_wiring
 from app.cloud_wiring import CloudWiringService
+from app.api import photo_wiring as api_photo_wiring
+from app.photo_wiring import PhotoWiringService, context_mutation, session_transition
 from app.api import wiring as api_wiring
 from app.api import pi as api_pi
 from app.api import debug as api_debug
 from app.api import debug_sessions as api_debug_sessions
 from app.api import design as api_design
+from app.api import assistant as api_assistant
 from app.api import tracking as api_tracking
 from app.api.static import mount_frontend
 from app.api.ws import DetectionBroadcaster
@@ -470,6 +473,7 @@ def build_app(
                 frame_bus, detection_state, component_pose_state,
                 runtime_manager, state.motion_frame_state,
                 body_state=state.body_worker,
+                phone_parallel=lambda: state.config.camera.source == 'phone',
             )
             state.motion_worker.start()
         if state.wire_worker is not None:
@@ -493,8 +497,12 @@ def build_app(
             config.board, config.camera.source, config.detector,
         )
         try:
+            await state.mobile_service.start()
             yield
         finally:
+            await state.mobile_service.close()
+            # Closing photo mode never restarts inference during shutdown.
+            await asyncio.to_thread(state.photo_wiring_service.close)
             await asyncio.to_thread(state.camera_tuner.close)
             state.glasses_stream.stop_yolo_worker()
             if state.motion_worker is not None:
@@ -587,6 +595,34 @@ def build_app(
     app.state.glasses_stream = GlassesStreamManager(app.state)
     from app.debug_sessions import DebugSessions
     app.state.debug_sessions = DebugSessions(app.state)
+    from app.assistant import AssistantService
+    app.state.assistant = AssistantService(app.state)
+    from app.mobile import MobileService
+    from app.mobile_photo import MobilePhotoAnalyzer
+    app.state.mobile_photo = MobilePhotoAnalyzer(app.state)
+    app.state.mobile_service = MobileService(app.state)
+    from app.capture.phone import LiveSourceManager
+    app.state.live_source = LiveSourceManager(app.state)
+    app.state.mobile_service.rtc.live_source = app.state.live_source
+    app.state.photo_wiring_service = PhotoWiringService(app.state, detector_factory=lambda: _build_detector(
+        config.model_copy(update={"detector": "hybrid"}),
+        store.profile("raspberry-pi-5"), store.board_dir("raspberry-pi-5"), None,
+    ))
+    app.state.photo_wiring_transition_lock = asyncio.Lock()
+
+    @app.middleware("http")
+    async def protect_photo_context(request, call_next):
+        method, path = request.method, request.url.path
+        mutation = context_mutation(method, path)
+        if mutation or session_transition(method, path):
+            # Include entering photo mode in the barrier so an already-running
+            # camera/controller write finishes before workers are paused.
+            async with app.state.photo_wiring_transition_lock:
+                if mutation and app.state.photo_wiring_service.active:
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(status_code=409, content={"detail": "photo_session_active"})
+                return await call_next(request)
+        return await call_next(request)
 
     # API routes first, then the catch-all static mount at "/".
     app.include_router(api_routes.router)
@@ -607,7 +643,11 @@ def build_app(
     app.include_router(api_debug.router)
     app.include_router(api_debug_sessions.router)
     app.include_router(api_design.router)
+    app.include_router(api_assistant.router)
+    from app.api import mobile as api_mobile
+    app.include_router(api_mobile.router)
     app.include_router(api_cloud_wiring.router)
+    app.include_router(api_photo_wiring.router)
     mount_frontend(app, Path(config.frontend_dist))
 
     return app

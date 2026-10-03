@@ -16,14 +16,17 @@ function nodes(tree, predicate) {
   function visit(node) {
     if (!React.isValidElement(node)) return;
     if (predicate(node)) found.push(node);
-    for (const slot of ['children', 'navigation', 'left']) React.Children.forEach(node.props[slot], visit);
+    for (const slot of ['children', 'navigation', 'left', 'assistant', 'debugTools']) {
+      const value = node.props[slot];
+      if (React.isValidElement(value) || Array.isArray(value)) React.Children.forEach(value, visit);
+    }
   }
   visit(tree);
   return found;
 }
 function harness({state = maker.initialMaker(), locale = 'en', boardId = 'raspberry-pi-5', displayMode = 'standard'} = {}) {
   const values = [], debugCalls = [];
-  let cursor = 0, current = state;
+  let cursor = 0, current = state, demoOpen = false;
   // These are App's local state slots; the external hooks below have no effects.
   const initial = {0: {board_id: boardId, camera_source: 'device', runtime_revision: 1}, 1: board, 14: displayMode};
   const react = {...React, useEffect() {}, useCallback: fn => fn, useMemo: fn => fn(),
@@ -38,8 +41,12 @@ function harness({state = maker.initialMaker(), locale = 'en', boardId = 'raspbe
   const imports = {
     react,
     './lib/useMaker': {useMaker: () => ({state: current, setState, saved: true}), useMakerText: () => (zh, en) => locale === 'en' ? en : zh},
-    './lib/useMakerAI': {useMakerAI: () => ({newProject: async () => {setState(maker.newMakerProject); return true;}})},
+    './lib/useMakerAI': {useMakerAI: () => ({aiOptions:{},newProject: async () => {setState(maker.newMakerProject); return true;}})},
+    './lib/assistant': {useAssistant: () => ({record:null, demoOpen, setDemoOpen:value=>{demoOpen=value;}, busy:false, prepareConversation:async()=>({id:'new'}), activateConversation:()=>{}, archiveWiring:async()=>true})},
     './lib/maker': maker,
+    './lib/gpioPhotoWorkspace': {WebcamGpioCapture:class {needsResume=false;capture=fail;resume=fail;},
+      photoRecordCurrent:(record,project,round)=>record.projectId===project?.id&&record.revision===project?.revision&&record.round===round,
+      photoGuideWire:(capture,wire)=>capture.wires.find(w=>w.wire_id===wire?.id)},
     './lib/i18n': {useI18n: () => ({t: key => key, tx: v => typeof v === 'string' ? v : v[locale], setLocale: fail, applyDefaultLocale: fail})},
     './lib/displayMode': {isDisplayOnlyMode: mode => mode !== 'standard', isOpticalHudMode: mode => mode === 'optical-hud-demo'},
     './lib/useGlassesStream': {useGlassesStream: () => ({status: null, pending: false, stop: fail})},
@@ -64,17 +71,98 @@ function harness({state = maker.initialMaker(), locale = 'en', boardId = 'raspbe
   return {render, find, navigate, state: () => current, debugCalls};
 }
 
+test('unified wiring keeps one camera and guide controls without a design demo entry', () => {
+  const h = harness({state:{...maker.initialMaker(),stage:'guide',design:designFor()}});
+  const tree = h.render(), camera = h.find(tree, 'VideoView');
+  assert.equal(camera.length, 1);
+  const stage = h.find(tree, 'GuidePaneLayout')[0];
+  assert.match(stage.props.className, /assistant-wiring-stage/);
+  assert.equal(stage.props.resizable, false, 'no divider while the guide is hidden');
+  assert.equal(stage.props.stacked, true);
+  assert.equal(h.find(tree, 'WiringWorkspace')[0].props.guideOnly, true);
+  assert.equal(nodes(tree, n => /assistant-demo-entry|guide-visibility-toggle/.test(n.props.className ?? '')).length, 0,
+    'no separate control row outside the camera toolbar');
+  const controls = camera[0].props.viewControl(null);
+  assert.equal(nodes(controls, n => n.props.className?.includes('guide-visibility-toggle')).length, 1);
+  assert.equal(nodes(controls, n => n.props.className === 'assistant-demo-entry').length, 0);
+  const before = h.state();
+  const toggle = nodes(controls, n => n.props.className?.includes('guide-visibility-toggle'))[0];
+  toggle.props.onClick();
+  assert.equal(h.state(), before, 'collapsing only changes local visibility');
+  assert.equal(h.find(h.render(), 'VideoView').length, 1);
+  assert.equal(h.find(h.render(), 'GuidePaneLayout')[0].props.resizable, true, 'the visible guide enables height resizing');
+  const updatedControls = h.find(h.render(), 'VideoView')[0].props.viewControl(null);
+  nodes(updatedControls, n => n.props.className?.includes('guide-visibility-toggle'))[0].props.onClick();
+  assert.equal(h.find(h.render(), 'GuidePaneLayout')[0].props.resizable, false, 'hiding the guide restores the full camera area');
+});
+
+test('design demo entry belongs only to stage 01 for both concept and blueprint views', () => {
+  for (const locale of ['en','zh-TW']) for (const designView of ['concept','blueprint']) {
+    const h=harness({locale,state:{...maker.initialMaker(),design:designFor(),designView}});
+    const tree=h.render(),entries=nodes(tree,n=>n.props.className==='assistant-demo-entry');
+    assert.equal(entries.length,1);
+    assert.equal(entries[0].props.children,locale==='en'?'Try AI design demo':'體驗 AI 設計 Demo');
+    assert.equal(nodes(tree,n=>n.props.className==='assistant-design-tools').length,1);
+    for(const stage of ['guide','deploy']) {
+      const next=h.navigate(stage);
+      assert.equal(nodes(next,n=>n.props.className==='assistant-demo-entry').length,0);
+      assert.equal(nodes(h.find(next,'VideoView')[0].props.viewControl(null),n=>n.props.className==='assistant-demo-entry').length,0);
+    }
+    const before=h.state();entries[0].props.onClick();
+    assert.equal(h.find(h.render(),'DemoWorkspace').length,1,'the original demo workspace still opens');
+    assert.equal(h.state(),before,'opening demo does not replace the project or wiring progress');
+  }
+});
+
+test('phone connection docks left of Pi; view controls share wiring toolbar without changing the source owner', () => {
+  const design = designFor(), guide = {...maker.emptyGuide(), mode:'2d', confirmed:{kept:{mode:'camera',signature:'kept',at:'fixture'}}};
+  const h = harness({state:{...maker.initialMaker(),stage:'guide',design,guide,code:'# kept'}});
+  let tree = h.render();
+  const controls = h.find(tree,'VideoView')[0].props.viewControl(null);
+  const slot = nodes(controls,n=>n.props.className==='mobile-toolbar-slot mobile-view-controls-slot')[0];
+  const flat = React.Children.toArray(controls.props.children);
+  assert(flat.findIndex(n=>n.props.className==='gpio-image-view-controls')<flat.findIndex(n=>n.type==='StatusBar'));
+  assert.equal(nodes(controls,n=>n.props.className==='mobile-toolbar-slot mobile-header-slot').length,0);
+  const connectionGroup=h.find(tree,'DeviceConnectionGroups')[0];
+  const connections=[connectionGroup.props.phone,connectionGroup.props.pi];
+  assert.equal(connections[0].props.className,'mobile-toolbar-slot mobile-header-slot');assert.equal(connections[1].type,'PiConnectionControl');
+  const host = {id:'phone-toolbar'},headerHost={id:'phone-header'}; slot.ref(host);connections[0].ref(headerHost);
+  tree=h.render();
+  let workspace=h.find(tree,'UnifiedAssistant')[0].props.mobileWorkspace;
+  assert.equal(workspace.trigger,headerHost); assert.equal(workspace.controls,host); assert.equal(workspace.canShow,true);
+  workspace.onShow(true); tree=h.render();
+  const camera=h.find(tree,'VideoView')[0];
+  assert.equal(camera.props.alternateView.props.className,'mobile-main-preview-host');
+  const debugProps = currentTree => h.find(currentTree,'DebugPage')[0].props.assistant({context:{}}).props;
+  assert.equal(debugProps(tree).webcamReady,false,'never capture webcam evidence over a phone preview');
+  assert.equal(debugProps(tree).phonePreview,true);
+  assert.equal(h.find(camera.props.viewControl(null),'StatusBar').length,0,'Webcam tools are hidden on phone preview');
+  assert.equal(h.state().design,design);assert.equal(h.state().guide.confirmed,guide.confirmed);assert.equal(h.state().code,'# kept');
+  assert.equal(h.state().guide.mode,'camera');
+  workspace=h.find(tree,'UnifiedAssistant')[0].props.mobileWorkspace;
+  assert.equal(workspace.showing,true);workspace.onShow(false);tree=h.render();
+  assert.equal(h.find(tree,'VideoView')[0].props.alternateView,null);
+  assert.equal(debugProps(tree).webcamReady,true);
+  assert.equal(h.find(tree,'VideoView').length,1);
+  for(const stage of ['design','deploy','guide']) {
+    tree=h.navigate(stage);workspace=h.find(tree,'UnifiedAssistant')[0].props.mobileWorkspace;
+    assert.equal(workspace.trigger,headerHost,'connection entry stays in the global header');
+    assert.equal(workspace.controls,stage==='guide'?host:null);
+    assert.equal(h.find(tree,'UnifiedAssistant').length,1,'do not remount a duplicate phone controller');
+  }
+});
+
 for (const locale of ['en', 'zh-TW']) test(`New project → 02 uses the empty guide, never 03 or legacy tools (${locale})`, async () => {
   const design = designFor();
   const h = harness({locale, state: {...maker.initialMaker(), design, code: 'previous code', debug: {panelOpen: true, caseId: 'old'}}});
-  const assistant = h.find(h.render(), 'MakerAssistant')[0];
+  const assistant = h.find(h.render(), 'UnifiedAssistant')[0];
   assert.equal(await assistant.props.onNewProject(), true);
   assert.equal(h.state().design, null);
   const tree = h.navigate('guide');
   assert.match(tree.props.className, /maker-wiring-full-width/);
   for (const component of ['PiDeployPanel', 'WiringGuidePanel', 'DebugPage', 'aside']) assert.equal(h.find(tree, component).length, 0, component);
   assert.equal(h.find(tree, 'VideoView').length, 1);
-  assert.equal(h.find(tree, 'GuidePaneLayout')[0].props.resizable, true);
+  assert.equal(h.find(tree, 'GuidePaneLayout')[0].props.resizable, false);
   assert.equal(h.debugCalls.at(-1).enabled, false);
   const empty = nodes(tree, n => n.props.className?.includes('maker-guide-empty'))[0];
   assert.equal(empty.props.hidden, false);
@@ -84,7 +172,7 @@ for (const locale of ['en', 'zh-TW']) test(`New project → 02 uses the empty gu
   assert.equal(h.state().stage, 'design');
   for (const field of ['design', 'candidate', 'code', 'guide', 'conversation']) assert.equal(h.state()[field], before[field]);
   assert.equal(h.find(h.render(), 'PiDeployPanel').length, 0);
-  assert.equal(h.find(h.render(), 'MakerAssistant').length, 1);
+  assert.equal(h.find(h.render(), 'UnifiedAssistant').length, 1);
 });
 
 test('02 after restoring an empty project or with an unconfirmed preview cannot show deployment or legacy wiring', () => {
@@ -121,17 +209,82 @@ test('confirmed-project wiring, AI and guide state remain bound to the original 
   const workspace = h.find(tree, 'WiringWorkspace')[0];
   assert.equal(workspace.props.design, design);
   assert.equal(workspace.props.guide, guide);
-  assert.equal(workspace.props.assistant.type, 'DebugPage');
+  assert.equal(workspace.props.guideOnly, true);
+  assert.equal(workspace.props.assistant, null);
+  assert.equal(h.find(tree, 'DebugPage').length, 1);
   assert.equal(h.find(tree, 'ProjectGuidePanel')[0].props.session, guide);
   assert.equal(h.debugCalls.at(-1).enabled, true);
   assert.equal(nodes(tree, n => n.props.className?.includes('maker-guide-empty')).length, 0);
+});
+
+test('03 diagnosis opens shared AI without switching stage or recreating the camera', () => {
+  const h = harness({state:{...maker.initialMaker(),design:designFor(),code:'manual draft'}});
+  const before=h.state();const tree=h.navigate('deploy');
+  const panel=h.find(tree,'PiDeployPanel')[0];panel.props.onDebug({program:'stopped',logs:['error']});
+  const after=h.render();assert.equal(h.state().stage,'deploy');
+  assert.equal(h.state().code,before.code);assert.equal(h.state().design,before.design);
+  assert.equal(h.find(after,'UnifiedAssistant').length,1);
+  assert.equal(h.find(after,'VideoView').length,1);
+  assert.equal(h.find(after,'AssistantWorkspace')[0].props.openRequest,1);
+});
+
+test('all three stages keep the shared chat and no longer duplicate its model menu in the header', () => {
+  const h = harness({state: {...maker.initialMaker(), design: designFor()}});
+  for (const stage of ['design', 'guide', 'deploy']) {
+    const tree = h.navigate(stage);
+    const header = h.find(tree, 'WorkspaceHeader')[0];
+    assert.equal(h.find(header, 'MakerModelMenu').length, 0);
+    assert.equal(h.find(header, 'DeviceConnectionGroups')[0].props.pi.type, 'PiConnectionControl');
+    const chat = h.find(tree, 'UnifiedAssistant');
+    assert.equal(chat.length, 1);
+    assert.equal(chat[0].props.state, h.state());
+  }
+  const hud = harness({displayMode: 'optical-hud-demo'});
+  assert.equal(hud.find(hud.render(), 'MakerModelMenu').length, 1, 'HUD keeps its model control without a chat pane');
 });
 
 test('non-Maker controllers, standalone wiring and HUD keep their board guide without a deployment panel', () => {
   for (const options of [{boardId: 'arduino-uno'}, {state: {...maker.initialMaker(), standalone: true, stage: 'guide'}}, {displayMode: 'optical-hud-demo'}]) {
     const h = harness(options), tree = h.render();
     assert.equal(h.find(tree, 'WiringGuidePanel').length, 1);
+    assert.equal(h.find(tree, 'GuidePaneLayout')[0].props.stacked, false, 'legacy board and HUD layouts keep their orientation');
     assert.equal(h.find(tree, 'PiDeployPanel').length, 0);
     assert.equal(nodes(tree, n => n.props.className?.includes('maker-guide-empty')).length, 0);
   }
+});
+
+test('GPIO photo is a passive main view without a POC entry, retaining camera and guide state', () => {
+  const design = designFor();
+  const state = {...maker.initialMaker(), design, aiModel: 'selected-image-model', aiEffort: 'low'};
+  const h = harness({state});
+  const tree = h.navigate('guide');
+  const controls = h.find(tree, 'VideoView')[0].props.viewControl(null);
+  assert.equal(nodes(controls,node=>node.props.className==='photo-poc-trigger').length,0);
+  const entry = nodes(controls, node => node.type === 'button' && node.props.children === 'GPIO photo')[0];
+  assert.equal(entry.props.disabled, false);
+  const before = h.state();
+  entry.props.onClick();
+  const photoTree = h.render();
+  assert.equal(h.find(photoTree, 'VideoView').length, 1);
+  assert.equal(h.find(photoTree, 'WiringWorkspace').length, 1);
+  const photo = h.find(photoTree,'VideoView')[0].props.alternateView;
+  assert.equal(photo.type,'GpioPhotoWorkspace');assert.equal(photo.props.record,null);
+  assert.equal(h.find(photoTree, 'PhotoWiringPoc').length, 0);
+  assert.equal(h.find(h.find(photoTree,'VideoView')[0].props.viewControl(null),'StatusBar').length,0);
+  assert.equal(h.state(), before);
+  photo.props.onReturn();
+  assert.equal(h.find(h.render(), 'VideoView').length, 1);
+  assert.equal(h.state(), before);
+});
+
+test('mobile capture enters the common photo view and wires follow the guide, not unrelated endpoints',()=>{
+  const design=designFor(),state={...maker.initialMaker(),stage:'guide',design};const h=harness({state});
+  let tree=h.render();const workspace=h.find(tree,'UnifiedAssistant')[0].props.mobileWorkspace;
+  const wire=design.wiring[0],capture={capture_id:'phone-photo',wires:[{wire_id:wire.id}],video_size:[1920,1080]};
+  workspace.onPhoto(capture,true,{round:0,context:{workspace_project_id:design.id,project_version:design.revision}});
+  tree=h.render();let view=h.find(tree,'VideoView')[0].props.alternateView;
+  assert.equal(view.type,'GpioPhotoWorkspace');assert.equal(view.props.record.source,'phone');assert.equal(view.props.historical,false);
+  assert.equal(view.props.wire.wire_id,wire.id);
+  const before=h.state();view.props.onReturn();tree=h.render();assert.equal(h.state(),before);
+  assert.equal(h.find(tree,'VideoView').length,1);
 });

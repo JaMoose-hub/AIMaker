@@ -3,15 +3,23 @@ import { useMakerText } from "../lib/useMaker";
 import { componentComplete, componentTestKey, missingDependencyMessage, testReasons } from "../lib/componentTests";
 import type { useComponentTests } from "../lib/useComponentTests";
 import type { ProjectDesign, ProjectGuideState } from "../lib/maker";
+import "./ComponentTestCard.css";
 
 export function ComponentTestCard({ design, session, tests, onViewWiring, onDebug, view = "all", runId }: {
   design: ProjectDesign; session: ProjectGuideState; tests: ReturnType<typeof useComponentTests>;
-  view?: "all" | "controls" | "results";
+  view?: "all" | "controls" | "results" | "instructions" | "actions" | "dock";
   runId?: string;
   onViewWiring: () => void;
   onDebug?: (componentId: string, runId?: string, symptom?: string) => void;
 }) {
   const tr = useMakerText();
+  // The wiring guide separates readable instructions/results from hardware actions.
+  // Other test surfaces keep their existing all/controls/results presentation.
+  const showResults = view !== "controls" && view !== "actions";
+  const showControls = view !== "results" && view !== "instructions";
+  const showInstructions = view !== "results" && view !== "actions";
+  const compact = view === "instructions" || view === "dock";
+  const compactActions = view === "actions" || view === "dock";
   const cid = design.component_ids[session.componentIndex];
   const complete = componentComplete(design, session, cid);
   const key = componentTestKey(design, session, cid);
@@ -24,21 +32,22 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
   const active = tests.status.active;
   const foreign = active && (active.project_id !== design.id || active.component_id !== cid);
   const run = runId ? (active?.id === runId ? active : tests.status.results.find(item => item.id === runId && item.project_id === design.id && item.component_id === cid))
-    : (view === "results" && foreign ? null : active) ?? (failedJob ? undefined : last);
+    : (!showControls && foreign ? null : active) ?? (failedJob ? undefined : last);
   const stale = Boolean(run && (run.invalidated || run.guide_key !== key || (foreign && run === active)));
   const [choice, setChoice] = useState<{runId:string; code:string; normal:boolean}>({runId:"",code:"",normal:false});
   const [copied, setCopied] = useState(false);
   const [openedAt] = useState(() => Date.now() / 1000);
   if (runId && (!run || run.project_id !== design.id || run.component_id !== cid)) return <p role="status">{tr("正在取得這次測試紀錄；不會改用其他測試的確認選項。", "Loading this exact test; another run's confirmation options will not be substituted.")}</p>;
   if (!complete && !active && !last) return null;
-  const reason = tests.error ?? failedJob?.reason ?? (stale && (!foreign || view === "results") ? "wiring_changed" : run?.reason);
+  const reason = tests.error ?? failedJob?.reason ?? (stale && (!foreign || !showControls) ? "wiring_changed" : run?.reason);
   const detail = (reason === "missing_dependency" ? missingDependencyMessage(failedJob?.error ?? run?.detail ?? "", failedJob ? "preflight" : run?.failed_phase ?? run?.phase) : null)
     ?? (reason ? testReasons[reason] : null);
-  const outcome = failedJob || (tests.error && run?.reserved) ? "inconclusive" : stale && (!foreign || view === "results") ? "inconclusive" : run?.outcome;
+  const outcome = failedJob || (tests.error && run?.reserved) ? "inconclusive" : stale && (!foreign || !showControls) ? "inconclusive" : run?.outcome;
   const labels = {running: tr("測試中", "Testing"), awaiting_confirmation: tr("等待使用者確認", "Awaiting confirmation"),
     passed: tr("功能通過", "Function passed"), failed: tr("未通過", "Not passed"), inconclusive: tr("無法判定", "Inconclusive")};
   const phase = run?.phase;
   const historical = Boolean(run && !run.reserved && (run.finished_at ?? run.created_at) < openedAt);
+  const finishedTime = run && !run.reserved ? new Date((run.finished_at ?? run.created_at)*1000).toLocaleString(tr("zh-TW", "en")) : "";
   const busy = tests.pending;
   const canAct = run?.reserved && (!runId || active?.id === run.id) && !stale && !tests.error && !["connection_lost", "remote_state_unknown"].includes(run.reason ?? "");
   const name = cid === "hc-sr04" ? "HC-SR04+" : "MRD-TFT240";
@@ -55,33 +64,52 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     awaiting_visual: tr("請選出實體螢幕上看到的四位數字，並確認三色正常。沒看到數字請勿猜選或勾選通過。", "Select the four digits you saw on the physical screen and confirm the colors. Do not guess or confirm a pass if no code was visible."),
     reconnecting: tr("重新查詢遠端測試，不會重複啟動", "Rechecking remote test without starting another"),
   };
+  const compactPhases: Record<string,string> = {
+    preflight: tr("檢查 Pi 與測試環境…", "Checking Pi and test setup…"),
+    starting: tr("正在啟動測試…", "Starting test…"),
+    awaiting_near: tr("平整物體放前方約 15 cm，再按「準備好了」。", "Place a flat target about 15 cm ahead, then press Ready."),
+    awaiting_far: tr("同一物體移到約 30 cm，再按「準備好了」。", "Move the same target to about 30 cm, then press Ready."),
+    sampling_near: tr("近距離取樣 · 保持不動 5 秒", "Near sample · Hold still for 5 seconds"),
+    sampling_far: tr("遠距離取樣 · 保持不動 5 秒", "Far sample · Hold still for 5 seconds"),
+    display_red: tr("看實體螢幕：現在應顯示紅色。", "Check the physical screen: it should be red."),
+    display_lime: tr("看實體螢幕：現在應顯示綠色。", "Check the physical screen: it should be green."),
+    display_blue: tr("看實體螢幕：現在應顯示藍色。", "Check the physical screen: it should be blue."),
+    display_code: tr("記下實體螢幕的四位數字（顯示至少 15 秒）。", "Note the four digits on the physical screen (shown for at least 15 seconds)."),
+    awaiting_visual: tr("選出螢幕上的數字，確認三色。沒看到請勿猜選。", "Select the code you saw and confirm all three colors. Do not guess."),
+  };
+  const liveReading = run?.latest && !tests.error && !stale && !reason && Date.now()/1000-run.latest.at < 2
+    ? run.latest.cm.toFixed(1) : null;
+  const facts = run && (run.reserved || Object.keys(run.samples).length > 0) ? <div className="test-facts">
+    {run.reserved ? <span>{tr("最後回報時間", "Last report time")}: {run.heartbeat_at ? new Date(run.heartbeat_at*1000).toLocaleString(tr("zh-TW", "en")) : tr("等待首次回報", "Waiting for first report")}</span> : null}
+    {Object.entries(run.samples).map(([samplePhase, sample]) => <span key={samplePhase}>{samplePhase === "near" ? tr("近", "Near") : tr("遠", "Far")}: {sample.count} {tr("筆", "samples")} · {sample.median_cm ?? "—"} cm</span>)}</div> : null;
   const debugAction = onDebug && (reason || outcome === "failed" || outcome === "inconclusive")
     ? <button type="button" className="component-test-debug-action" onClick={() => onDebug(cid, run?.id, reason ?? undefined)}>{tr("前往除錯", "Troubleshoot")}</button> : null;
-  return <section className="component-test-card" aria-label={tr("零件功能測試", "Component function test")}>
-    {view === "controls" && foreign ? <p role="status">{tr("其他零件仍在測試；下方停止按鈕會停止該次測試。新測試須經上方執行管理確認交接。", "Another component is testing; Stop below stops that run. Confirm handoff in Execution before the next test.")}</p> : null}
-    {view === "controls" ? debugAction : null}
-    {view !== "controls" ? <><header><span>{tr("零件功能測試", "COMPONENT TEST")} · {view !== "results" && foreign ? run?.component_id : name}</span>
-      <div className="component-test-result-row"><strong className={`test-outcome ${outcome ?? "untested"}`} role="status">{outcome ? labels[outcome] : tr("未測試", "Not tested")}</strong>{debugAction}</div></header>
-    {foreign ? <p>{tr("另一個零件仍在測試。可以將本零件加入佇列，並在上方「執行管理」確認停止與交接。", "Another component is testing. Queue this module and confirm handoff in Execution above.")}</p> : null}
+  const historyNote = run && !run.reserved ? <small className="test-history">{historical ? tr("上次測試紀錄", "Last test record") : tr("本次測試結果", "This test result")}{!compact ? ` · ${finishedTime}` : ""}{historical ? tr("（先前保存，非目前接線證據）", " (saved history, not current wiring evidence)") : ""}</small> : null;
+  const compactStale = compact && stale && !run?.reserved && !tests.error && !failedJob && !foreign;
+  const wiringCount = design.wiring.filter(wire => wire.componentId === cid).length;
+  return <section className={`component-test-card${compact ? " is-compact-test" : ""}`} data-view={view} aria-label={tr("零件功能測試", "Component function test")}>
+    {!showResults && foreign ? <p role="status">{tr("其他零件仍在測試；下方停止按鈕會停止該次測試。新測試須經上方執行管理確認交接。", "Another component is testing; Stop below stops that run. Confirm handoff in Execution before the next test.")}</p> : null}
+    {!showResults && !compactActions ? debugAction : null}
+    {showResults ? <><header><span>{compact ? <>{tr("功能測試", "Function test")}{complete ? <small className="test-wiring-count">{tr("人工確認", "Manually checked")} {wiringCount}/{wiringCount}</small> : null}</> : <>{tr("零件功能測試", "COMPONENT TEST")} · {showControls && foreign ? run?.component_id : name}</>}</span>
+      <div className="component-test-result-row"><strong className={`test-outcome ${outcome ?? "untested"}`} role="status">{compactStale ? tr("待重測", "Retest needed") : outcome ? labels[outcome] : tr("未測試", "Not tested")}</strong>{view !== "dock" ? debugAction : null}</div></header>
+    {foreign ? <p>{view === "dock" ? tr("其他零件仍在測試；停止按鈕會停止該次測試。新測試需在執行管理確認交接。", "Another component is testing; Stop stops that run. Confirm handoff in Execution before a new test.") : tr("另一個零件仍在測試。可以將本零件加入佇列，並在上方「執行管理」確認停止與交接。", "Another component is testing. Queue this module and confirm handoff in Execution above.")}</p> : null}
     {queued && queued.state !== "running" ? <p className="guide-caution" role="status">{tr("本零件已加入執行佇列；請看上方「執行管理」的交接提示。", "This module is queued. Check Execution above for the handoff prompt.")}</p> : null}
     {failedJob ? <p role="alert">{tr("本次未能啟動測試", "This test could not start")}: {failedJob.error}</p> : null}
-    {run && !run.reserved ? <small>{historical ? tr("上次測試紀錄", "Last test record") : tr("本次測試結果", "This test result")} · {new Date((run.finished_at ?? run.created_at)*1000).toLocaleString(tr("zh-TW", "en"))}{historical ? tr("（先前保存，非目前接線證據）", " (saved history, not current wiring evidence)") : ""}</small> : null}
-    {outcome === "passed" && run?.evidence === "user_visual_confirmation" ? <small>{tr("判定依據：本次測試碼及顏色由使用者目視確認。", "Evidence: the user visually confirmed this run's code and colors.")}</small> : null}
+    {!compactStale ? historyNote : null}
+    {outcome === "passed" && run?.evidence === "user_visual_confirmation" ? <small>{compact ? tr("由你目視確認測試碼與三色。", "Code and colors visually confirmed by you.") : tr("判定依據：本次測試碼及顏色由使用者目視確認。", "Evidence: the user visually confirmed this run's code and colors.")}</small> : null}
     </> : null}
-    {view !== "results" ? <div className="test-next-step" role="status">{detail ? tr(...detail) : tests.error ? tr("狀態更新失敗，請查看診斷或重新連線。", "Status update failed. Check diagnostics or reconnect.") : run?.reserved ? phases[phase ?? ""] ?? tr("等待本次測試回報", "Waiting for test progress") : historical ? tr("這是先前紀錄；可重新測試確認目前接線。", "This is a saved record. Retest to check the current wiring.") : outcome === "passed" ? tr("本次功能測試通過，可以繼續下一個零件。", "This function test passed. Continue to the next component.") : tr("接好並核對供電後，可執行一次零件測試。", "After wiring and checking power ratings, run a component test.")}</div> : null}
-    {view !== "controls" ? <>
-    {run?.component_id === "hc-sr04" && run.reserved ? <p className="test-reading">{run.latest && !tests.error && !stale && Date.now()/1000-run.latest.at < 2 ? run.latest.cm.toFixed(1) : "—"} <small>cm</small></p> : null}
-    {run && (run.reserved || Object.keys(run.samples).length > 0) ? <div className="test-facts">
-      {run.reserved ? <span>{tr("最後回報時間", "Last report time")}: {run.heartbeat_at ? new Date(run.heartbeat_at*1000).toLocaleString(tr("zh-TW", "en")) : tr("等待首次回報", "Waiting for first report")}</span> : null}
-      {Object.entries(run.samples).map(([phase, sample]) => <span key={phase}>{phase === "near" ? tr("近", "Near") : tr("遠", "Far")}: {sample.count} {tr("筆", "samples")} · {sample.median_cm ?? "—"} cm</span>)}</div> : null}
+    {showInstructions ? <div className="test-next-step" role="status">{compactStale ? tr("舊結果已失效，請重新測試。", "The old result is no longer valid. Run a new test.") : detail ? tr(...detail) : tests.error ? tr("狀態更新失敗，請查看診斷或重新連線。", "Status update failed. Check diagnostics or reconnect.") : run?.reserved ? (compact ? compactPhases[phase ?? ""] : undefined) ?? phases[phase ?? ""] ?? tr("等待本次測試回報", "Waiting for test progress") : historical ? tr("重新測試可確認目前接線。", "Retest to check the current wiring.") : outcome === "passed" ? tr("本次功能測試通過，可以繼續下一個零件。", "This function test passed. Continue to the next component.") : tr("核對接線與供電後，按「測試」。", "Check wiring and power ratings, then press Test.")}</div> : null}
+    {showResults ? <>
+    {run?.component_id === "hc-sr04" && run.reserved && (!compact || liveReading !== null) ? <p className="test-reading">{liveReading ?? "—"} <small>cm</small></p> : null}
+    {!compact ? facts : null}
     </> : null}
-    {view !== "results" ? <><div className="test-actions">
-      {!tests.status.connected ? <small>{tr("請使用上方「連線 Pi」", "Use Connect Pi at the top")}</small> : null}
-      {!runId && complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
+    {showControls ? <><div className="test-actions">
+      {!tests.status.connected && !compactActions ? <small>{tr("請使用上方「連線 Pi」", "Use Connect Pi at the top")}</small> : null}
+      {!runId && complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} title={!tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
       {canAct && phase === "awaiting_stop_consent" ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, "stop_project")}>{tr("確認停止原作品，開始測試", "Stop original project and test")}</button> : null}
       {canAct && (phase === "awaiting_near" || phase === "awaiting_far") ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, phase === "awaiting_near" ? "near" : "far")}>{tr("準備好了，取樣 5 秒", "Ready · sample for 5 seconds")}</button> : null}
       {run?.reserved ? <button disabled={busy} onClick={() => void tests.action(run, "stop")}>{tr("停止本次測試", "Stop this test")}</button> : null}
-      <button disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button>
+      {!compactActions ? <button disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button> : null}
     </div>
     {canAct && phase === "awaiting_visual" ? <fieldset disabled={busy} className="test-visual-confirm"><legend>{tr("本次螢幕顯示哪個數字？", "Which code is on the screen?")}</legend>
       <div className="test-code-options">{run.options.map(code => <label key={code}><input type="radio" name={`test-code-${run.id}`} checked={choice.runId === run.id && choice.code === code}
@@ -90,13 +118,20 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
       <button disabled={choice.runId !== run.id || !choice.code || !choice.normal} onClick={() => void tests.action(run, "visual", {code:choice.code,appearance:"normal"})}>{tr("確認顯示結果", "Confirm display result")}</button>
       <div className="test-actions">{([['black','全黑','Black screen'],['white','白屏','White screen'],['abnormal','亂碼／顏色異常','Abnormal image/colors']] as const).map(([appearance,zh,en]) => <button key={appearance} onClick={() => void tests.action(run,"visual",{appearance})}>{tr(zh,en)}</button>)}</div>
     </fieldset> : null}
+    {compactActions && view !== "dock" ? <details className="test-more-actions"><summary>{tr("其他操作", "More actions")}</summary><div>{debugAction}
+      <button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button>
+    </div></details> : null}
     </> : null}
-    {view !== "controls" ? <details><summary>{tr("診斷與環境設定", "Diagnostics and setup")}</summary>
+    {showResults ? <details className="test-diagnostics"><summary>{compact ? tr("測試詳情", "Test details") : tr("診斷與環境設定", "Diagnostics and setup")}</summary>
+      {view === "dock" ? <div className="test-diagnostic-actions">{debugAction}<button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button></div> : null}
+      {compactStale ? historyNote : null}
+      {compact ? facts : null}
+      {compact && finishedTime ? <p>{finishedTime}</p> : null}
       <p>{tr("Pi 需先準備 gpiozero、lgpio；TFT 另需 spidev、Pillow、luma.lcd 2.13.0 與 SPI0。沿用部署頁的環境設定，不會自動安裝。", "Prepare gpiozero/lgpio on Pi; TFT also needs spidev, Pillow, luma.lcd 2.13.0 and SPI0. Use the deployment setup instructions; nothing is installed automatically.")}</p>
       <p>{tr("缺套件：到「03 部署與執行 → 執行環境與硬體準備」，依指定部署目錄建立虛擬環境並手動安裝套件。SPI：在 Pi 執行 sudo raspi-config → Interface Options → SPI。權限：用 id 與 ls -l /dev/gpiochip* /dev/spidev0.0 核對群組與裝置權限，調整後重新登入。", "Dependencies: open 03 Deploy & run → Runtime prerequisites and prepare the configured virtual environment manually. SPI: sudo raspi-config → Interface Options → SPI. Permissions: compare id with ls -l /dev/gpiochip* /dev/spidev0.0 and log in again after correcting groups.")}</p>
       <pre>{JSON.stringify(run ? {id:run.id,target:run.target_id,phase:run.phase,failed_phase:run.failed_phase,reason:run.reason,error:tests.error,detail:run.detail,exit_code:run.exit_code,latest_valid_at:run.latest_valid_at,template:run.template_version,samples:run.samples,logs:run.logs} : {error:tests.error},null,2)}</pre>
       <button onClick={() => { void navigator.clipboard.writeText(JSON.stringify({run,error:tests.error},null,2)).then(()=>setCopied(true)).catch(()=>setCopied(false)); }}>{tr(copied ? "已複製" : "複製診斷", copied ? "Copied" : "Copy diagnostics")}</button>
     </details> : null}
-    {view !== "results" ? <small>{tr("改接線前斷電，接好再上電測試。功能通過不等於所有線路與電壓均已驗證。", "Power off before rewiring. Function success is not complete electrical verification.")}</small> : null}
+    {showInstructions ? <small className="test-safety-note">{compact ? tr("改線前斷電 · 測試僅確認功能", "Power off to rewire · Function check only") : tr("改接線前斷電，接好再上電測試。功能通過不等於所有線路與電壓均已驗證。", "Power off before rewiring. Function success is not complete electrical verification.")}</small> : null}
   </section>;
 }

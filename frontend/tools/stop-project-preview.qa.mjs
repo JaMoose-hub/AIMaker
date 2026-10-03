@@ -17,7 +17,7 @@ try{
     await context.addInitScript(value=>localStorage.setItem('boardvision.locale.v1',value),locale);
     await context.route('**/*',route=>{
       const u=new URL(route.request().url());
-      if(u.origin===origin&&['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg'].includes(u.pathname))return route.continue();
+      if(u.origin===origin&&['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg'].includes(u.pathname))return route.continue();
       report.denied.push(u.href);return route.abort();
     });
     page=await context.newPage();const errors=[];

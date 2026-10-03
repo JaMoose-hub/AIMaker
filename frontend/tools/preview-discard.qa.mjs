@@ -10,7 +10,7 @@ const {chromium}=createRequire(import.meta.url)('C:/Users/james/.cache/codex-run
 const artifacts=fileURLToPath(new URL('./preview-discard-artifacts/',import.meta.url));
 await mkdir(artifacts,{recursive:true});
 const preview=await startPreview(0);
-const allowed=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg',...discardImagePaths];
+const allowed=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg',...discardImagePaths];
 const report={fixture:'Actual concept components and useMaker storage; synthetic v2/v3 images on isolated origin. No production/hardware/model calls.',results:[],errors:[],deniedRequests:[]};
 const storageKey='boardvision.maker.v1';
 let browser,currentPage;

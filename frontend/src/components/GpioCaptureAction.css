@@ -1,0 +1,13 @@
+.gpio-capture-action { display:flex; flex-direction:column; align-items:flex-end; gap:6px; max-width:240px; pointer-events:auto; }
+.app.tinkro-theme:not(.display-mode-active) .gpio-capture-action .gpio-capture-button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:36px; padding:8px 13px; margin:0; font:inherit; font-size:12px; line-height:1.2; white-space:nowrap; color:#ddf6ff; background:rgba(20,40,52,.94); border:1px solid rgba(130,210,231,.42); border-radius:999px; box-shadow:0 3px 14px #0003; backdrop-filter:blur(14px); cursor:pointer; transition:background .15s,border-color .15s; }
+.app.tinkro-theme:not(.display-mode-active) .gpio-capture-action .gpio-capture-button:not(:disabled):hover { background:#254859; border-color:#9de6f0; }
+.app.tinkro-theme:not(.display-mode-active) .gpio-capture-action .gpio-capture-button:focus-visible { outline:2px solid #a4efff; outline-offset:3px; }
+.app.tinkro-theme:not(.display-mode-active) .gpio-capture-action .gpio-capture-button:disabled { opacity:.65; cursor:not-allowed; }
+.gpio-capture-action svg { flex:none; }
+.gpio-capture-action small { max-width:100%; padding:5px 9px; border-radius:8px; color:#c0cfdb; background:rgba(16,25,34,.94); text-align:right; font-size:11px; line-height:1.4; }
+.gpio-capture-action small[role="alert"] { color:#f5d095; }
+.gpio-capture-button.is-busy svg { animation:gpio-capture-pulse 1s ease-in-out infinite alternate; }
+.gpio-photo-workspace .gpio-photo-actions { display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-left:auto; }
+@keyframes gpio-capture-pulse { to { opacity:.4; } }
+@media(prefers-reduced-motion:reduce) { .gpio-capture-button.is-busy svg { animation:none; } }
+@media(max-width:700px) { .app.tinkro-theme:not(.display-mode-active) .gpio-capture-action .gpio-capture-button { min-height:44px; } }

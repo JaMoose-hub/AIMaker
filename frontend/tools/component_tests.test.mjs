@@ -17,6 +17,155 @@ function runFor(design, session, overrides={}) {
 }
 const state = run => ({status:{connected:true,test_busy:run.reserved,active:run.reserved?run:null,results:[run]}});
 
+function guidePanes(html) {
+  const footerStart = html.indexOf('<footer class="guide-panel-footer">');
+  assert.ok(footerStart > 0);
+  return {info:html.slice(html.indexOf('<div class="guide-panel-body"'), footerStart), actions:html.slice(footerStart)};
+}
+
+test('guide puts instructions and results on the left and navigation/test actions on the right',async()=>{
+  for(const cid of ['hc-sr04','mrd-tf240-8p-cs']) for(const locale of ['zh-TW','en']) {
+    const design=designFor([cid]),session=complete(design),before=structuredClone(session);
+    const html=await renderGuide({design,session,locale}),{info,actions}=guidePanes(html);
+    assert.match(info,/data-view="instructions"/);
+    assert.match(info,/test-next-step/);
+    assert.match(info,/test-outcome untested/);
+    assert.doesNotMatch(info,/test-actions|guide-navigation|test-visual-confirm/);
+    assert.match(actions,/guide-navigation/);
+    assert.match(actions,/data-view="actions"/);
+    assert.match(actions,/test-actions/);
+    assert.doesNotMatch(actions,/test-next-step|test-facts|診斷與環境設定|Diagnostics and setup/);
+    assert.doesNotMatch(html,/guide-ai-help|問 AI 接法|Ask AI about wiring/);
+    assert.deepEqual(session,before);
+  }
+});
+
+test('guide keeps physical screen instructions left and run-bound confirmation controls right',async()=>{
+  const design=designFor(['mrd-tf240-8p-cs']),session=complete(design);
+  const tests=state(runFor(design,session,{reserved:true,outcome:'awaiting_confirmation',phase:'awaiting_visual',reason:null}));
+  const {info,actions}=guidePanes(await renderGuide({design,session,tests}));
+  assert.match(info,/選出螢幕上的數字，確認三色/);
+  assert.match(info,/沒看到請勿猜選/);
+  assert.doesNotMatch(info,/type="radio"|type="checkbox"|停止本次測試/);
+  assert.equal((actions.match(/type="radio"/g)||[]).length,4);
+  assert.match(actions,/name="test-code-run-1"/);
+  assert.match(actions,/停止本次測試/);
+  assert.match(actions,/<button disabled="">確認顯示結果/);
+});
+
+test('compact test phases give one short action and hide telemetry in closed details',async()=>{
+  const phases = [
+    ['hc-sr04','awaiting_near','15 cm'], ['hc-sr04','awaiting_far','30 cm'],
+    ['hc-sr04','sampling_near','5 秒'], ['hc-sr04','sampling_far','5 秒'],
+    ['mrd-tf240-8p-cs','display_red','紅色'], ['mrd-tf240-8p-cs','display_lime','綠色'],
+    ['mrd-tf240-8p-cs','display_blue','藍色'], ['mrd-tf240-8p-cs','display_code','至少 15 秒'],
+    ['mrd-tf240-8p-cs','awaiting_visual','沒看到請勿猜選'],
+  ];
+  for (const [cid,phase,copy] of phases) for (const locale of ['zh-TW','en']) {
+    const design=designFor([cid]),session=complete(design);
+    const tests=state(runFor(design,session,{reserved:true,outcome:'running',reason:null,phase,
+      samples:{near:{count:8,median_cm:15.2}}})),before=structuredClone(tests);
+    const html=await renderTestCard({design,session,tests,view:'instructions',locale});
+    const [visible,details]=html.split('<details class="test-diagnostics">');
+    assert.ok(details,'telemetry disclosure is closed by default');
+    assert.doesNotMatch(visible,/test-facts|test-reading|最後回報時間|Last report time|1234|2468|4567|7890/);
+    assert.match(details,/test-facts/);
+    assert.match(details,/15.2 cm/);
+    assert.ok(visible.includes(locale==='en'?'Function test':'功能測試'));
+    const instruction=visible.match(/class="test-next-step" role="status">([^<]+)</)[1];
+    assert.ok(instruction.length<105,`${locale}/${phase}: ${instruction}`);
+    if(locale==='zh-TW') assert.ok(instruction.includes(copy),instruction);
+    else if(phase.startsWith('display_')) assert.match(instruction,/physical screen/);
+    assert.deepEqual(tests,before,'presentation must not alter test evidence');
+  }
+});
+
+test('compact readings never show placeholders, stale data or data during a connection error',async()=>{
+  const design=designFor(),session=complete(design);
+  for(const overrides of [{latest:null},{latest:{cm:15.2,at:1}},
+    {latest:{cm:15.2,at:Date.now()/1000},reason:'connection_lost'},
+    {latest:{cm:15.2,at:Date.now()/1000},invalidated:true}]) {
+    const tests=state(runFor(design,session,{reserved:true,outcome:'running',phase:'sampling_near',reason:null,...overrides}));
+    const html=await renderTestCard({design,session,tests,view:'instructions'});
+    assert.doesNotMatch(html,/class="test-reading"/);
+    if(overrides.reason) assert.match(html,/檢查電源/);
+  }
+  const html=await renderTestCard({design,session,view:'instructions',tests:state(runFor(design,session,
+    {reserved:true,outcome:'running',phase:'sampling_near',reason:null,latest:{cm:15.2,at:Date.now()/1000}}))});
+  assert.match(html,/class="test-reading">15.2/);
+});
+
+test('review removes repeated readiness text but retains manual evidence, BLK caution and history',async()=>{
+  const design=designFor(['mrd-tf240-8p-cs']),session=complete(design);
+  const {info}=guidePanes(await renderGuide({design,session}));
+  const visible=info.split('class="compact-guide-details" hidden=""')[0];
+  assert.match(visible,/人工確認.*7\/7/);
+  assert.doesNotMatch(visible,/本模組人工紀錄/);
+  assert.doesNotMatch(visible,/現在可以測試|接上 Pi USB-C|開機後前往部署/);
+  assert.match(visible,/BLK 留空；背光不亮先查規格，勿接 GPIO／5V/);
+  const historical=await renderTestCard({design,session,view:'instructions',tests:state(runFor(design,session,
+    {outcome:'passed',reason:null,evidence:'user_visual_confirmation'}))});
+  const beforeDetails=historical.split('<details')[0];
+  assert.match(beforeDetails,/上次測試紀錄/);
+  assert.match(beforeDetails,/非目前接線證據/);
+  assert.match(beforeDetails,/由你目視確認/);
+});
+
+test('guide action column preserves disconnected stop, disabled start and foreign-run warning',async()=>{
+  const design=designFor(),session=complete(design);
+  const disconnected=guidePanes(await renderGuide({design,session,tests:{status:{connected:false,active:null,results:[]}}}));
+  assert.match(disconnected.actions,/請使用上方「連線 Pi」/);
+  assert.match(disconnected.actions,/<button class="guide-primary-action" disabled=""[^>]*>連接 Pi 後測試/);
+  for(const overrides of [{reason:'connection_lost'},{invalidated:true},{project_id:'other',component_id:'mrd-tf240-8p-cs'}]) {
+    const tests=state(runFor(design,session,{reserved:true,outcome:'running',phase:'awaiting_near',...overrides}));
+    const {info,actions}=guidePanes(await renderGuide({design,session:maker.restartProjectGuide(session),tests}));
+    assert.match(actions,/停止本次測試/);
+    assert.doesNotMatch(actions,/準備好了，取樣|>測試 HC-SR04/);
+    assert.doesNotMatch(info,/停止本次測試<\/button>/);
+    if(overrides.project_id) assert.match(actions,/下方停止按鈕會停止該次測試/);
+  }
+});
+
+test('browsing a wire never hides a live or disconnected test behind reference details',async()=>{
+  const design=designFor(),finished=complete(design),session=maker.previousProjectWire(design,finished);
+  for(const overrides of [{reason:null},{reason:'connection_lost'},{project_id:'other',component_id:'mrd-tf240-8p-cs'}]) {
+    const tests=state(runFor(design,finished,{reserved:true,outcome:'running',phase:'awaiting_near',...overrides}));
+    const before=structuredClone(tests);
+    const {info,actions}=guidePanes(await renderGuide({design,session,tests}));
+    const [visible,reference]=info.split('class="compact-guide-details" hidden=""');
+    assert.match(visible,/data-view="instructions"/);
+    assert.doesNotMatch(reference,/data-view="instructions"/);
+    assert.match(actions,/停止本次測試/);
+    assert.deepEqual(tests,before);
+  }
+});
+
+test('a current error or just-finished test stays visible while browsing wires',async()=>{
+  const design=designFor(),finished=complete(design),session=maker.previousProjectWire(design,finished);
+  for(const tests of [
+    {...state(runFor(design,finished)),error:'connection_lost'},
+    state(runFor(design,finished,{outcome:'failed',finished_at:Date.now()/1000+1})),
+    {...state(runFor(design,finished)),pending:true},
+    {status:{...state(runFor(design,finished)).status,execution:{jobs:[{id:'new-failure',kind:'test',state:'failed',
+      project_id:design.id,component_id:'hc-sr04',guide_key:logic.componentTestKey(design,finished,'hc-sr04'),
+      created_at:Date.now()/1000+1,reason:'missing_dependency',error:'Missing driver'}]}}},
+  ]) {
+    const {info}=guidePanes(await renderGuide({design,session,tests}));
+    assert.match(info.split('class="compact-guide-details" hidden=""')[0],/data-view="instructions"/);
+  }
+});
+
+test('guide instructions/actions preserve one start, consent, sample or stop control per phase',async()=>{
+  const design=designFor(),session=complete(design);
+  for(const [phase,label] of [['awaiting_stop_consent','確認停止原作品，開始測試'],['awaiting_near','準備好了，取樣 5 秒'],['awaiting_far','準備好了，取樣 5 秒']]) {
+    const tests=state(runFor(design,session,{reserved:true,outcome:'running',phase,reason:null}));
+    const {info,actions}=guidePanes(await renderGuide({design,session,tests}));
+    assert.ok(!info.includes(`>${label}</button>`));
+    assert.equal(actions.split(`>${label}</button>`).length-1,1);
+    assert.equal(actions.split('>停止本次測試</button>').length-1,1);
+  }
+});
+
 test('troubleshooting sits beside the result without duplicating or hiding controls-only actions',async()=>{
   const design=designFor(),session=complete(design);
   for(const outcome of ['failed','inconclusive']){
@@ -213,14 +362,14 @@ test('TFT completed process is awaiting visual confirmation, with colors, option
   assert.ok(html.includes('<button disabled="">確認顯示結果'));
   for(const text of ['全黑','白屏','亂碼／顏色異常','停止本次測試']) assert.ok(html.includes(text));
   assert.ok(!html.includes('class="test-outcome passed"'));
-  assert.ok(html.includes('沒看到數字請勿猜選'));
+  assert.ok(html.includes('沒看到請勿猜選'));
 });
 
 test('TFT code viewing explains physical-screen hold without revealing the code or early confirmation',async()=>{
   const design=designFor(['mrd-tf240-8p-cs']),session=complete(design);
   const run=runFor(design,session,{outcome:'running',phase:'display_code',reserved:true,reason:null});
   const html=await renderGuide({design,session,tests:state(run)});
-  assert.ok(html.includes('至少保留 15 秒') && html.includes('請看實體螢幕'));
+  assert.ok(html.includes('至少 15 秒') && html.includes('記下實體螢幕的四位數字'));
   assert.ok(!html.includes('type="radio"') && !html.includes('class="test-outcome passed"'));
   assert.ok(html.includes('停止本次測試'));
 });
@@ -240,7 +389,7 @@ test('disconnected Pi offers connect in same card and never starts on render',as
   const design=designFor(),session=complete(design);
   const html=await renderGuide({design,session,tests:{status:{connected:false,active:null,results:[],test_busy:false}}});
   assert.ok(html.includes('連線 Pi'));
-  assert.match(html,/<button class="guide-primary-action" disabled="">測試 HC-SR04\+/);
+  assert.match(html,/<button class="guide-primary-action" disabled=""[^>]*>連接 Pi 後測試/);
 });
 
 test('no-echo, reader failure, missing dependency and busy diagnostics give distinct next actions',async()=>{
@@ -248,7 +397,7 @@ test('no-echo, reader failure, missing dependency and busy diagnostics give dist
   for(const [reason,text] of [['no_echo','平整目標物'],['reader_error','不是判定沒有回波或接錯線'],['missing_dependency','不必重接線'],['resource_busy','不會強制停止無關程式']]) {
     const html=await renderGuide({design,session,tests:state(runFor(design,session,{reason}))});
     assert.ok(html.includes(text));
-    assert.match(html,/<details><summary>診斷與環境設定/);
+    assert.match(html,/<details class="test-diagnostics"><summary>測試詳情/);
   }
 });
 
@@ -256,7 +405,7 @@ test('missing TFT driver is named on the main card before hardware testing start
   const design=designFor(['mrd-tf240-8p-cs']),session=complete(design);
   const run=runFor(design,session,{reason:'missing_dependency',failed_phase:'preflight',detail:"ModuleNotFoundError: No module named 'luma'"});
   const html=await renderGuide({design,session,tests:state(run)});
-  const mainCard=html.slice(0,html.indexOf('<details><summary>診斷與環境設定'));
+  const mainCard=html.slice(0,html.indexOf('<details class="test-diagnostics">'));
   assert.ok(mainCard.includes('缺少 luma.lcd 2.13.0'));
   assert.ok(mainCard.includes('本次尚未啟動硬體測試'));
   assert.ok(mainCard.includes('虛擬環境補裝'));

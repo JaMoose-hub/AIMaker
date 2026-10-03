@@ -65,6 +65,7 @@ const server=createServer(async(req,res)=>{
     requests.push(path);
     const asset=path==='/theme.js'?[await readFile(new URL('public/theme.js',base)),'text/javascript']:path==='/'?[html,'text/html']:path==='/preview.js'?[js,'text/javascript']:path==='/preview.css'?[css,'text/css']:
       path==='/brand/tinkro-dark.png'?[await readFile(new URL('public/brand/tinkro-dark.png',base)),'image/png']:
+      path==='/brand/tinkro-light-filter.svg'?[await readFile(new URL('public/brand/tinkro-light-filter.svg',base)),'image/svg+xml']:
       path==='/brand/tinkro-symbol.svg'?[await readFile(new URL('public/brand/tinkro-symbol.svg',base)),'image/svg+xml']:
       path==='/demo/distance-monitor-three-wheel-motors-v2.png'?[await readFile(new URL('public/demo/distance-monitor-three-wheel-motors-v2.png',base)),'image/png']:
       discardImagePaths.includes(path)?[discardImage(path===discardImagePaths[1]),'image/svg+xml']:null;

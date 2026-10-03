@@ -27,6 +27,7 @@ import { GuideConnectionOverlay } from "./GuideConnectionOverlay";
 import { OpticalHudCalibrationOverlay } from "./OpticalHudCalibration";
 import { PinOverlay } from "./PinOverlay";
 import { ObjectRecognitionOverlay } from "./ObjectRecognitionOverlay";
+import { LiveCameraOverlay } from "./LiveCameraOverlay";
 import { glassesVideoReady, type GlassesStatus } from "../lib/glasses";
 import type { CaptureTask, CaptureFeedback, DebugEvidence } from "../lib/debugSessions";
 
@@ -48,7 +49,29 @@ interface MirrorSettings {
   y: boolean;
 }
 
-function initialMirrorSettings(): MirrorSettings {
+/** A missing synchronized phone frame must not start a second MJPEG path. */
+export function liveCameraImageState({ cameraSource, realtimeActive, frameImage, fallbackSrc,
+  sourceBlocked, opticalHudMode, glassesMode, glassesReady, glassesLeaving }: {
+  cameraSource?: string; realtimeActive: boolean; frameImage?: string | null; fallbackSrc: string;
+  sourceBlocked: boolean; opticalHudMode: boolean; glassesMode: boolean; glassesReady: boolean; glassesLeaving: boolean;
+}) {
+  const phoneWaiting = cameraSource === "phone" && !glassesMode && realtimeActive && !frameImage;
+  const suppressed = sourceBlocked || glassesLeaving || (glassesMode && !glassesReady) || phoneWaiting;
+  return {
+    src: suppressed ? undefined : realtimeActive && frameImage ? frameImage : fallbackSrc,
+    hidden: suppressed || opticalHudMode || (glassesMode && realtimeActive && !frameImage),
+    phoneWaiting,
+  };
+}
+
+function initialMirrorSettings(sourceKey = 'device'): MirrorSettings {
+  if (sourceKey.startsWith('phone:')) {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(`${MIRROR_STORAGE_KEY}:${sourceKey}`) ?? 'null');
+      if (typeof value?.x === 'boolean' && typeof value?.y === 'boolean') return value;
+    } catch { /* A new phone starts in canonical orientation. */ }
+    return { x: false, y: false };
+  }
   if (typeof window === "undefined") return { x: true, y: false };
   try {
     const stored = window.localStorage.getItem(MIRROR_STORAGE_KEY);
@@ -107,10 +130,15 @@ interface VideoViewProps {
   /** Render existing video controls inside the shared camera-tools menu. */
   viewControl?: ReactNode | ((cameraControls: ReactNode) => ReactNode);
   alternateView?: ReactNode;
+  sourceControl?: ReactNode;
+  sourceError?: string;
   displayMode: DisplayMode;
   glassesStatus: GlassesStatus | null;
   onGlassesDisplayFps: (fps: number | null) => void;
   config: AppConfig | null;
+  sourceChanging?: boolean;
+  sourceUnavailable?: boolean;
+  onRetrySource?: () => void;
   pinsById: ReadonlyMap<string, Pin>;
   highlightIds: ReadonlySet<string> | null;
   selectedPinId: string | null;
@@ -125,8 +153,9 @@ interface VideoViewProps {
   onCloseCalibrate: () => void;
   onCalibrationSuccess: () => void;
   guideTarget: ActiveGuideTarget | null;
-  /** Selected module remains focused during preparation, review and AI tabs. */
+  /** Only focus a module while its wiring steps are being shown. */
   overlayComponentId?: string | null;
+  overlayOverview?: boolean;
   opticalHudCalibration: OpticalHudCalibration | null;
   onOpticalHudCalibrationComplete: (calibration: OpticalHudCalibration) => void;
   debugView?: boolean;
@@ -138,10 +167,15 @@ interface VideoViewProps {
 export function VideoView({
   viewControl = null,
   alternateView = null,
+  sourceControl = null,
+  sourceError = '',
   displayMode,
   glassesStatus,
   onGlassesDisplayFps,
   config,
+  sourceChanging = false,
+  sourceUnavailable = false,
+  onRetrySource,
   pinsById,
   highlightIds,
   selectedPinId,
@@ -155,6 +189,7 @@ export function VideoView({
   onCalibrationSuccess,
   guideTarget: requestedGuideTarget,
   overlayComponentId = null,
+  overlayOverview = false,
   opticalHudCalibration,
   onOpticalHudCalibrationComplete,
   debugView = false,
@@ -163,12 +198,14 @@ export function VideoView({
   debugFramingFeedback = null,
 }: VideoViewProps) {
   const { t, locale } = useI18n();
-  const focusedComponentId = componentOverlayScope(overlayComponentId, requestedGuideTarget?.componentId, debugCaptureTask);
+  const focusedComponentId = componentOverlayScope(overlayComponentId, requestedGuideTarget?.componentId, debugCaptureTask, overlayOverview);
   // A synchronous module switch/capture must not borrow the previous step's
   // held pose, pin callouts or connection while its effect catches up.
-  const guideTarget = requestedGuideTarget && (!focusedComponentId || requestedGuideTarget.componentId === focusedComponentId)
+  const guideTarget = !overlayOverview && debugCaptureTask?.target !== "overview" && requestedGuideTarget && (!focusedComponentId || requestedGuideTarget.componentId === focusedComponentId)
     ? requestedGuideTarget : null;
   const original = useDetections();
+  const sourceKey = config?.camera_identity ?? config?.camera_source ?? 'device';
+  const sourceBlocked = sourceChanging || sourceUnavailable;
   const glassesMode = displayMode === "smart-glasses-demo";
   const glassesReady = glassesVideoReady(glassesStatus);
   // Exit changes the UI before DELETE finishes. Wait for the original source
@@ -178,15 +215,15 @@ export function VideoView({
   const [realtimeEnabled, setRealtimeEnabled] = useState(true);
   const realtimeActive = glassesMode || (realtimeEnabled && Boolean(config?.realtime_tracking) && config?.board_id === "raspberry-pi-5" && !calibrateOpen
     && !isOpticalHudMode(displayMode));
-  const realtime = useRealtimeTracking(realtimeActive && !glassesLeaving && (!glassesMode || glassesReady),
+  const realtime = useRealtimeTracking(realtimeActive && !sourceBlocked && !glassesLeaving && (!glassesMode || glassesReady),
     config?.board_id ?? null,
-    glassesMode ? glassesStatus?.runtime_revision ?? -1 : original.runtime?.runtime_revision ?? original.hello?.runtime_revision ?? config?.runtime_revision ?? 1,
-    glassesMode ? glassesStatus?.requested.fps ?? 30 : 30, glassesMode ? "eye" : "standard");
+    glassesMode ? glassesStatus?.runtime_revision ?? -1 : Math.max(original.runtime?.runtime_revision ?? original.hello?.runtime_revision ?? 1, config?.runtime_revision ?? 1),
+    glassesMode ? glassesStatus?.requested.fps ?? 30 : 30, glassesMode ? "eye" : sourceKey);
   useEffect(() => { onGlassesDisplayFps(glassesMode && glassesReady ? realtimeActive ? realtime.fps : null : 0); }, [glassesMode, glassesReady, realtimeActive, realtime.fps, onGlassesDisplayFps]);
   // Body-only labels belong to Eye. Webcam keeps its original GPIO/Pin
   // overlays and search hint, even when the shared packet carries body data.
   const bodyRecognitions = glassesMode && realtimeActive ? currentBodyRecognitions(realtime.frame, true) : [];
-  const displaySnapshot = realtimeActive || glassesLeaving ? {
+  const displaySnapshot = realtimeActive || glassesLeaving || sourceBlocked ? {
     ...original,
     detection: realtime.frame?.detection ?? null,
     componentPoses: realtime.frame?.components ?? [],
@@ -228,15 +265,20 @@ export function VideoView({
   const containerRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
   const boardId = config?.board_id ?? null;
-  const [mirror, setMirror] = useState(initialMirrorSettings);
+  const [mirrorRecord, setMirrorRecord] = useState(() => ({ key: sourceKey, value: initialMirrorSettings(sourceKey) }));
+  useEffect(() => { setMirrorRecord({ key: sourceKey, value: initialMirrorSettings(sourceKey) }); }, [sourceKey]);
+  const mirror = mirrorRecord.key === sourceKey ? mirrorRecord.value : initialMirrorSettings(sourceKey);
+  const setMirror = (update: (value: MirrorSettings) => MirrorSettings) => setMirrorRecord(record => ({
+    key: sourceKey, value: update(record.key === sourceKey ? record.value : initialMirrorSettings(sourceKey)),
+  }));
   const [pinCalibrationOpen, setPinCalibrationOpen] = useState(false);
-  const [pinCalibrationOffset, setPinCalibrationOffset] = useState(() =>
-    initialPinCalibrationOffset(boardId),
-  );
-
-  useEffect(() => {
-    setPinCalibrationOffset(initialPinCalibrationOffset(boardId));
-  }, [boardId]);
+  const calibrationKey = sourceKey.startsWith('phone:') ? `${boardId}:${sourceKey}` : boardId;
+  const [offsetRecord, setOffsetRecord] = useState(() => ({ key: calibrationKey, value: initialPinCalibrationOffset(calibrationKey) }));
+  useEffect(() => { setOffsetRecord({ key: calibrationKey, value: initialPinCalibrationOffset(calibrationKey) }); }, [calibrationKey]);
+  const pinCalibrationOffset = offsetRecord.key === calibrationKey ? offsetRecord.value : initialPinCalibrationOffset(calibrationKey);
+  const setPinCalibrationOffset = (update: PinCalibrationOffset | ((value: PinCalibrationOffset) => PinCalibrationOffset)) =>
+    setOffsetRecord(record => ({ key: calibrationKey, value: typeof update === 'function'
+      ? update(record.key === calibrationKey ? record.value : initialPinCalibrationOffset(calibrationKey)) : update }));
 
   const videoSize: readonly [number, number] =
     detection?.video_size ?? hello?.video_size ?? config?.video_size ?? FALLBACK_VIDEO_SIZE;
@@ -324,7 +366,7 @@ export function VideoView({
     setMirror((current) => {
       const next = { ...current, [axis]: !current[axis] };
       try {
-        window.localStorage.setItem(MIRROR_STORAGE_KEY, JSON.stringify(next));
+        window.localStorage.setItem(sourceKey.startsWith('phone:') ? `${MIRROR_STORAGE_KEY}:${sourceKey}` : MIRROR_STORAGE_KEY, JSON.stringify(next));
       } catch {
         // The toggle still works for this session when storage is unavailable.
       }
@@ -343,7 +385,7 @@ export function VideoView({
       };
       try {
         if (boardId) {
-          window.localStorage.setItem(pinCalibrationStorageKey(boardId), JSON.stringify(next));
+          window.localStorage.setItem(pinCalibrationStorageKey(calibrationKey!), JSON.stringify(next));
         }
       } catch {
         // The calibration still applies for this session when storage is unavailable.
@@ -355,7 +397,7 @@ export function VideoView({
   const resetPinCalibration = () => {
     setPinCalibrationOffset({ x: 0, y: 0 });
     try {
-      if (boardId) window.localStorage.removeItem(pinCalibrationStorageKey(boardId));
+      if (calibrationKey) window.localStorage.removeItem(pinCalibrationStorageKey(calibrationKey));
       if (boardId === "arduino-uno-q") {
         window.localStorage.removeItem(LEGACY_PIN_CALIBRATION_STORAGE_KEY);
       }
@@ -442,9 +484,13 @@ export function VideoView({
     ),
   );
   const showBoardSearchHint = !glassesLeaving && searching && !componentDetected && bodyRecognitions.length === 0 && (!glassesMode || glassesReady);
-  const showArOverlays = !debugView && !glassesLeaving && (!realtimeActive || realtime.frame !== null)
+  const showArOverlays = !sourceBlocked && !debugView && !glassesLeaving && (!realtimeActive || realtime.frame !== null)
     && !opticalCalibrationMode && (!opticalDemoMode || opticalTransform !== null)
     && (!glassesMode || glassesReady);
+  const imageState = liveCameraImageState({ cameraSource: config?.camera_source,
+    realtimeActive, frameImage: realtime.frame?.image,
+    fallbackSrc: videoTransport === "mjpeg" ? "/video" : `/frame.jpg?v=${snapshotNonce}`,
+    sourceBlocked, opticalHudMode, glassesMode, glassesReady, glassesLeaving });
 
   const cameraControls = !alternateView ? <>
         <div className="mirror-controls" role="group" aria-label={t("camera.mirrorControlsLabel")}>
@@ -523,16 +569,19 @@ export function VideoView({
       className={`video-shell${realtimeActive ? " realtime-tracking" : ""}${showBoardSearchHint ? " searching" : ""}${displayOnlyMode ? " display-mode-active" : ""}${opticalHudMode ? " optical-hud" : ""}`}
     >
       <img
-        key={glassesMode ? `eye-${glassesStatus?.runtime_revision}` : "standard-video"}
-        className={`video-img${opticalHudMode || glassesLeaving || (glassesMode && (!glassesReady || (realtimeActive && !realtime.frame))) ? " hidden" : ""}${displayedMirrorX ? " mirrored-x" : ""}${displayedMirrorY ? " mirrored-y" : ""}`}
-        src={glassesLeaving || (glassesMode && !glassesReady) ? undefined : realtimeActive && realtime.frame ? realtime.frame.image
-          : videoTransport === "mjpeg" ? "/video" : `/frame.jpg?v=${snapshotNonce}`}
+        key={glassesMode ? `eye-${glassesStatus?.runtime_revision}` : `${sourceKey}:${config?.runtime_revision}`}
+        className={`video-img${imageState.hidden ? " hidden" : ""}${displayedMirrorX ? " mirrored-x" : ""}${displayedMirrorY ? " mirrored-y" : ""}`}
+        src={imageState.src}
         data-tracking-frame={realtimeActive ? realtime.frame?.frame_id : undefined}
         alt=""
         draggable={false}
         onError={handleVideoError}
         onLoad={handleVideoLoad}
       />
+      {!displayOnlyMode ? <LiveCameraOverlay controls={sourceControl} changing={sourceChanging}
+        unavailable={sourceUnavailable || imageState.phoneWaiting} offline={!glassesMode && (backendDown || (!sourceBlocked && offline))} phone={config?.camera_source === 'phone'}
+        error={sourceError} onRetry={imageState.phoneWaiting && !sourceUnavailable ? undefined : onRetrySource} /> : null}
+      {displayOnlyMode && imageState.phoneWaiting ? <div className="video-hint" role="status"><span className="hint-pill">{t("camera.realtimeWaiting")}</span></div> : null}
       {debugCaptureBox ? <div className="debug-capture-overlay" style={debugCaptureBox} aria-hidden="true">
         <span>{debugCaptureTask?.target === "tft_screen" ? "TFT" : debugCaptureTask?.target === "hc_target" ? "HC-SR04+" : t("app.title")}</span>
       </div> : null}
@@ -606,7 +655,7 @@ export function VideoView({
           <span className="legend-count">{t("legend.count", { count: legend.count })}</span>
         </div>
       )}
-      {offline && !glassesMode && (
+      {offline && !glassesMode && displayOnlyMode && (
         <div className="video-hint">
           <span className="hint-pill offline">
             {t("backend.down")} · {t("backend.retrying")}

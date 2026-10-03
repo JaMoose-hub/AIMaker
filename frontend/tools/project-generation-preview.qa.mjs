@@ -11,7 +11,7 @@ const artifacts=fileURLToPath(new URL('./project-generation-preview-artifacts/',
 await mkdir(artifacts,{recursive:true});
 const preview=await startPreview(0);
 const report={fixture:'Real DesignStudio/ProjectConcept, synthetic phases, no cloud, camera or Pi',results:[],errors:[],deniedRequests:[]};
-const assetPaths=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg'];
+const assetPaths=['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg'];
 let browser,currentPage;
 async function contextFor(options){
   const context=await browser.newContext(options);

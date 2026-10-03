@@ -60,7 +60,16 @@ test('compact header reduces desktop spacing without fixed pane heights or clipp
   assert.equal(properties(scope+' .maker-header-integrated').display,'grid');
   assert.equal(properties(scope+' .maker-header-integrated')['grid-template-columns'],'minmax(0, 1fr) auto');
   assert.equal(properties(scope+' .maker-header-main').padding,'0');
-  assert.equal(properties(scope+' .maker-header-main')['min-height'],'49px');
+  assert.equal(properties(scope+' .maker-header-main')['min-height'],'34px');
+  const brand=properties(scope+' .maker-header-main .brand-text');
+  assert.equal(brand.display,'flex','descriptor sits next to the logo instead of below');
+  assert.equal(brand['align-items'],'center');
+  assert.equal(brand['min-width'],'0');
+  const descriptor=properties(scope+' .maker-header-main .brand-subtitle');
+  assert.equal(descriptor['text-align'],'left');
+  assert.equal(descriptor.width,'72px','two short lines fit inside the original wordmark height');
+  assert.equal(descriptor['border-left'],'1px solid var(--border-strong)');
+  assert.equal(descriptor.color,'var(--text-dim)','descriptor remains legible in both themes');
   assert.equal(properties(scope+' .maker-header-controls').padding,'0');
   assert.equal(properties(scope+' .maker-header-integrated:has(.runtime-error, .pi-global-error, .glasses-restore-error)')['grid-template-columns'],'minmax(0, 1fr)','errors may add a row but never squeeze stage navigation');
   assert.equal(properties(scope+' .maker-header-controls .runtime-settings .runtime-select')['grid-column'],'auto','reset legacy mobile locale placement');
@@ -84,10 +93,18 @@ test('narrow layouts retain 44px header controls and all three navigation target
   });
   assert.ok(touchRules.some(([selector,value])=>selector.includes('.runtime-select select')&&value==='44px'));
   assert.ok(touchRules.some(([selector,value])=>selector.includes('.maker-nav button')&&value==='44px'));
+  const labels=[];
+  css.walkAtRules('media',rule=>{
+    if(rule.params==='(max-width: 700px)')rule.walkRules(child=>{
+      if(child.selector.endsWith('.maker-header-controls .pi-global-label'))child.walkDecls(d=>labels.push([d.prop,d.value]));
+    });
+  });
+  assert.ok(labels.some(([property,value])=>property==='clip-path'&&value==='inset(50%)'),'redundant label cannot squeeze mobile buttons');
+  assert.ok(!labels.some(([property,value])=>property==='display'&&value==='none'),'retain label for assistive technology');
   assert.match(read('../src/App.tsx'),/\["design", "guide", "deploy"\]/);
 });
 
-function renderSettings({locale='en',collapsible=true,busy=false,disabled=false,error=null,controllers}={}) {
+function renderSettings({locale='en',collapsible=true,busy=false,disabled=false,error=null,controllers,cameraToolsRef}={}) {
   const strings=JSON.parse(read(`../src/locales/${locale}.json`));
   const module={};
   new Function('require','exports',ts.transpileModule(read('../src/components/RuntimeToolbar.tsx'),{
@@ -100,7 +117,7 @@ function renderSettings({locale='en',collapsible=true,busy=false,disabled=false,
     throw Error(`Unexpected import ${id}`);
   },module);
   return renderToStaticMarkup(React.createElement(module.RuntimeToolbar,{
-    collapsible,busy,disabled,error,activeBoardId:'pi5',
+    collapsible,busy,disabled,error,activeBoardId:'pi5',cameraToolsRef,
     controllers:controllers??[{board_id:'pi5',name:'Raspberry Pi 5'}],
     onControllerChange:()=>{},onLocaleChange:()=>{},
   }));
@@ -138,6 +155,22 @@ test('Settings disclosure keeps business state untouched and cleans up the outsi
   const runtime=read('../src/components/RuntimeToolbar.tsx');
   assert.doesNotMatch(runtime,/fetch\(|localStorage|sessionStorage|window.location|setMaker|useState/);
   assert.match(runtime,/document.addEventListener\("pointerdown", closeOutside, true\)/);
-  assert.match(runtime,/return \(\) => document.removeEventListener\("pointerdown", closeOutside, true\)/);
+  assert.match(runtime,/document.removeEventListener\("pointerdown", closeOutside, true\)/);
   assert.match(runtime,/querySelector\("summary"\)\?\.focus\(\)/);
+  for(const event of ['keydown','focusout']) {
+    assert.ok(runtime.includes(`addEventListener("${event}"`));
+    assert.ok(runtime.includes(`removeEventListener("${event}"`));
+  }
+});
+
+test('camera tools have one persistent host inside Settings, not a second workspace button',()=>{
+  const html=renderSettings({cameraToolsRef:()=>{}});
+  assert.match(html,/class="runtime-settings-popover"[^>]*>[\s\S]*class="camera-settings-slot"[\s\S]*<\/details>/);
+  assert.equal((html.match(/class="camera-settings-slot"/g)??[]).length,1);
+  assert.doesNotMatch(renderSettings(),/camera-settings-slot/);
+  const app=read('../src/App.tsx');
+  assert.match(app,/cameraToolsRef=\{makerEnabled && !displayModeActive \? setCameraSettingsHost : undefined\}/);
+  assert.match(app,/createPortal\(renderCameraTools\(videoControls\), cameraSettingsHost\)/);
+  assert.doesNotMatch(app,/webcam-gpio-capture|captureWebcamGpio|deploy-camera-tools/);
+  assert.match(app,/<AiDebugPanel actionsOnly/);
 });

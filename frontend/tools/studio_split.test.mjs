@@ -7,7 +7,8 @@ const { outputText } = ts.transpileModule(readFileSync(new URL("../src/lib/studi
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 });
 const { parseSplitRatio, splitStorageKey, studioSplitGeometry, splitRatioForLeft, dragSplitRatio, keySplitRatio,
-  GUIDE_SPLIT_STORAGE_KEY, guideSplitGeometry, guideRatioForRight, dragGuideRatio, keyGuideRatio } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+  GUIDE_SPLIT_STORAGE_KEY, guideSplitGeometry, guideRatioForRight, dragGuideRatio, keyGuideRatio,
+  GUIDE_HEIGHT_STORAGE_KEY, guideHeightGeometry, guideRatioForTop, dragGuideHeightRatio, keyGuideHeightRatio } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 
 test("split preferences are separate by stage and corrupted storage is ignored", () => {
   assert.notEqual(splitStorageKey("design"), splitStorageKey("blueprint"));
@@ -78,4 +79,71 @@ test("camera/guide pointer and keyboard resizing clamp both sides", () => {
   assert.equal(guideSplitGeometry(width, keyGuideRatio("End", false, original, width)).right, 280);
   assert.equal(keyGuideRatio("Tab", false, original, width), null);
   assert.equal(guideRatioForRight(NaN, 0), .5);
+});
+
+test("stacked heights preserve separate preferences and keep both panes within the viewport", () => {
+  assert.notEqual(GUIDE_HEIGHT_STORAGE_KEY, GUIDE_SPLIT_STORAGE_KEY);
+  assert.equal(GUIDE_HEIGHT_STORAGE_KEY, 'boardvision.guide-height.v2');
+  for (const height of [0, 10, 250, 420, 520, 760, 1200, NaN]) {
+    for (const ratio of [null, .01, .55, .99, NaN]) {
+      const g = guideHeightGeometry(height, ratio);
+      assert(Number.isFinite(g.top) && Number.isFinite(g.bottom));
+      assert(g.top >= g.minTop && g.top <= g.maxTop);
+      assert(g.bottom >= 0);
+      assert.equal(g.top + g.bottom, g.available);
+      if (height >= 438) { assert(g.top >= 180); assert(g.bottom >= 160); }
+    }
+  }
+  assert.equal(guideHeightGeometry(760, .5).top, 371);
+  assert.equal(guideRatioForTop(NaN, 0), .5);
+});
+
+test("default stacked workspace assigns 70 percent to streaming and 30 percent to wiring", () => {
+  for (const height of [600, 742, 760, 871, 1200]) {
+    const layout = guideHeightGeometry(height, null);
+    assert(Math.abs(layout.top / layout.available - .7) < 1e-9);
+    assert(Math.abs(layout.bottom / layout.available - .3) < 1e-9);
+  }
+});
+
+test("stacked pointer and keyboard resizing follow up/down motion and clamp at safe heights", () => {
+  const height = 760;
+  const topFor = ratio => guideHeightGeometry(height, ratio).top;
+  const close = (actual, expected) => assert(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
+  close(topFor(dragGuideHeightRatio(350, 410, 460, height)), 400);
+  assert.equal(topFor(dragGuideHeightRatio(350, 410, -9999, height)), 180);
+  assert.equal(topFor(dragGuideHeightRatio(350, 410, 9999, height)), height - 18 - 160);
+  close(topFor(keyGuideHeightRatio('ArrowUp', false, 350, height)), 326);
+  close(topFor(keyGuideHeightRatio('ArrowDown', true, 350, height)), 430);
+  assert.equal(topFor(keyGuideHeightRatio('Home', false, 350, height)), 180);
+  assert.equal(topFor(keyGuideHeightRatio('End', false, 350, height)), 582);
+  assert.equal(keyGuideHeightRatio('Tab', false, 350, height), null);
+  assert.equal(keyGuideHeightRatio('ArrowLeft', false, 350, height), null);
+});
+
+test("test contents set the minimum height without changing the saved camera preference", () => {
+  const height = 760, minimum = 410, preference = .95;
+  const geometry = guideHeightGeometry(height, preference, minimum);
+  assert.equal(geometry.bottom, minimum);
+  assert(geometry.top >= 180);
+  assert.equal(guideHeightGeometry(height, preference).bottom, 160);
+  const end = keyGuideHeightRatio('End', false, geometry.top, height, minimum);
+  assert.equal(guideHeightGeometry(height, end, minimum).bottom, minimum);
+  const dragged = dragGuideHeightRatio(geometry.top, 400, 9999, height, minimum);
+  assert.equal(guideHeightGeometry(height, dragged, minimum).bottom, minimum);
+  assert.equal(guideRatioForTop(9999, height, minimum), end);
+});
+
+test("oversized test contents preserve camera space and invalid content bounds are safe", () => {
+  for (const height of [0, 10, 250, 420, 760, NaN]) {
+    for (const minimum of [-5, 0, 410, 9999, NaN, Infinity]) {
+      const g = guideHeightGeometry(height, .9, minimum);
+      assert(Number.isFinite(g.top) && Number.isFinite(g.bottom));
+      assert(g.top >= g.minTop && g.top <= g.maxTop);
+      assert(g.bottom >= 0);
+      assert.equal(g.top + g.bottom, g.available);
+      if (height >= 468) assert(g.top >= 180);
+    }
+  }
+  assert.deepEqual(guideHeightGeometry(760, .9, NaN), guideHeightGeometry(760, .9));
 });

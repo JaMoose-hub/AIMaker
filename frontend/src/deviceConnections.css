@@ -1,0 +1,100 @@
+/* Device identity is separate from connection status. Settings stay outside
+   both groups; these styles never change a camera or Pi controller. */
+.app.tinkro-theme:not(.display-mode-active) .maker-device-connections {
+  display:flex; align-items:center; gap:10px; min-width:0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-device-group {
+  display:flex; align-items:center; gap:6px; min-width:0; flex:none;
+  padding:2px 5px 2px 8px; border:1px solid var(--border-strong); border-radius:9px;
+  background:var(--surface-evidence);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-device-group.is-phone {
+  border-color:var(--line-blue); background:var(--surface-blue);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-device-label {
+  display:inline-flex; align-items:center; gap:5px; flex:none;
+  color:var(--text-dim); font-size:11px; font-weight:600; white-space:nowrap;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-device-label svg { width:16px; height:16px; flex:none; }
+.app.tinkro-theme:not(.display-mode-active) .is-phone>.maker-device-label { color:var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) .is-pi>.maker-device-label svg { color:var(--tonal-ink); }
+.app.tinkro-theme:not(.display-mode-active) .maker-device-group .pi-global-label {
+  position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group .pi-global-control {
+  flex:0 1 auto; width:auto; min-width:0; gap:0;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group .pi-global-row {
+  width:auto; gap:4px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group .pi-execution-popover {
+  left:auto; right:0; max-width:calc(100vw - 32px);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-device-group .mobile-connect-button {
+  display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:4px 8px;
+}
+.mobile-connection-dot { width:5px; height:5px; border-radius:50%; background:var(--text-faint); flex:none; }
+.mobile-connect-button[data-connected=true] .mobile-connection-dot { background:var(--ok); }
+/* Pi has one status entry; its connection and queue controls live inside it. */
+.app.tinkro-theme:not(.display-mode-active) .maker-device-group.is-pi {
+  padding:0; border:0; background:transparent;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-device-group.is-pi>.maker-device-label { display:none; }
+.app.tinkro-theme:not(.display-mode-active) .pi-global-control.pi-device-control {
+  display:block; flex:none; width:auto; min-width:0;
+}
+.app.tinkro-theme:not(.display-mode-active) .pi-device-control .pi-global-row {
+  width:auto; height:auto; align-items:center; gap:5px;
+}
+.app.tinkro-theme:not(.display-mode-active) .pi-device-menu { flex:none; }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-menu>.pi-device-trigger {
+  display:inline-flex; align-items:center; gap:7px; height:30px; min-height:30px;
+  padding:4px 10px; border:1px solid var(--border-strong); border-radius:8px;
+  background:var(--control-bg); color:var(--text); font-size:11px;
+}
+.pi-device-menu>.pi-device-trigger::-webkit-details-marker { display:none; }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-trigger>span { min-width:0; }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-dot {
+  display:block; width:5px; height:5px; border-radius:50%; background:var(--text-faint); flex:none;
+}
+.app.tinkro-theme:not(.display-mode-active) .pi-device-trigger.connected { border-color:var(--line-ok); background:var(--surface-teal); }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-trigger.connected>.pi-device-dot { background:var(--ok); }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-trigger.is-warning>.pi-device-dot { background:var(--warn); }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-count {
+  padding:0 4px; border-radius:4px; background:var(--surface-blue); color:var(--brand-link); font-size:10px;
+}
+.app.tinkro-theme:not(.display-mode-active) .pi-device-chevron { color:var(--text-dim); }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-panel-heading {
+  display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:14px;
+}
+.app.tinkro-theme:not(.display-mode-active) .pi-device-panel-heading>div { display:grid; gap:4px; min-width:0; }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-panel-heading small { color:var(--text-dim); overflow-wrap:anywhere; }
+.app.tinkro-theme:not(.display-mode-active) .pi-device-panel-heading>.pi-global-connect {
+  width:auto; min-height:34px; flex:none;
+}
+.app.tinkro-theme:not(.display-mode-active) .pi-device-control .pi-header-stop {
+  display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:4px 9px;
+  border:1px solid var(--line-warn); border-radius:8px; color:var(--warn); background:var(--control-bg); font-size:11px;
+}
+.app.tinkro-theme:not(.display-mode-active) .pi-device-control .pi-header-stop:disabled { opacity:.5; cursor:not-allowed; }
+.app.tinkro-theme:not(.display-mode-active) .maker-device-group :is(button,summary):focus-visible {
+  outline:2px solid var(--brand-link); outline-offset:2px;
+}
+@media(max-width:1200px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-connections { flex:1; }
+}
+@media(max-width:960px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-device-group .mobile-connect-button { min-height:44px; }
+  .app.tinkro-theme:not(.display-mode-active) .pi-device-menu>.pi-device-trigger,
+  .app.tinkro-theme:not(.display-mode-active) .pi-device-control .pi-header-stop { height:44px; min-height:44px; }
+}
+@media(max-width:700px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls>.maker-connection-controls.maker-device-connections {
+    display:contents;
+  }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group.is-phone { grid-column:1; grid-row:1; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group.is-pi { grid-column:1 / -1; grid-row:2; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-device-group>.mobile-toolbar-slot { margin-left:auto; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group .pi-global-control { flex:1; }
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group .pi-global-row { flex:1; }
+}

@@ -17,13 +17,16 @@ export function CircuitViewport({ width, height, preferredScale = 0, fitToViewpo
   const fittedScale = fitCircuitScale(size.width, size.height, width, height, fitToViewport ? Infinity : 0.8);
   const scale = (fitToViewport || showWholeDiagram ? fittedScale : readableCircuitScale(fittedScale, size.width, width, preferredScale)) * zoom;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = viewport.current!;
-    const observer = new ResizeObserver(() => {
-      // A horizontal scrollbar must not alter the base zoom while enlarging.
-      const next = { width: element.clientWidth, height: element.offsetHeight - element.clientTop * 2 };
+    const measure = () => {
+      // Keep the zoom baseline independent of horizontal scrollbars. Fractional
+      // border-box height must not be rounded up into an overflowing stage.
+      const next = { width: element.clientWidth, height: element.getBoundingClientRect().height - element.clientTop * 2 };
       setSize(old => old.width === next.width && old.height === next.height ? old : next);
-    });
+    };
+    const observer = new ResizeObserver(measure);
+    measure(); // Fit before the first paint, not a tiny drawing followed by a jump.
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
@@ -83,7 +86,7 @@ export function CircuitViewport({ width, height, preferredScale = 0, fitToViewpo
         else if (event.key === "-") { event.preventDefault(); changeZoom(zoomRef.current / 1.25); }
         else if (event.key === "0") { event.preventDefault(); fit(); }
       }}>
-      <div className="circuit-zoom-stage" style={{ width: Math.max(size.width, width * scale), height: Math.max(size.height, height * scale) }}>
+      <div className="circuit-zoom-stage" style={{ width: width * scale, height: height * scale, minWidth: "100%", minHeight: "100%" }}>
         <div ref={drawing} className="circuit-zoom-drawing" data-zoom={zoom} style={{ width: width * scale, height: height * scale }}>{children}</div>
       </div>
     </div>

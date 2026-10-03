@@ -24,16 +24,19 @@ const i18n = dataUrl(`export const useI18n=()=>({locale:'zh-TW',t:key=>(${JSON.s
 const smooth = dataUrl("export const useSmoothedDetection = detection => detection;");
 const guidanceCallout = compile("lib/guidanceCallout.ts");
 const labelLayout = compile("lib/wiringLabelLayout.ts");
-const componentOverlay = compile("components/ComponentPinOverlay.tsx", { "../lib/headerCountDirection": compile("lib/headerCountDirection.ts"), "../lib/componentHeaderGuide": componentHeaderUrl, "../lib/wiringLabelLayout": labelLayout, "../lib/geometry": geometry, "../lib/i18n": i18n, "../lib/guidanceCallout": guidanceCallout });
-const connectionOverlay = compile("components/GuideConnectionOverlay.tsx", { "../lib/geometry": geometry, "../lib/useSmoothedDetection": smooth });
+const recognitionStyle = compile("lib/recognitionStyle.ts");
+const componentOverlay = compile("components/ComponentPinOverlay.tsx", { "../lib/recognitionStyle": recognitionStyle, "../lib/headerCountDirection": compile("lib/headerCountDirection.ts"), "../lib/componentHeaderGuide": componentHeaderUrl, "../lib/wiringLabelLayout": labelLayout, "../lib/geometry": geometry, "../lib/i18n": i18n, "../lib/guidanceCallout": guidanceCallout });
+const connectionOverlay = compile("components/GuideConnectionOverlay.tsx", { "../lib/recognitionStyle": recognitionStyle, "../lib/geometry": geometry, "../lib/useSmoothedDetection": smooth });
 const recognitionOverlay = compile("components/ObjectRecognitionOverlay.tsx", { "../lib/geometry": geometry, "../lib/i18n": i18n });
 
 export async function renderWiringVideo({ displayMode = "standard", boardId = "raspberry-pi-5", realtimeEnabled = true,
   state = "running", eyeActive = displayMode === "smart-glasses-demo", cameraSource = eyeActive ? "xreal" : "device",
   hasTarget = true, manualOnly = false, searching = false, bodyEvidence = null, componentBodyBox = null, boardBodyPartial = false,
-  boardPoseQuality = null, componentPoseQuality = null, backendDown = false,
+  boardPoseQuality = null, componentPoseQuality = null, backendDown = false, connected = true,
   extraComponents = [], componentId = "hc-sr04", targetComponentId = componentId,
-  overlayComponentId = null, captureTask = null, viewControl = null, alternateView = null, calibrateOpen = false } = {}) {
+  overlayComponentId = null, overlayOverview = false, captureTask = null, viewControl = null, alternateView = null, calibrateOpen = false,
+  sourceChanging = false, sourceUnavailable = false, cameraIdentity = cameraSource,
+  sourceControl = null, sourceError = '', onRetrySource = undefined } = {}) {
   const detection = { type: "detection", board_id: boardId, runtime_revision: 12, frame_id: 77, ts_ms: 1000,
     tracking: searching ? "searching" : "locked", confidence: .92, video_size: [1920,1080],
     outline: searching ? null : [[100,100],[700,100],[700,600],[100,600]],
@@ -56,7 +59,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
   const components = [component, ...extraComponents.map(id => ({...component,component_id:id,
     pins:[{id:"CS",x:790,y:160,c:1,v:true},{id:"SCL",x:800,y:160,c:1,v:true}]}))];
   const frame = { seq:77,frame_id:77,runtime_revision:12,board_id:boardId,image:"data:image/jpeg;base64,fixture",detection,components,receivedAt:1000 };
-  const snapshot = { detection, componentPoses:components, hello:{board_id:boardId,runtime_revision:12,video_size:[1920,1080]}, connected:true };
+  const snapshot = { detection, componentPoses:components, hello:{board_id:boardId,runtime_revision:12,video_size:[1920,1080]}, connected };
   const ws = dataUrl(`export const useDetections=()=>(${JSON.stringify(snapshot)}); export const useGuidance=()=>({expected_pin_id:'GPIO18',status:'pending'});`);
   const pinOverlay = compile("components/PinOverlay.tsx", { "../lib/geometry":geometry,"../lib/i18n":i18n,"../lib/guidanceCallout":guidanceCallout,
     "../lib/piHeaderGuide":compile("lib/piHeaderGuide.ts"),
@@ -77,6 +80,9 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     "../lib/pinCalibration":compile("lib/pinCalibration.ts"),
     "./PinOverlay":pinRecorder,"./ComponentPinOverlay":componentOverlay,"./GuideConnectionOverlay":connectionOverlay,
     "./ObjectRecognitionOverlay":recognitionOverlay,
+    "./LiveCameraOverlay":compile("components/LiveCameraOverlay.tsx", {
+      "../lib/i18n":i18n, "./LiveCameraOverlay.css":dataUrl('export {};'),
+    }),
     "./CalibratePanel":dataUrl("export const CalibratePanel=()=>null;"),"./OpticalHudCalibration":dataUrl("export const OpticalHudCalibrationOverlay=()=>null;"),
   });
   const { VideoView } = await import(viewUrl);
@@ -86,12 +92,12 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
   const target=hasTarget?{componentId:targetComponentId,boardPinId:"GPIO17",componentPinId:"TRIG",connectionKind:"direct",manualOnly}:null;
   const element=createElement(VideoView, {
     displayMode,glassesStatus:{active:eyeActive,state,runtime_revision:12,requested:{width:1920,height:1080,fps:30,denoise:"clean"}},onGlassesDisplayFps(){},
-    config:{board_id:boardId,camera_source:cameraSource,runtime_revision:12,video_size:[1920,1080],realtime_tracking:realtimeEnabled},pinsById:new Map(),
+    config:{board_id:boardId,camera_source:cameraSource,camera_identity:cameraIdentity,runtime_revision:12,video_size:[1920,1080],realtime_tracking:realtimeEnabled},pinsById:new Map(),
     highlightIds:new Set(["GPIO17"]),selectedPinId:"GPIO17",onSelectPin(){},backendDown,legend:{colorVar:"--ok",label:"Selected target",count:1},
     outlineMm:[85,56],boardName:boardId,calibrateOpen,onCloseCalibrate(){},onCalibrationSuccess(){},guideTarget:target,
-    viewControl,alternateView,
+    viewControl,alternateView,sourceChanging,sourceUnavailable,sourceControl,sourceError,onRetrySource,
     opticalHudCalibration:null,onOpticalHudCalibrationComplete(){},
-    overlayComponentId,debugCaptureTask:captureTask,
+    overlayComponentId,overlayOverview,debugCaptureTask:captureTask,
   });
   // React 18 SSR also applies its HTML <title> warning to the existing SVG
   // title nodes. Keep production PinOverlay untouched and silence only that

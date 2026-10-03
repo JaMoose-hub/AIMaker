@@ -30,6 +30,7 @@ import asyncio
 import base64
 import logging
 import sys
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -71,6 +72,41 @@ def _eye_indices(capture_api: str) -> set[int]:
 class SelectRequest(BaseModel):
     index: int
     device_id: str | None = None
+
+
+class LiveSourceRequest(BaseModel):
+    kind: Literal['webcam', 'phone']
+    session_id: str | None = None
+    generation: int | None = None
+
+
+@router.get('/camera/live-source')
+def live_source_status(request: Request):
+    from app.api.mobile import desktop
+    desktop(request)
+    return request.app.state.live_source.snapshot()
+
+
+@router.post('/camera/live-source', dependencies=[Depends(camera_mutation_guard)])
+async def select_live_source(body: LiveSourceRequest, request: Request):
+    from app.api.mobile import desktop
+    from app.capture.phone import PhoneFrameSource
+    desktop(request)
+    state = request.app.state
+    phone = None
+    if body.kind == 'phone':
+        service = state.mobile_service
+        with service.lock:
+            session = service.require(body.session_id)
+            if not service.latest or session['conversation_id'] != service.latest['conversation_id']:
+                raise HTTPException(409, 'mobile_context_changed')
+            if not session['stream']['active'] or body.generation != session['stream']['generation']:
+                raise HTTPException(409, 'mobile_stream_generation_changed')
+        # AVFrame conversion must stay on the RTC event loop. Only independent
+        # BGR and size cross into the blocking camera hand-over transaction.
+        pixels, _ = service.rtc.capture_frame(body.session_id, body.generation)
+        phone = PhoneFrameSource(body.session_id, body.generation, (pixels.shape[1], pixels.shape[0]))
+    return await asyncio.to_thread(state.live_source.select, body.kind, phone=phone)
 
 
 def _fail(error: str) -> dict:

@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useMakerText } from "../lib/useMaker";
 
 interface Props {
@@ -14,13 +14,17 @@ interface Props {
   details: ReactNode;
   onClose: () => void;
   embedded?: boolean;
+  floating?: boolean;
 }
 
 /** Opening extra copy never changes the wiring session or its active target. */
-export function CompactGuide({ contextKey, phase, visible, title, headerActions, progress, targetId, actions, children, details: extraDetails, onClose, embedded = false }: Props) {
+export function CompactGuide({ contextKey, phase, visible, title, headerActions, progress, targetId, actions, children, details: extraDetails, onClose, embedded = false, floating = false }: Props) {
   const tr = useMakerText();
   const detailsId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // A new wire starts at its endpoints, not at the previous wire's scrolled records.
+  useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [contextKey]);
   const [details, setDetails] = useState({ contextKey, expanded: false });
   // Reset only presentation state when the step changes, including backtracking.
   if (details.contextKey !== contextKey) setDetails({ contextKey, expanded: false });
@@ -31,6 +35,8 @@ export function CompactGuide({ contextKey, phase, visible, title, headerActions,
     onKeyDown={event => {
       if (event.key === "Escape" && expanded) {
         event.preventDefault(); event.stopPropagation(); setExpanded(false); toggleRef.current?.focus();
+      } else if (event.key === "Escape" && floating) {
+        event.preventDefault(); event.stopPropagation(); onClose();
       }
     }}>
     {embedded ? <header className="guide-panel-header guide-panel-header-embedded">
@@ -45,7 +51,7 @@ export function CompactGuide({ contextKey, phase, visible, title, headerActions,
       </div>
     </header>
     <div className="guide-panel-progress">{progress}</div></>}
-    <div className="guide-panel-body" data-wiring-target={targetId}>
+    <div ref={bodyRef} className="guide-panel-body" data-wiring-target={targetId}>
       {children}
       <section className="guide-panel-reference">
         <button ref={toggleRef} type="button" className="guide-reference-toggle" aria-expanded={expanded} aria-controls={detailsId}

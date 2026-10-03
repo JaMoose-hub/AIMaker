@@ -15,6 +15,8 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 interface StatusBarProps {
   /** A toolbar trigger with an out-of-flow panel instead of a footer row. */
   compact?: boolean;
+  /** Inline disclosure inside Settings, rather than a floating toolbar panel. */
+  embedded?: boolean;
   active?: boolean;
   webcamTuningVisible?: boolean;
   /** Controlled by the original VideoView; closing tools never resets them. */
@@ -46,6 +48,7 @@ interface StatusBarProps {
 
 export function StatusBar({
   compact = false,
+  embedded = false,
   active = true,
   webcamTuningVisible = false,
   videoControls = null,
@@ -73,11 +76,11 @@ export function StatusBar({
   const [placement, setPlacement] = useState<ReturnType<typeof cameraToolsPlacement> | null>(null);
   useEffect(() => {
     // Portal past the clipped video stage, but keep the app's theme variables.
-    if (compact) setPortalHost(triggerRef.current?.closest(".app") ?? null);
-  }, [compact]);
+    if (compact && !embedded) setPortalHost(triggerRef.current?.closest(".app") ?? null);
+  }, [compact, embedded]);
   useEffect(() => { if (!active) setExpanded(false); }, [active]);
   useLayoutEffect(() => {
-    if (!compact || !expanded) return;
+    if (!compact || embedded || !expanded) return;
     const position = () => {
       const anchor = triggerRef.current?.getBoundingClientRect();
       if (anchor) setPlacement(cameraToolsPlacement(anchor, { width: window.innerWidth, height: window.innerHeight }));
@@ -90,7 +93,7 @@ export function StatusBar({
       window.removeEventListener("resize", position);
       window.removeEventListener("scroll", position, true);
     };
-  }, [compact, expanded, portalHost]);
+  }, [compact, embedded, expanded, portalHost]);
   useEffect(() => {
     if (!compact || !expanded) return;
     const outside = (event: Event) => {
@@ -177,10 +180,10 @@ export function StatusBar({
     : null;
 
   const content = (
-      <div id="camera-status-details" ref={panelRef} className={`statusbar-content${compact ? " camera-tools-popover" : ""}`} hidden={!expanded || !active}
-        role={compact ? "dialog" : undefined} aria-label={compact ? t("status.toolsTitle") : undefined}
-        tabIndex={compact ? -1 : undefined} style={compact && placement ? placement : undefined}>
-      {compact && <div className="camera-tools-heading">
+      <div id="camera-status-details" ref={panelRef} className={`statusbar-content${compact ? embedded ? " camera-tools-inline" : " camera-tools-popover" : ""}`} hidden={!expanded || !active}
+        role={compact ? embedded ? "group" : "dialog" : undefined} aria-label={compact ? t("status.toolsTitle") : undefined}
+        tabIndex={compact && !embedded ? -1 : undefined} style={compact && !embedded && placement ? placement : undefined}>
+      {compact && !embedded && <div className="camera-tools-heading">
         <strong>{t("status.toolsTitle")}</strong>
         <button type="button" aria-label={t("status.hideTools")} onClick={() => {
           setExpanded(false); triggerRef.current?.focus({ preventScroll: true });
@@ -297,14 +300,14 @@ export function StatusBar({
       </div>
   );
   return (
-    <div className={`statusbar${compact ? " camera-tools-menu" : ""}${expanded ? " expanded" : ""}`} hidden={!active}>
+    <div className={`statusbar${compact ? " camera-tools-menu" : ""}${embedded ? " camera-tools-embedded" : ""}${expanded ? " expanded" : ""}`} hidden={!active}>
       <button ref={triggerRef} type="button" className="statusbar-toggle" aria-expanded={expanded} aria-controls="camera-status-details"
-        aria-haspopup={compact ? "dialog" : undefined}
+        aria-haspopup={compact && !embedded ? "dialog" : undefined}
         onClick={() => { setNow(Date.now()); setExpanded(open => !open); }}>
         <span aria-hidden="true">{compact ? "⚙" : expanded ? "▾" : "▴"}</span>
         {t(compact ? "status.tools" : expanded ? "status.hideTools" : "status.showTools")}
       </button>
-      {compact && typeof document !== "undefined" ? portalHost ? createPortal(content, portalHost) : null : content}
+      {compact && !embedded && typeof document !== "undefined" ? portalHost ? createPortal(content, portalHost) : null : content}
     </div>
   );
 }

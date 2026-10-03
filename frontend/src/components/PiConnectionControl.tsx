@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { usePiConnection } from "../lib/PiConnection";
 import { executionPending, programOwner, stopPiProgram } from "../lib/piApi";
 import { useMakerText } from "../lib/useMaker";
@@ -10,12 +10,48 @@ export function PiConnectionControl() {
   const jobs = status?.execution?.jobs ?? [];
   const pending = jobs.filter(executionPending);
   const question = pending.find(j => j.state === "awaiting_confirmation");
+  const [menuOpen, setMenuOpen] = useState(Boolean(question));
+  const controlRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
   const [stopConsent, setStopConsent] = useState<string | null>(null);
   const stopping = useRef(false);
   const owner = programOwner(status);
   const canStop = connected && Boolean(status?.execution) && Boolean(owner) && !pi.pending && !status?.busy
     && !status?.component_test_id && !pending.length && status?.program !== "stopping";
   const inactive = connected && !status?.pid && ["stopped", "exited", "failed", "not_deployed"].includes(status?.program ?? "unknown");
+  const runtimeActive = connected && (Boolean(status?.component_test_id)
+    || ["running", "starting", "stopping"].includes(status?.program ?? "unknown")
+    || pending.some(job => job.state === "running"));
+  const connectionLabel = pi.networkError ? tr("狀態未知", "State unknown")
+    : pi.pending || status?.busy ? tr("處理中", "Working")
+    : question ? tr("待確認", "Confirm handoff")
+    : pi.error ? tr("操作失敗", "Action failed")
+    : !connected ? tr("未連線", "Disconnected")
+    : status?.program === "stopping" ? tr("停止中", "Stopping")
+    : runtimeActive ? tr("執行中", "Running")
+    : pending.length ? tr("排隊中", "Queued") : tr("已連線", "Connected");
+  useEffect(() => { if (question) setMenuOpen(true); }, [question?.id]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const outside = (event: Event) => {
+      if (event.target instanceof Node && !controlRef.current?.contains(event.target)) {
+        setMenuOpen(false); setStopConsent(null);
+      }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault(); setMenuOpen(false); setStopConsent(null);
+      controlRef.current?.querySelector("summary")?.focus({ preventScroll: true });
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("focusin", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen]);
   const stopHint = !connected || status?.program === "unknown"
     ? tr("先連線並核對 Pi 狀態。", "Connect and verify the Pi state first.")
     : !status?.execution ? tr("請重啟 Tinkro 後端後再操作。", "Restart the Tinkro backend first.")
@@ -44,17 +80,25 @@ export function PiConnectionControl() {
     stopping: tr("確認停止中", "Stopping"), blocked: tr("等待連線／核對", "Waiting for reconciliation"), running: tr("執行中", "Running"),
     finished: tr("已完成", "Completed"), failed: tr("未執行／失敗", "Failed"), cancelled: tr("已取消", "Cancelled"),
   };
-  return <div className="pi-global-control" aria-label={tr("Pi 連線與執行管理", "Pi connection and execution")}>
-    <span className="pi-global-label">{tr("Pi 連線", "Pi connection")}</span>
+  return <div ref={controlRef} className="pi-global-control pi-device-control" aria-label={tr("Pi 連線與執行管理", "Pi connection and execution")}>
     <div className="pi-global-row">
-      <button type="button" className={`pi-global-connect ${connected ? "connected" : ""}`}
-        disabled={pi.pending || Boolean(status?.busy) || Boolean(status?.component_test_id)} onClick={() => void pi.connect()}
-        title={status ? `${status.username}@${status.host}` : "Raspberry Pi 5"}>
-        <span aria-hidden="true">●</span> {pi.pending ? tr("處理中…", "Working…") : connected ? tr("已連線", "Connected") : tr("連線 Pi", "Connect Pi")}
-      </button>
-      <details className="pi-execution-menu" open={question ? true : undefined}>
-        <summary aria-label={tr("Pi 執行佇列", "Pi execution queue")}>{question ? tr("確認交接", "Handoff") : tr("執行管理", "Execution")} <span>{pending.length}</span></summary>
-        <div className="pi-execution-popover">
+      <details className="pi-execution-menu pi-device-menu" open={menuOpen} onToggle={event => setMenuOpen(event.currentTarget.open)}>
+        <summary className={`pi-device-trigger${connected ? " connected" : ""}${question || pi.error || pi.networkError ? " is-warning" : ""}`}
+          aria-label={`${tr("Pi 連線與執行管理", "Pi connection and execution")} · ${connectionLabel}`}
+          aria-expanded={menuOpen} aria-controls={menuId} aria-haspopup="dialog">
+          <i className="pi-device-dot" aria-hidden="true" />
+          <span className="pi-device-state" aria-live="polite">Pi · {connectionLabel}</span>
+          {pending.length ? <span className="pi-device-count" title={tr("待處理工作", "Pending jobs")}>{pending.length}</span> : null}
+          <span className="pi-device-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div id={menuId} className="pi-execution-popover" role="dialog" aria-label={tr("Pi 連線與執行管理", "Pi connection and execution")}>
+          <div className="pi-device-panel-heading">
+            <div><strong>Raspberry Pi</strong>{status?.host ? <small>{status.username ? `${status.username}@` : ""}{status.host}</small> : null}</div>
+            <button type="button" className={`pi-global-connect ${connected ? "connected" : ""}`}
+              disabled={pi.pending || Boolean(status?.busy) || Boolean(status?.component_test_id)} onClick={() => void pi.connect()}>
+              {pi.pending ? tr("處理中…", "Working…") : connected ? tr("重新連線", "Reconnect") : tr("連線 Pi", "Connect Pi")}
+            </button>
+          </div>
           <strong>{tr("一次執行一個，依序交接", "One program at a time · FIFO")}</strong>
           <section className="pi-project-control" aria-label={tr("作品執行控制", "Project runtime control")}>
             <p className="pi-current-owner" role="status">{tr("目前", "Current")}: {!connected ? tr("尚未連線／狀態未知", "Disconnected / unknown") : status?.component_test_id ? tr("硬體測試／整合試跑", "Hardware test / trial") : status?.program === "running" ? tr("作品程式執行中", "Project running") : status?.program === "starting" ? tr("作品啟動中", "Project starting") : status?.program === "stopping" ? tr("確認停止中", "Stopping") : inactive ? tr("作品已停止", "Project stopped") : tr("Pi 狀態待確認", "Pi state unconfirmed")}</p>
@@ -87,7 +131,10 @@ export function PiConnectionControl() {
           <small>{tr("重新整理會保留佇列；後端重啟會取消尚未開始的工作，不自動重跑。", "Refresh preserves the queue. Backend restart cancels waiting jobs without replay.")}</small>
         </div>
       </details>
+      {runtimeActive ? <button type="button" className="pi-header-stop" disabled={!canStop} title={stopHint ?? tr("停止目前作品", "Stop the current project")}
+        onClick={() => { setMenuOpen(true); setStopConsent(owner); }}>
+        <span aria-hidden="true">■</span> {tr("停止", "Stop")}
+      </button> : null}
     </div>
-    {pi.error || pi.networkError ? <span className="pi-global-error" role="alert" title={pi.error ?? "Network error"}>{tr("連線／操作失敗，請重試", "Connection / action failed")}</span> : null}
   </div>;
 }

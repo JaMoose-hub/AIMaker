@@ -18,7 +18,7 @@ const isTerminal = (status?: string) => status === "complete" || status === "sto
 const epochTime = (value: string | number, locale: string) => new Date(typeof value === "string" ? value : value < 1e12 ? value * 1000 : value).toLocaleTimeString(locale);
 
 export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, repairAppliedHash, repairCandidateReady, session, webcamReady, eyeActive, cameraSource, cameraRuntimeRevision, onReturnWebcam,
-  onCase, onRetest, onTrial, onReviewRepair, onManual, onWiring, onDiagram, variant = "debug", wiringTarget, onOpenDebug, operationCard, headerControls }: {
+  onCase, onRetest, onTrial, onReviewRepair, onManual, onWiring, onDiagram, variant = "debug", wiringTarget, onOpenDebug, operationCard, headerControls, actionsOnly = false, phonePreview = false, cameraStatusInView = false }: {
   state: MakerState; context: DebugContext; currentCodeHash: string; session: SessionControl; webcamReady: boolean; eyeActive: boolean;
   repairCaseId: string | null; repairAppliedHash: string | null; repairCandidateReady: boolean;
   cameraSource: string | null; cameraRuntimeRevision: number | null;
@@ -26,6 +26,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   onTrial: (trialId?: string) => void; onReviewRepair: () => void; onManual: () => void; onWiring: (id: string, pin?: string) => void;
   onDiagram?: (inspection: DiagramInspection) => void;
   variant?: "debug" | "wiring"; wiringTarget?: DebugContext["wiring_target"]; onOpenDebug?: () => void; operationCard?: React.ReactNode; headerControls?: React.ReactNode;
+  actionsOnly?: boolean; phonePreview?: boolean; cameraStatusInView?: boolean;
 }) {
   const tr = useMakerText();
   const statusText = (text: string) => systemText(text, tr("zh-TW", "en"));
@@ -35,6 +36,8 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   const [responseMode, setResponseMode] = useState<DebugResponseMode>(session.record?.response_mode ?? "fast");
   const [now, setNow] = useState(Date.now());
   const [recordsOpen, setRecordsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsTrigger = useRef<HTMLButtonElement>(null);
   const recordsTrigger = useRef<HTMLButtonElement>(null);
   const recordsHeading = useRef<HTMLHeadingElement>(null);
   const recordsWasOpen = useRef(false);
@@ -90,7 +93,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     (record.camera.source === cameraSource && (record.camera.runtime_revision === cameraRuntimeRevision ||
       (record.camera_current === true && record.camera.runtime_revision > cameraRuntimeRevision)));
   const current = record?.current_target !== false && record?.camera_current !== false && sameProject && sameCode && sameWiring && sameCamera;
-  const canStart = Boolean(state.design && (wiringMode ? cameraSource === "device" && !eyeActive : webcamReady) && !session.pending);
+  const canStart = Boolean(state.design && !phonePreview && (wiringMode ? ["device", "phone"].includes(cameraSource ?? '') && !eyeActive : webcamReady) && !session.pending);
   const canAct = Boolean(active && record?.phase !== "backend_restarted" && current && webcamReady && !session.pending && (!binding?.code_hash || currentCodeHash));
   const approvedRepairCode = record?.status === "awaiting_repair" && sameProject && sameWiring && sameCamera &&
     record.current_target !== false && record.camera_current !== false && !sameCode &&
@@ -205,11 +208,11 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     if (active) {
       if (!canMessage) return;
       const result = await session.action("message", actionContext, text, responseMode);
-      if (result) setEntry("");
+      if (result) setEntry(value => value.trim() === text ? "" : value);
     } else if (canStart) {
       const create = () => session.create(actionContext, text, state.aiModel, state.aiEffort, responseMode, { purpose: wiringMode ? "wiring_review" : "debug" });
       const result = await (wiringMode ? create() : countdown.run(create));
-      if (result) setEntry("");
+      if (result) setEntry(value => value.trim() === text ? "" : value);
     }
   }
   function act(actionName: DebugSessionAction) {
@@ -295,22 +298,54 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     return messages[value] ? tr(...messages[value]) : value.startsWith("HTTP ") ? tr("除錯服務暫時無法回應，請稍後再試。", "The debug service is unavailable. Try again shortly.") : statusText(value);
   };
 
-  return <section ref={panelRef} className={`ai-debug-panel${wiringMode ? " is-wiring-review" : ""}`} aria-label={wiringMode ? tr("與 AI 一起接線", "Wire with AI") : tr("與 AI 一起除錯", "Debug with AI")}>
-    <div className="ai-debug-head">
+  const recordsActions = <><button ref={recordsTrigger} type="button" className="workflow-secondary" aria-expanded={recordsOpen} aria-controls="ai-debug-records" title={tr("照片使用與檢查紀錄", "Photo use and inspection records")} onClick={() => setRecordsOpen(value => !value)}>{tr("檢查紀錄", "Check records")}</button><button type="button" className="workflow-secondary" aria-controls="debug-manual-tools" onClick={() => {setRecordsOpen(false);onManual();}}>{tr("手動測試工具", "Manual test tools")}</button></>;
+  const captureLabel = !webcamReady && cameraStatusInView ? tr('影像尚未就緒，請到即時畫面確認連線', 'Camera not ready. Check the connection in Live view')
+    : wiringMode ? tr("拍攝這一步 · 10 秒倒數", "Capture this step · 10-second countdown")
+    : !active ? tr("拍照並開始除錯 · 10 秒倒數", "Capture and start debugging · 10-second countdown")
+      : tr("拍目前畫面 · 10 秒倒數", "Capture current view · 10-second countdown");
+  const showCompactCapture = wiringMode || !active || (record?.status === "awaiting_capture" && awaitingReply && !record.model_busy);
+  return <section ref={panelRef} className={`ai-debug-panel${wiringMode ? " is-wiring-review" : ""}${actionsOnly ? " is-actions-only" : ""}`} aria-label={wiringMode ? tr("與 AI 一起接線", "Wire with AI") : tr("與 AI 一起除錯", "Debug with AI")}
+    onKeyDown={event => {
+      if (actionsOnly && toolsOpen && event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault(); event.stopPropagation(); countdown.cancel(); setToolsOpen(false); toolsTrigger.current?.focus();
+      }
+    }}>
+    {actionsOnly ? <>
+      <div className="assistant-debug-toolbar">
+        {headerControls}
+        <div className="assistant-debug-primary">
+          {showCompactCapture ? <button className="assistant-capture" type="button" title={captureLabel} aria-label={captureLabel}
+            disabled={recordsOpen || counting || (wiringMode ? !canCaptureWiring : !active ? !canStart : !canAct)}
+            onClick={() => wiringMode ? void captureStep() : !active ? void send() : act("capture")}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 5 6 8H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2l-2-3Z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span>{tr("拍照", "Photo")}</span><small>10s</small>
+          </button> : null}
+          <button ref={toolsTrigger} className="assistant-debug-tools-toggle" type="button" title={tr("工具與設定", "Tools & settings")} aria-label={tr("工具與設定", "Tools & settings")} aria-expanded={toolsOpen} aria-controls="assistant-debug-settings" onClick={() => setToolsOpen(value => !value)}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="assistant-debug-settings" className="assistant-debug-settings" hidden={!toolsOpen}>
+        <label><span>{tr("照片分析", "Photo analysis")}</span><select aria-label={tr("照片分析方式", "Photo analysis style")} value={responseMode} disabled={Boolean(counting || record?.model_busy || session.pending)} onChange={event => setResponseMode(event.target.value as DebugResponseMode)}><option value="fast">{tr("快速引導", "Quick guidance")}</option><option value="thorough">{tr("深入分析", "Detailed analysis")}</option></select></label>
+        <div className="assistant-debug-secondary">{recordsActions}</div>
+      </div>
+      {active ? <button className="assistant-debug-stop" type="button" disabled={session.pending} onClick={() => act("stop")}>{wiringMode ? tr("停止本次檢查", "Stop this check") : tr("停止本次除錯", "Stop this session")}</button> : null}
+    </> : <div className="ai-debug-head">
       {headerControls}
-      <div className="ai-debug-head-actions">{active ? <button type="button" disabled={session.pending} onClick={() => act("stop")}>{wiringMode ? tr("停止本次檢查", "Stop this check") : tr("停止本次除錯", "Stop this session")}</button> : null}<button ref={recordsTrigger} type="button" className="workflow-secondary" aria-expanded={recordsOpen} aria-controls="ai-debug-records" title={tr("照片使用與檢查紀錄", "Photo use and inspection records")} onClick={() => setRecordsOpen(value => !value)}>{tr("檢查紀錄", "Check records")}</button><button type="button" className="workflow-secondary" aria-controls="debug-manual-tools" onClick={() => {setRecordsOpen(false);onManual();}}>{tr("手動測試工具", "Manual test tools")}</button></div>
-    </div>
+      <div className="ai-debug-head-actions">{active ? <button type="button" disabled={session.pending} onClick={() => act("stop")}>{wiringMode ? tr("停止本次檢查", "Stop this check") : tr("停止本次除錯", "Stop this session")}</button> : null}{recordsActions}</div>
+    </div>}
     <div className="ai-debug-conversation" hidden={recordsOpen}>
     <CaptureCountdown remaining={countdown.remaining} onCancel={countdown.cancel} />
-    {!webcamReady ? <div className="guide-caution" role="status">
-      <p>{wiringMode && cameraSource === "device" && !eyeActive ? tr("目前沒有新的 Webcam 畫面，仍可先詢問接法；拍攝前請確認鏡頭。", "You can still ask about wiring without a fresh Webcam image. Check the camera before capturing.") : eyeActive ? tr("目前是 Eye 畫面。請先恢復 Webcam，再開始 AI 協作除錯。", "Eye is active. Restore the Webcam before starting AI guided debugging.") : tr("請先啟用 Webcam，才能用相機協作除錯。", "Enable a Webcam before camera guided debugging.")}</p>
+    {!webcamReady && (!cameraStatusInView || eyeActive) ? <div className="guide-caution" role="status">
+      <p>{eyeActive ? tr("目前是 Eye 畫面。請先恢復 Webcam，再開始 AI 協作除錯。", "Eye is active. Restore the Webcam before starting AI guided debugging.")
+        : tr("請確認目前影像來源持續更新，再拍照；仍可先詢問接法。", "Check that the selected camera is live before capturing. You can still ask about wiring.")}</p>
       {eyeActive ? <button type="button" onClick={onReturnWebcam}>{tr("返回 Webcam", "Restore Webcam")}</button> : null}
     </div> : null}
     {!state.design ? <p className="guide-caution">{tr("先建立作品，系統才能對照目前接線、程式與測試結果。", "Create a project so the system can compare its wiring, code, and tests.")}</p> : null}
-    <div className="ai-debug-chat" ref={chat.chatRef} role="log" aria-label={tr("AI 除錯對話", "AI debugging conversation")} aria-live="polite" aria-relevant="additions" onScroll={chat.onScroll}>
+    <div className="ai-debug-chat" ref={chat.chatRef} role={actionsOnly ? "region" : "log"} aria-label={actionsOnly ? tr("除錯操作與證據", "Debug actions and evidence") : tr("AI 除錯對話", "AI debugging conversation")} aria-live="polite" aria-relevant="additions" onScroll={chat.onScroll}>
     <div className="ai-debug-chat-content" ref={chat.contentRef}>
-      {!record && messages.length === 0 ? <div className="ai-debug-welcome"><span className="ai-debug-avatar">AI</span><h4>{wiringMode ? tr("這一步需要幫忙嗎？", "Need help with this step?") : tr("哪裡沒有照預期運作？", "What isn't working as expected?")}</h4><p>{wiringMode ? tr("直接問接法，或按「拍攝這一步」讓 AI 對照實際接線。Pi 尚未開機也可以先討論。", "Ask about the wiring, or capture this step for AI to inspect it. You can talk before powering on the Pi.") : tr("直接告訴我。我會看目前的鏡頭畫面，對照 Pi 與作品資料，接著一步一步排查。", "Tell me what's happening. I'll inspect the camera image and your project's Pi data, then guide you step by step.")}</p>{missingWiring ? <p className="workflow-muted">{tr("可以先讓 AI 看畫面並引導排查；硬體測試前再完成接線確認。", "AI can inspect the image first; confirm wiring before hardware tests.")}</p> : null}</div> : null}
-      {messages.map(message => <article key={message.id} className={`ai-debug-message is-${message.role}`} data-message-id={message.id}>
+      {!actionsOnly && !record && messages.length === 0 ? <div className="ai-debug-welcome"><span className="ai-debug-avatar">AI</span><h4>{wiringMode ? tr("這一步需要幫忙嗎？", "Need help with this step?") : tr("哪裡沒有照預期運作？", "What isn't working as expected?")}</h4><p>{wiringMode ? tr("直接問接法，或按「拍攝這一步」讓 AI 對照實際接線。Pi 尚未開機也可以先討論。", "Ask about the wiring, or capture this step for AI to inspect it. You can talk before powering on the Pi.") : tr("直接告訴我。我會看目前的鏡頭畫面，對照 Pi 與作品資料，接著一步一步排查。", "Tell me what's happening. I'll inspect the camera image and your project's Pi data, then guide you step by step.")}</p>{missingWiring ? <p className="workflow-muted">{tr("可以先讓 AI 看畫面並引導排查；硬體測試前再完成接線確認。", "AI can inspect the image first; confirm wiring before hardware tests.")}</p> : null}</div> : null}
+      {!actionsOnly && messages.map(message => <article key={message.id} className={`ai-debug-message is-${message.role}`} data-message-id={message.id}>
         <div className="ai-debug-message-meta"><strong>{message.role === "user" ? tr("你", "You") : "Tinkro AI"}</strong><time>{epochTime(message.created_at, tr("zh-TW", "en"))}</time>{message.role === "assistant" && message.elapsed_ms != null ? <span>{(message.elapsed_ms / 1000).toFixed(1)} s</span> : null}</div>
         <p>{message.text}</p>
         {message.capture_ids?.length ? <div className="ai-debug-message-photos">{message.capture_ids.map(id => {
@@ -347,8 +382,8 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     </> : null}
     </div>
     </div>
-    {chat.unread ? <button type="button" className="ai-debug-latest" onClick={chat.showLatest}>{tr("查看最新回覆 ↓", "View latest reply ↓")}</button> : null}
-    <div className="ai-debug-entry ai-debug-composer">
+    {!actionsOnly && chat.unread ? <button type="button" className="ai-debug-latest" onClick={chat.showLatest}>{tr("查看最新回覆 ↓", "View latest reply ↓")}</button> : null}
+    {!actionsOnly ? <div className="ai-debug-entry ai-debug-composer">
       {!active && !wiringMode ? <div className="ai-debug-quick" role="group" aria-label={tr("常見現象", "Common symptoms")}>
         {(["distance", "display", "program"] as const).map(value => <button key={value} type="button" aria-pressed={kind === value} onClick={() => selectKind(value)}>{value === "distance" ? tr("測不到距離", "No distance reading") : value === "display" ? tr("螢幕異常", "Screen issue") : tr("作品沒反應", "Not responding")}</button>)}
       </div> : null}
@@ -364,7 +399,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
       <div className="ai-debug-composer-toolbar"><label className="ai-debug-response-mode"><span>{tr("回覆方式", "Response style")}</span><select value={responseMode} disabled={Boolean(counting || record?.model_busy || session.pending)} onChange={event => setResponseMode(event.target.value as DebugResponseMode)}><option value="fast">{tr("快速引導", "Quick guidance")}</option><option value="thorough">{tr("深入分析", "Detailed analysis")}</option></select></label>{wiringMode ? <button type="button" disabled={!canCaptureWiring || counting} onClick={() => void captureStep()}>{tr("拍攝這一步", "Capture this step")}</button> : record?.status === "awaiting_capture" && awaitingReply && !record.model_busy ? <button type="button" disabled={!canAct || counting} onClick={() => act("capture")}>{tr("拍目前畫面", "Capture current view")}</button> : null}</div>
       <small className="ai-debug-composer-hint">{tr("Enter 傳送 · Shift + Enter 換行", "Enter to send · Shift + Enter for a new line")}</small>
       {session.error ? <p className="pi-error" role="alert">{readableError(session.error)}</p> : null}
-    </div>
+    </div> : session.error ? <p className="pi-error" role="alert">{readableError(session.error)}</p> : null}
     </div>
     <div id="ai-debug-records" className="debug-tool-view ai-debug-records" hidden={!recordsOpen} role="region" aria-labelledby="ai-debug-records-heading" onKeyDown={event => {if (event.key === "Escape" && !event.defaultPrevented) {event.stopPropagation();setRecordsOpen(false);}}}>
     <div className="debug-tool-heading"><h4 id="ai-debug-records-heading" ref={recordsHeading} tabIndex={-1}>{tr("照片使用與檢查紀錄", "Photo use and inspection records")}</h4><button type="button" className="workflow-secondary" onClick={() => setRecordsOpen(false)}>{tr("返回對話", "Back to chat")}</button></div>

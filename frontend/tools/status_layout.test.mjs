@@ -54,7 +54,7 @@ test('wiring layout removes the pin query row while retaining guide highlights a
   assert.match(app, /<VideoView[\s\S]*highlightIds=\{highlightIds\}/);
   assert.match(app, /<ProjectGuidePanel/);
   assert.match(app, /<StatusBar/);
-  assert.match(app, /<MakerAssistant/);
+  assert.match(app, /<UnifiedAssistant/);
   assert.match(app, /<MakerModelMenu/);
 });
 
@@ -105,8 +105,20 @@ test('compact camera tools retain every action behind a toolbar trigger', () => 
   assert.match(html, /class="statusbar-content camera-tools-popover" hidden=""/);
   for (const key of ['camera.triggerLabel', 'calibrate.triggerLabel', 'distanceAssistant.title', 'smartGlasses.enter', 'opticalHud.enter']) assert.ok(html.includes(key));
   const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /viewControl=\{videoControls => <>[\s\S]*?\{renderCameraTools\(videoControls\)\}<\/>\}/);
+  assert.match(app, /viewControl=\{videoControls => <>[\s\S]*?createPortal\(renderCameraTools\(videoControls\), cameraSettingsHost\)/);
   assert.doesNotMatch(app, /<div hidden=\{makerEnabled && makerStage === "design"\}><StatusBar/);
+});
+
+test('embedded camera tools stay inline in Settings without a floating dialog or duplicate heading',()=>{
+  snapshot = { detection: null, connected: false, detectionsPerSec: 0 };
+  motionSnapshot = undefined;
+  const html=renderToStaticMarkup(React.createElement(exports.StatusBar, {
+    compact:true,embedded:true,pinsById:new Map(),accuracy:null,cameraPickerVisible:true,
+  }));
+  assert.match(html,/class="statusbar camera-tools-menu camera-tools-embedded"/);
+  assert.match(html,/class="statusbar-content camera-tools-inline" hidden="" role="group"/);
+  assert.doesNotMatch(html,/aria-haspopup|camera-tools-popover|camera-tools-heading/);
+  assert.match(html,/camera.triggerLabel/);
 });
 test('camera tools place supplied video actions in one labelled section above telemetry', () => {
   snapshot = { detection: null, connected: false, detectionsPerSec: 0 };

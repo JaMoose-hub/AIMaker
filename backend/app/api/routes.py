@@ -61,6 +61,8 @@ async def get_config(request: Request) -> dict:
         "video_size": [cfg.camera.width, cfg.camera.height],
         "detector": cfg.detector,
         "camera_source": cfg.camera.source,
+        "camera_identity": (f"phone:{request.app.state.source.session_id}:{request.app.state.source.generation}"
+                            if cfg.camera.source == 'phone' else cfg.camera.source),
         "realtime_tracking": cfg.realtime_tracking and board_id == 'raspberry-pi-5',
         "camera_capture_backend": cfg.camera.capture_backend,
         "component_vision": {

@@ -37,7 +37,7 @@ try{
       const context=await browser.newContext({viewport:{width,height:871}});
       await context.route('**/*',route=>{
         const u=new URL(route.request().url());
-        if(u.origin===new URL(preview.url).origin&&['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg'].includes(u.pathname))return route.continue();
+        if(u.origin===new URL(preview.url).origin&&['/','/preview.js','/preview.css','/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg'].includes(u.pathname))return route.continue();
         report.denied.push(u.href);return route.abort();
       });
       page=await context.newPage();const errors=[];

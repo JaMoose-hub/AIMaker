@@ -10,6 +10,8 @@ interface RuntimeToolbarProps {
   busy: boolean;
   disabled: boolean;
   error: string | null;
+  /** Hosts the existing VideoView-owned tools without remounting the camera. */
+  cameraToolsRef?: (host: HTMLDivElement | null) => void;
   onControllerChange: (boardId: string) => void;
   onLocaleChange: (locale: Locale) => void;
 }
@@ -21,6 +23,7 @@ export function RuntimeToolbar({
   busy,
   disabled,
   error,
+  cameraToolsRef,
   onControllerChange,
   onLocaleChange,
 }: RuntimeToolbarProps) {
@@ -29,13 +32,31 @@ export function RuntimeToolbar({
   const settingsId = useId();
   useEffect(() => {
     if (!collapsible) return;
+    const settings = menu.current;
     const closeOutside = (event: PointerEvent) => {
       if (menu.current?.open && event.target instanceof Node && !menu.current.contains(event.target)) {
         menu.current.open = false;
       }
     };
+    // Native containment also includes VideoView controls portalled into Settings.
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || !settings?.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      settings.open = false;
+      settings.querySelector("summary")?.focus();
+    };
+    const closeOnBlur = (event: FocusEvent) => {
+      if (settings && !(event.relatedTarget instanceof Node && settings.contains(event.relatedTarget))) settings.open = false;
+    };
     document.addEventListener("pointerdown", closeOutside, true);
-    return () => document.removeEventListener("pointerdown", closeOutside, true);
+    settings?.addEventListener("keydown", closeOnEscape);
+    settings?.addEventListener("focusout", closeOnBlur);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside, true);
+      settings?.removeEventListener("keydown", closeOnEscape);
+      settings?.removeEventListener("focusout", closeOnBlur);
+    };
   }, [collapsible]);
 
   const controls = (
@@ -70,20 +91,11 @@ export function RuntimeToolbar({
     </div>
   );
   return <>
-    {collapsible ? <details className="runtime-settings" ref={menu}
-      onKeyDown={event => {
-        if (event.key === "Escape" && menu.current?.open) {
-          event.preventDefault();
-          event.stopPropagation();
-          menu.current.open = false;
-          menu.current.querySelector("summary")?.focus();
-        }
-      }}
-      onBlur={event => {
-        if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
-      }}>
+    {collapsible ? <details className="runtime-settings" ref={menu}>
       <summary aria-controls={settingsId}><span aria-hidden="true">⚙</span>{t("runtime.settingsLabel")}</summary>
-      <div className="runtime-settings-popover" id={settingsId}>{controls}</div>
+      <div className="runtime-settings-popover" id={settingsId}>{controls}
+        {cameraToolsRef ? <div className="camera-settings-slot" ref={cameraToolsRef} /> : null}
+      </div>
     </details> : controls}
     {error ? <span className="runtime-error" role="status">{error}</span> : null}
   </>;

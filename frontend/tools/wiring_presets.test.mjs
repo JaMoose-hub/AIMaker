@@ -10,7 +10,7 @@ import {passiveCountdown,passiveChat} from './capture_ui_fixture.mjs';
 const source=readFileSync(new URL('../src/components/AiDebugPanel.tsx',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
 function nodes(tree,predicate){const found=[];function visit(node){if(!node||typeof node!=='object')return;if(predicate(node))found.push(node);React.Children.forEach(node.props?.children,visit);}visit(tree);return found;}
-function harness({wireIndex=0,english=false,variant='wiring',pending=false,record=null}={}){
+function harness({wireIndex=0,english=false,variant='wiring',pending=false,record=null,actionsOnly=false,webcamReady=true,error='',countdown=passiveCountdown}={}){
   const values=[],refs=[];let stateIndex=0,refIndex=0,focuses=0;
   const actions=[];
   const react={...React,useEffect(){},useLayoutEffect(){},useRef(initial){const i=refIndex++;return refs[i]??=( {current:initial} );},
@@ -19,7 +19,7 @@ function harness({wireIndex=0,english=false,variant='wiring',pending=false,recor
   new Function('React','require','exports',code)(React,name=>name==='react'?react:name.endsWith('/maker')?maker:
     name.endsWith('/useMaker')?{useMakerText:()=>((zh,en)=>english?en:zh)}:
     name.endsWith('/systemText')?{systemText}:
-    name.endsWith('/useCaptureCountdown')?{useCaptureCountdown:passiveCountdown}:
+    name.endsWith('/useCaptureCountdown')?{useCaptureCountdown:countdown}:
     name.endsWith('/useChatScroll')?{useChatScroll:passiveChat}:
     name.endsWith('/CaptureCountdown')?{CaptureCountdown:()=>null}:
     name.endsWith('/componentTests')?{componentComplete:()=>true}:
@@ -28,15 +28,62 @@ function harness({wireIndex=0,english=false,variant='wiring',pending=false,recor
   const wire=design.wiring[wireIndex];
   const unexpected=(...args)=>{actions.push(args);throw Error('A preset triggered an external action');};
   const props={state:{...maker.initialMaker(),design},context:{test_keys:{}},currentCodeHash:'',
-    session:{record,pending,error:'',create:unexpected,action:unexpected},variant,
-    wiringTarget:{component_id:wire.componentId,wire_id:wire.id},webcamReady:true,eyeActive:false,cameraSource:'device',cameraRuntimeRevision:1,
+    session:{record,pending,error,create:unexpected,action:unexpected},variant,actionsOnly,
+    wiringTarget:{component_id:wire.componentId,wire_id:wire.id},webcamReady,eyeActive:false,cameraSource:'device',cameraRuntimeRevision:1,
     repairCaseId:null,repairAppliedHash:null,repairCandidateReady:false,
     ...Object.fromEntries(['onReturnWebcam','onCase','onRetest','onTrial','onReviewRepair','onManual','onWiring','onDiagram','onOpenDebug'].map(key=>[key,unexpected]))};
-  function render(){stateIndex=0;refIndex=0;const tree=module.AiDebugPanel(props);nodes(tree,node=>node.type==='textarea')[0].ref.current={focus(){focuses++;}};return tree;}
+  function render(){stateIndex=0;refIndex=0;const tree=module.AiDebugPanel(props);const input=nodes(tree,node=>node.type==='textarea')[0];if(input)input.ref.current={focus(){focuses++;}};return tree;}
   function presets(){return nodes(render(),node=>node.props?.className==='ai-debug-quick ai-debug-wiring-presets').flatMap(group=>nodes(group,node=>node.type==='button'));}
   function entry(){return nodes(render(),node=>node.type==='textarea')[0];}
   return{props,design,wire,render,presets,entry,actions,focuses:()=>focuses};
 }
+
+test('shared chat shows one capture/tool row and keeps secondary tools collapsed in both languages',()=>{
+  for(const english of [false,true]) {
+    const h=harness({actionsOnly:true,english});
+    const setting=()=>nodes(h.render(),n=>n.props?.id==='assistant-debug-settings')[0];
+    assert.equal(setting().props.hidden,true);
+    assert.equal(nodes(h.render(),n=>n.type==='textarea').length,0);
+    const toggle=nodes(h.render(),n=>n.props?.className==='assistant-debug-tools-toggle')[0];
+    assert.equal(toggle.props['aria-expanded'],false);
+    toggle.props.onClick();
+    assert.equal(setting().props.hidden,false);
+    const select=nodes(setting(),n=>n.type==='select')[0];
+    select.props.onChange({target:{value:'thorough'}});
+    assert.equal(nodes(setting(),n=>n.type==='select')[0].props.value,'thorough');
+    assert.equal(nodes(setting(),n=>n.type==='button').length,2);
+    let focused=false;
+    toggle.ref.current={focus(){focused=true;}};
+    h.render().props.onKeyDown({key:'Escape',preventDefault(){},stopPropagation(){}});
+    assert.equal(setting().props.hidden,true);
+    assert.equal(focused,true);
+    assert.equal(nodes(setting(),n=>n.type==='select')[0].props.value,'thorough');
+    assert.deepEqual(h.actions,[]);
+  }
+});
+
+test('compact photo action still enters the countdown and preserves capture guards',async()=>{
+  const waiting=[];
+  const h=harness({actionsOnly:true,countdown:()=>({remaining:null,run:async action=>{waiting.push(action);},cancel(){}})});
+  const capture=nodes(h.render(),n=>n.props?.className==='assistant-capture')[0];
+  assert.match(capture.props['aria-label'],/10 秒倒數/);
+  await capture.props.onClick();
+  assert.equal(waiting.length,1);
+  assert.deepEqual(h.actions,[],'No capture or model call before countdown completes');
+  for(const options of [{pending:true},{webcamReady:false},{countdown:()=>({remaining:8,run(){throw Error('disabled');},cancel(){}})}]) {
+    const blocked=harness({actionsOnly:true,...options});
+    assert.equal(nodes(blocked.render(),n=>n.props?.className==='assistant-capture')[0].props.disabled,true);
+  }
+});
+
+test('active stop and errors stay outside collapsed settings',()=>{
+  const h=harness({actionsOnly:true,error:'camera_frame_unavailable',record:{id:'active',status:'paused',phase:'awaiting_user',messages:[],observations:[],instruction:'Check wiring',test_results:[]}});
+  const tree=h.render(),settings=nodes(tree,n=>n.props?.id==='assistant-debug-settings')[0];
+  assert.equal(settings.props.hidden,true);
+  assert.equal(nodes(settings,n=>n.props?.className==='assistant-debug-stop').length,0);
+  assert.equal(nodes(tree,n=>n.props?.className==='assistant-debug-stop').length,1);
+  assert.equal(nodes(tree,n=>n.props?.role==='alert').length,1);
+});
 
 test('wiring mode offers exactly three contextual editable questions',()=>{
   const h=harness();

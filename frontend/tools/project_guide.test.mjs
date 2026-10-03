@@ -4,7 +4,7 @@ import {board, piGuide, designFor, maker, componentTests, renderGuide} from './p
 import {resultFixture} from './cloud_wiring_fixture.mjs';
 
 const checkButtons = html => [...html.matchAll(/<button[^>]*class="cloud-wiring-button"[^>]*>/g)];
-test('HC-SR04+ VCC points to inner row position one and ECHO is a direct step', async () => {
+test('HC-SR04+ VCC highlights physical Pin 1 and ECHO is a direct step', async () => {
   const design = designFor();
   for (const pin of ['VCC', 'ECHO']) {
     const index = design.wiring.findIndex(w => w.componentPin === pin);
@@ -14,9 +14,9 @@ test('HC-SR04+ VCC points to inner row position one and ECHO is a direct step', 
     assert.ok(!html.includes('class="wiring-divider"'));
     assert.ok(!html.includes('330Ω') && !html.includes('470Ω'));
     if (pin === 'VCC') {
-      assert.ok(html.includes('<strong>第 1 支</strong>'));
+      assert.ok(html.includes('<strong>Pin 1</strong>'));
       assert.ok(html.includes('內排（靠板中央）'));
-      assert.ok(html.includes('3.3V · 實體 Pin 1'));
+      assert.ok(html.includes('3.3V · 內排（靠板中央）'));
     }
   }
 });
@@ -59,8 +59,10 @@ test('started guide shows the real wiring target and no photo or premature modul
   for (const locale of ['zh-TW', 'en']) {
     const html = await renderGuide({locale, session:maker.startProjectGuide(maker.emptyGuide())});
     assert.equal(checkButtons(html).length, 0);
-    assert.ok(html.includes('<strong>GND</strong>') && html.includes(locale === 'en' ? '<strong>Position 3</strong>' : '<strong>第 3 支</strong>'));
-    assert.ok(html.includes(locale === 'en' ? 'GND · Physical Pin 6' : 'GND · 實體 Pin 6'));
+    assert.ok(html.includes('<strong>GND</strong>') && html.includes('<strong>Pin 6</strong>'));
+    assert.ok(html.includes(locale === 'en' ? 'Physical pin' : '實體腳位'));
+    assert.ok(!html.includes(locale === 'en' ? 'Power off before wiring.' : '接線前先斷電。'));
+    assert.ok(!html.includes('guide-connect-hint'), 'direct HC steps have no empty hint row');
     assert.ok(!html.includes('cloud-result-target')); // no repeated target card inside AI results
     assert.ok(!html.includes('cloud-result-inline'));
     assert.match(html, /class="compact-guide-details" hidden=""/);
@@ -79,14 +81,15 @@ test('each supported module uses its profile target and divider is not a direct-
       assert.ok(html.includes(`data-wiring-target="${cid}:${wire.componentPin}"`));
       assert.ok(html.includes(`<strong>${wire.componentPin}</strong>`));
       const location = piGuide.piHeaderLocation(board.pins.find(p => p.id === wire.boardPin));
-      assert.ok(html.includes(`<strong>第 ${location.number} 支</strong>`));
+      assert.ok(html.includes(`<strong>Pin ${location.physical}</strong>`));
       assert.ok(html.includes(location.row === 'inner' ? '內排（靠板中央）' : '外排（靠板邊緣）'));
-      assert.ok(html.includes(`實體 Pin ${location.physical}`));
-      assert.ok(html.includes('遠離 USB-A／網路孔端起算，第一支算 1'));
-      const row = html.match(/<ol class="pi-row-count"[^>]*>([\s\S]*?)<\/ol>/)?.[1];
-      assert.equal((row.match(/<li/g) ?? []).length, 20);
-      assert.equal((row.match(/aria-current="step"/g) ?? []).length, 1);
-      assert.match(row, new RegExp(`<li aria-current="step"><span[^>]+><\\/span>${location.number}<\\/li>`));
+      assert.ok(!html.includes('遠離 USB-A／網路孔端起算，第一支算 1'));
+      assert.ok(!html.includes('pi-row-count') && !html.includes('pi-row-locator'));
+      const card = html.match(/<section class="guide-connection-card[^>]*>([\s\S]*?)<\/section>/)?.[1];
+      assert.ok(!card.includes('component-row-locator'));
+      assert.ok(!card.includes('接線前先斷電。'));
+      if (cid === 'mrd-tf240-8p-cs') assert.ok(card.includes('BLK 留空，勿接 GPIO／5V。'));
+      assert.match(html, /class="compact-guide-details" hidden=""[\s\S]*class="component-row-locator"/);
       if (wire.connectionKind === 'divider') {
         assert.ok(html.includes('ECHO 需分壓，不可直連 GPIO'));
         assert.ok(html.includes('330Ω') && html.includes('470Ω'));
@@ -100,6 +103,19 @@ test('profile loading fallback keeps the real pin rather than inventing a row', 
   const html = await renderGuide({pinsById:new Map(), session:maker.startProjectGuide(maker.emptyGuide())});
   assert.ok(html.includes('<strong>Pin 6</strong>'));
   assert.ok(!html.includes('pi-row-count'));
+});
+
+test('TFT GND shows physical Pin 20 rather than row position 10 in both languages', async () => {
+  const design = designFor(['mrd-tf240-8p-cs']);
+  const index = design.wiring.findIndex(w => w.componentPin === 'GND');
+  for (const locale of ['zh-TW', 'en']) {
+    const html = await renderGuide({design, locale, session:{...maker.startProjectGuide(maker.emptyGuide()), index}});
+    const card = html.match(/<section class="guide-connection-card[^>]*>([\s\S]*?)<\/section>/)[1];
+    assert.match(card, /<strong>GND<\/strong>/);
+    assert.match(card, /<strong>Pin 20<\/strong>/);
+    assert.doesNotMatch(card, /Position 10|第 10 支|pi-row-count|component-row-locator/);
+    assert.match(card, locale === 'en' ? /Physical pin/ : /實體腳位/);
+  }
 });
 
 test('old cloud state cannot render photos or start requests in the guide', async () => {
@@ -147,6 +163,8 @@ test('prepare hides step targets and AI even with restored progress or a previou
     for(const marker of ['guide-connection-card','guide-pin-pair','pi-row-locator','component-row-locator','data-wiring-target=', 'guide-module-review','cloud-result-inline']) assert.ok(!html.includes(marker), marker);
     assert.equal(checkButtons(html).length,0);
     assert.ok(html.includes('guide-prepare-message'));
+    const prepare = html.match(/<div class="guide-prepare-message">([\s\S]*?)<\/div>/)?.[1];
+    assert.ok(prepare.includes(locale === 'en' ? 'Turn off hardware power, then press Start wiring.' : '先關閉硬體電源，再按「開始接線」。'));
     assert.ok(html.includes(locale==='en'?'Start wiring →':'開始接線 →'));
     assert.match(html, /<progress[^>]*value="1"/);
   }
@@ -170,7 +188,8 @@ test('start, review, next module and restart show steps only during active wirin
     assert.equal(checkButtons(html).length,0);
     assert.equal(capture.cloudReady,false);
     assert.equal(html.includes('guide-prepare-message'),state.phase==='prepare');
-    assert.equal(html.includes('guide-module-review'),state.phase==='review');
+    assert.equal(html.includes('test-wiring-count'),state.phase==='review');
+    assert.equal(html.includes('guide-module-review'),false,'completed manual counts are folded into the test heading');
     assert.deepEqual(state,before);
   }
 });
@@ -265,4 +284,26 @@ test('navigating confirmed steps keeps the matching passed test result available
     assert.doesNotMatch(html, /稍後測試，前往部署/);
   }
   assert.deepEqual(tests, before);
+});
+
+test('a confirmed wire stays compact while idle test information and long notes remain in reference details', async () => {
+  const design = designFor(['mrd-tf240-8p-cs']);
+  const session = {...maker.previousProjectWire(design, completeModule(design)), index:3};
+  for (const locale of ['zh-TW', 'en']) {
+    const html = await renderGuide({design, session, locale});
+    const body = html.slice(html.indexOf('<div class="guide-panel-body"'), html.indexOf('<footer class="guide-panel-footer"'));
+    const [visible, reference] = body.split('class="compact-guide-details" hidden=""');
+    assert.ok(reference, 'reference remains collapsed initially');
+    assert.match(visible, /guide-pin-pair/);
+    assert.match(visible, /<strong>CS<\/strong>/);
+    assert.match(visible, /<strong>Pin 24<\/strong>/);
+    assert.match(visible, /guide-pin-caution/);
+    assert.ok(visible.includes(locale === 'en' ? 'Leave BLK unconnected' : 'BLK 留空'));
+    assert.doesNotMatch(visible, /component-test-card|guide-step-note|component-row-locator/);
+    assert.match(reference, /data-view="instructions"/);
+    assert.match(reference, /component-row-locator|guide-step-note/);
+    const actions = html.slice(html.indexOf('<footer class="guide-panel-footer"'));
+    assert.match(actions, /guide-primary-action/);
+    assert.match(actions, /data-view="actions"/);
+  }
 });

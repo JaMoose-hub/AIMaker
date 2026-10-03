@@ -15,7 +15,9 @@ test('selected component wins over a late guide effect; capture context wins whi
   assert.equal(componentOverlayScope(tft,tft,{target:'hc_target'}),hc);
   assert.equal(componentOverlayScope(hc,hc,{target:'tft_screen'}),tft);
   assert.equal(componentOverlayScope(hc,hc,{target:'module_header',wiring_target:{component_id:tft}}),tft);
-  assert.equal(componentOverlayScope(hc,null,{target:'overview'}),hc);
+  assert.equal(componentOverlayScope(hc,null,{target:'overview'}),null);
+  assert.equal(componentOverlayScope(hc,hc,null,true),null);
+  assert.equal(componentOverlayScope(hc,hc,{target:'tft_screen'},true),tft);
 });
 test('filter does not mutate packets, coordinates, confidence, tracking or pin order',()=>{
   const poses=[{component_id:hc,tracking:'stale',pins:[{id:'TRIG',x:10,y:20,v:true}]},{component_id:tft,tracking:'locked',pins:[{id:'CS',x:10,y:20,v:true}]}];
@@ -33,7 +35,7 @@ for(const realtimeEnabled of [true,false]){
     assert.doesNotMatch(view.html,/data-component-id="mrd-tf240-8p-cs"|>CS<|>SCL</);
     assert.match(view.html,/class="overlay-svg/);assert.match(view.html,/data-guide-connection="GPIO17:TRIG"/);
   });
-  test(`HC prepare/review and AI view stay scoped without a pin target (realtime=${realtimeEnabled})`,async()=>{
+  test(`explicit caller focus remains available without a pin target (realtime=${realtimeEnabled})`,async()=>{
     const view=await renderWiringVideo({realtimeEnabled,hasTarget:false,overlayComponentId:hc,extraComponents:[tft]});
     assert.match(view.html,/data-component-id="hc-sr04"/);
     assert.doesNotMatch(view.html,/data-component-id="mrd-tf240-8p-cs"|>CS<|data-guide-connection=/);
@@ -61,10 +63,20 @@ test('no guide or selected component retains general detection and Eye presentat
     assert.match(view.html,/data-component-id="hc-sr04"/);assert.match(view.html,/data-component-id="mrd-tf240-8p-cs"/);
   }
 });
-test('App binds overlay focus directly to the selected module, independent of active pin/AI visibility',()=>{
+test('App scopes only the visible active guide; prepare, review and collapsed guides show the overview',()=>{
   const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
   assert.match(app,/overlayComponentId=\{project && makerStage === "guide" && !displayModeActive \? project\.component_ids\[maker\.guide\.componentIndex\]/);
+  assert.match(app,/overlayOverview=\{Boolean\(project\) && !displayModeActive && \(!guideVisible \|\| makerStage !== "guide" \|\| maker\.guide\.phase !== "active"\)\}/);
   const view=readFileSync(new URL('../src/components/VideoView.tsx',import.meta.url),'utf8');
   assert.match(view,/componentPosesForOverlay\(componentPoses, focusedComponentId\)/);
   assert.doesNotMatch(view,/dimmed=\{Boolean\(guideTarget/);
 });
+
+for (const cameraSource of ['device','phone']) {
+  test(`${cameraSource} overview retains both components and Pi, ignoring a remembered active target`,async()=>{
+    const view=await renderWiringVideo({cameraSource,overlayComponentId:hc,overlayOverview:true,extraComponents:[tft]});
+    assert.match(view.html,/data-component-id="hc-sr04"/);assert.match(view.html,/data-component-id="mrd-tf240-8p-cs"/);
+    assert.match(view.html,/class="overlay-svg/);assert.equal(view.target,null);
+    assert.doesNotMatch(view.html,/data-guide-connection=/);
+  });
+}

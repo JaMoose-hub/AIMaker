@@ -161,7 +161,8 @@
 #current-step-diagram .circuit-zoom-fill .circuit-module-tabs { margin: 0 auto 0 0; }
 #current-step-diagram .circuit-zoom-fill > .circuit-viewport {
   flex: 1; min-height: 0; height: auto; border: 0; border-radius: 0;
-  scrollbar-gutter: auto;
+  /* Reserve the same width before/after zoom. A scrollbar must not change fit. */
+  scrollbar-gutter: stable both-edges;
 }
 #current-step-diagram .circuit-workspace > .circuit-workspace-notes { flex: none; min-width: 0; border-top: 1px solid var(--border); }
 #current-step-diagram .circuit-workspace-notes summary { padding: 6px 12px; font-size: 11px; color: var(--text-dim); cursor: pointer; }

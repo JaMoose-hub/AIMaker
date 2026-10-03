@@ -18,6 +18,7 @@ export interface AppConfig {
   video_size: [number, number];
   detector: string;
   camera_source: string;
+  camera_identity?: string;
   realtime_tracking?: boolean;
   component_vision?: {
     enabled: boolean;

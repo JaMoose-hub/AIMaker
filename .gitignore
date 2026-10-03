@@ -33,6 +33,14 @@ coverage/
 htmlcov/
 # Local browser QA screenshots and generated preview artifacts.
 /frontend/tools/*-artifacts/
+# Local QA evidence may contain camera images, chats, or pairing state.
+/docs/qa/**/*.png
+/docs/qa/**/*.jpg
+/docs/qa/**/*.jpeg
+/docs/qa/**/*.json
+/frontend/tools/qa-mobile/*
+!/frontend/tools/qa-mobile/README.md
+/tools/gpio_photo_poc/assistant-prelabels.json
 .arduino-user/
 .DS_Store
 Thumbs.db
