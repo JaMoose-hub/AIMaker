@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { toDataURL } from "qrcode";
 import { useMakerText } from "../lib/useMaker";
+import { useHeaderPanel } from "../lib/headerPanels";
 import type { AssistantController, AssistantMessage } from "../lib/assistant";
 import { acceptPhotoImageSize } from "../lib/photoWiring";
 import { acceptMobileCapture, mobileError, mobileRequest, mobilePreviewLease, mobileModelRuntime, mobileVideoFresh, followMobileSource, openMobileViewer, useMobileCompanion, useDesktopStreamCapture,
@@ -198,7 +200,7 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   selection: { id: string; nonce: number } | null; workspace?: MobileWorkspaceTargets }) {
   const tr = useMakerText();
   const mobile = useMobileCompanion(controller.mobileContext, Boolean(controller.project) && !controller.demoOpen);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useHeaderPanel("phone");
   const container = useRef<HTMLDivElement>(null);
   const [panelHost, setPanelHost] = useState<Element | null>(null);
   useEffect(() => { setPanelHost(container.current?.closest(".app") ?? null); }, []);
@@ -269,6 +271,7 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
     ? invitation.web_url || (typeof invitation.qr_payload === "string" ? invitation.qr_payload : JSON.stringify(invitation.qr_payload))
     : session ? phoneEntryUrl ?? "" : "";
   const qr = qrRecord?.payload === qrPayload ? qrRecord.image : "";
+  const qrFailureMessage = tr("QR Code 產生失敗，請按「更新 QR Code」重試。", "Could not generate the QR code. Press Refresh QR code to retry.");
   const pairedId = session?.session_id;
   const photoId = session?.view.capture_id;
   const observedPhoto = useRef<{ sessionId: string; captureId: string | null } | null>(null);
@@ -319,10 +322,12 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   useEffect(() => {
     if (!qrPayload) return;
     let disposed = false;
-    void import("qrcode").then(module => module.toDataURL(qrPayload, { width: 220, margin: 2, errorCorrectionLevel: "M" }))
-      .then(image => { if (!disposed) setQr({ payload: qrPayload, image }); }).catch(cause => { if (!disposed) setQr({ payload: qrPayload, image: "", error: mobileError(cause) }); });
+    void toDataURL(qrPayload, { width: 220, margin: 2, errorCorrectionLevel: "M" })
+      .then(image => { if (!disposed) setQr({ payload: qrPayload, image }); }).catch(() => {
+        if (!disposed) setQr({ payload: qrPayload, image: "", error: qrFailureMessage });
+      });
     return () => { disposed = true; };
-  }, [qrPayload]);
+  }, [qrPayload, qrFailureMessage]);
   useEffect(() => {
     setPairingExpired(false);
     if (!mobile.pairing) return;
@@ -385,9 +390,12 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   const mainControls = Boolean(workspace?.controls);
   const connectionLabel = mobile.error ? tr("手機連線狀態待確認", "Phone connection status unavailable") : session ? tr("手機已連接", "Phone connected") : tr("連接手機", "Connect phone");
   const trigger = <button type="button" className="mobile-connect-button" data-connected={Boolean(session && !mobile.error)}
-    aria-label={connectionLabel} aria-expanded={open && view === "connection"} aria-controls="mobile-companion-panel" disabled={!controller.project || controller.demoOpen}
-    onClick={() => void showConnection()}>{workspace?.trigger ? <><span className="mobile-connection-dot" aria-hidden="true" />
-      <span>{mobile.error ? tr("待確認", "Unknown") : session ? tr("已連接", "Connected") : tr("連接", "Connect")}</span></> : connectionLabel}</button>;
+    aria-label={connectionLabel} title={connectionLabel} aria-expanded={open && view === "connection"} aria-controls="mobile-companion-panel" disabled={!controller.project || controller.demoOpen}
+    onClick={() => void showConnection()}>{workspace?.trigger ? <><svg className="mobile-device-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+      <rect x="5.5" y="2" width="9" height="16" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 4h4M9 15.5h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg><span className="mobile-connection-dot" aria-hidden="true" />
+      <span className="mobile-connection-label">{mobile.error ? tr("待確認", "Unknown") : session ? tr("已連接", "Connected") : tr("連接", "Connect")}</span></> : connectionLabel}</button>;
   const viewControls = <div className="mobile-view-tabs" role="group" aria-label={tr("手機影像檢視", "Phone image views")}>
     <button type="button" aria-pressed={mainControls ? workspace?.showing : open && view === "live"}
       disabled={!session || Boolean(mainControls && !workspace?.canShow)} onClick={() => {
@@ -438,7 +446,7 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
         {view === "live" ? <>{!mainControls && !workspace?.showing ? <MobileVideo key={`${session.session_id}:${session.stream.generation}`} session={session} />
           : <p className="mobile-info">{workspace?.showing ? tr("手機影像正在主畫面顯示。", "Phone video is shown in the main workspace.")
             : workspace?.canShow ? tr("按「手機串流」，在主畫面觀看即時影像。", "Press Phone stream to view live video in the main workspace.")
-              : tr("請先完成目前的照片倒數或校正，再切換串流。", "Finish the current capture or calibration before switching the stream.")}</p>}
+              : tr("請先完成目前的拍照或校正，再切換串流。", "Finish the current capture or calibration before switching the stream.")}</p>}
           <div className={`mobile-feedback ${readiness}`} role="status"><strong>{readiness === "locked" ? "Locked" : readiness === "hold_still" ? "Hold still" : "Finding"}</strong>
             <span>{readiness === "locked" ? tr("畫面穩定，可以拍照。", "The view is steady and ready to capture.") : readiness === "hold_still" ? tr("請保持手機穩定，讓接點清晰。", "Hold the phone steady so the contacts are clear.") : tr("讓板卡與零件完整入鏡，調整距離及光線。", "Keep the boards fully in view and adjust distance and light.")}</span></div></> : null}
         {!workspace?.showing || view === "photo" ? <MobileStreamCaptureActions live={view === "live"} active={Boolean(session.stream.active && session.stream.publisher_connected)}

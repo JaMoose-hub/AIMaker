@@ -3,9 +3,75 @@ import { acceptMobileCapture, mobileVideoAgeMs, mobileVideoFresh } from './mobil
 import { mobileMeasurementFresh, mobileReconnectEligible, mobileReconnectWaitMs, restartMobileStream } from './mobileViewerStats';
 import { MobileBrowserApi, browserAttachment, browserLease, browserMediaReference, browserUuid, closeBrowserSession, emptyBrowserDraft, expiredBrowserSession, loadBrowserDraft, loadBrowserPairing, mergeBrowserConversation, mergeBrowserSession, mobileBrowserDraftKey, pairMobileBrowser, sameBrowserPairing, saveBrowserDraft, saveBrowserPairing, validateBrowserAttachments, type AssistantConversation, type BrowserAttachment, type BrowserCaptureJob, type BrowserDraft, type BrowserOutbox, type BrowserPairing, type BrowserSession, type CaptureTicket, type MobileCapture, } from './mobileBrowser';
 import { BrowserPublisher, browserCaptureHandoff, idleBrowserRtc, type BrowserStreamOptions } from './mobileBrowserRtc';
+import { boundWiringAction, type WiringPhotoRole, type WiringReviewAction, type WiringReviewState } from './wiringReview';
+import type { AssistantMessage, AssistantTestHelpOffer } from './assistant';
+import { assistantModelRunning, assistantWiringAnalysis } from './assistantAnalysis';
 const EXPIRED_SESSION_MESSAGE = '手機連線已失效，請重新輸入電腦顯示的新配對碼。草稿與附件已保留。';
-const errorText = (cause: unknown) => expiredBrowserSession(cause) ? EXPIRED_SESSION_MESSAGE : cause instanceof Error ? cause.message : String(cause);
+const errorText = (cause: unknown) => expiredBrowserSession(cause) ? EXPIRED_SESSION_MESSAGE
+    : cause && typeof cause === 'object' && 'detail' in cause && cause.detail === 'wiring_analysis_in_progress'
+      ? '接線照片正在分析，完成後才能送出訊息。文字與附件已保留。'
+      : cause instanceof Error ? cause.message : String(cause);
 const browserForeground = () => document.visibilityState !== 'hidden';
+interface MobileWiringSnapshot { review: WiringReviewState | null; component_label?: string; can_act: boolean; offer?: AssistantTestHelpOffer; conversation?: AssistantConversation }
+export interface MobileWiringPhotoRequest {
+    message_id: string; flow_id: string; request_id: string; role: WiringPhotoRole;
+    review: WiringReviewState; contextId: string; conversationId: string; epoch: number;
+}
+interface MobileTestHelpError { messageId: string; offerId: string; op: 'start' | 'later'; text: string }
+/** Message actions require the server offer and the paired workspace, never matching chat text. */
+export function mobileTestHelpOffer(message: AssistantMessage, session: BrowserSession | null, conversation: AssistantConversation | null): AssistantTestHelpOffer | null {
+    const offer = message.test_help_offer, workspace = session?.context, design = workspace?.design?.current;
+    if (!session || !conversation || !offer || conversation.id !== session.conversation_id || message.role !== 'assistant'
+        || message.source !== 'legacy-debug' || offer.message_id !== message.id || !offer.offer_id || offer.mode !== 'wiring'
+        || !(offer.can_act || offer.can_dismiss) || !['pending', 'started'].includes(offer.state) || message.archived
+        || message.epoch !== conversation.context_epoch || offer.context_epoch !== conversation.context_epoch
+        || message.round !== offer.guide_run || workspace?.round !== offer.guide_run
+        || session.available_context && session.available_context.context_id !== session.context_id
+        || !design || design.id !== offer.project_id || design.revision !== offer.project_revision
+        || !design.component_ids.some(componentId => componentId === offer.component_id)
+        || workspace?.context?.debug_context?.guide_run !== offer.guide_run
+        || workspace?.context?.debug_context?.test_keys?.[offer.component_id] !== offer.guide_key) return null;
+    return offer;
+}
+interface PendingWiringPhoto { attachment: BrowserAttachment; role: WiringPhotoRole; review: WiringReviewState; contextId: string; dialogue?: MobileWiringPhotoRequest }
+/** Only the current server question can bind a photo; visible chat text is never a role. */
+export function mobileWiringPhotoFlow(message: AssistantMessage, session: BrowserSession | null, conversation: AssistantConversation | null,
+    review: WiringReviewState | null, canAct: boolean) {
+    const flow = message.wiring_flow;
+    if (!session || !conversation || !review || !flow || !canAct || flow.current !== true || flow.can_act !== true || !flow.flow_id
+        || !Number.isInteger(flow.revision) || flow.revision < 0 || !Number.isInteger(flow.round) || flow.round < 0
+        || message.role !== 'assistant' || flow.kind !== 'photo_request' || !Array.isArray(flow.actions) || !flow.actions.includes('capture')
+        || !flow.role || !['pi_side_a', 'pi_side_b', 'component_header'].includes(flow.role)
+        || conversation.id !== session.conversation_id || message.epoch !== conversation.context_epoch || message.archived
+        || message.round !== session.context.round || session.available_context && session.available_context.context_id !== session.context_id
+        || flow.review_id !== review.id || flow.revision !== review.revision || flow.round !== review.round
+        || flow.component_id !== review.component_id || ['stale', 'analysing'].includes(review.status)) return null;
+    return flow;
+}
+const wiringErrorText = (cause: unknown) => {
+    const detail = cause && typeof cause === 'object' && 'detail' in cause ? String(cause.detail) : errorText(cause);
+    const labels: Record<string, string> = {
+        stale_wiring_review: '照片輪次或視角已更新，請查看目前這一輪後重新拍攝。',
+        stale_wiring_review_photo: '這張照片已被替換，請查看目前照片後再選用。',
+        stale_wiring_dialogue: '拍照問題已更新，請使用目前那則訊息的拍照按鈕。',
+        wiring_dialogue_reference_required: '請取得最新對話，再用目前那則訊息的按鈕提交照片。',
+        wiring_dialogue_role_mismatch: '照片視角與目前問題不一致，請從目前那則訊息重新拍攝。',
+        request_id_conflict: '這張照片的提交已變更，請取得最新對話後重新拍攝。',
+        action_result_unknown: '尚未確認這張照片是否送達，請取得最新對話後再重試。',
+        model_call_in_progress: '照片分析正在進行，完成後才能繼續操作。',
+        wiring_analysis_in_progress: '接線照片正在分析，完成後才能送出訊息。文字與附件已保留。',
+        mobile_wiring_review_busy_or_source_changed: '電腦仍在處理，或鏡頭來源已變更。請等目前操作完成；切換鏡頭後請回電腦重新開啟拍照核對。',
+        mobile_wiring_review_context_changed: '電腦已更新作品或接線輪次，請加入目前作品後重新拍攝。',
+        mobile_context_changed: '電腦已更新工作區，請加入目前作品後重新拍攝。',
+        wiring_review_photos_incomplete: '請先完成 Pi 兩側與零件接頭的拍攝。',
+        wiring_review_photos_not_accepted: '請先逐張查看並選擇使用照片，再開始分析。',
+        human_review_required: '這些照片仍不足以判斷，請回到電腦查看下一步並親自沿線核對。',
+        test_help_stale: '這個拍照邀請已更新，請查看目前的助手回覆後再操作。',
+        test_help_context_changed: '電腦已更新作品或接線輪次，請加入目前作品後再開始。',
+        test_help_busy: '電腦正在處理目前操作，請稍候再試。',
+    };
+    return labels[detail] ?? errorText(cause);
+};
 export function useMobileAssetUrl(api: MobileBrowserApi | null, path?: string) {
     const [record, setRecord] = useState<{
         path: string;
@@ -56,6 +122,25 @@ export function useMobileBrowser() {
     const startedStream = useRef<{ owner: number; session: string; context: string; generation: number; startedAt: number } | null>(null);
     const [streamBusy, setStreamBusy] = useState(false);
     const [capture, setCapture] = useState<MobileCapture | null>(null), [captureError, setCaptureError] = useState('');
+    const [wiringSnapshot, setWiringSnapshot] = useState<MobileWiringSnapshot>({ review: null, can_act: false });
+    const wiringSnapshotRef = useRef(wiringSnapshot); wiringSnapshotRef.current = wiringSnapshot;
+    const [wiringReviewError, setWiringReviewError] = useState(''), [wiringReviewBusy, setWiringReviewBusy] = useState(false);
+    const [pendingWiringPhoto, setPendingWiringPhoto] = useState<PendingWiringPhoto | null>(null);
+    const pendingWiringPhotoRef = useRef(pendingWiringPhoto); pendingWiringPhotoRef.current = pendingWiringPhoto;
+    const wiringRecovery = useRef<{ action: WiringReviewAction; review: WiringReviewState } | null>(null);
+    const wiringFlight = useRef<object | null>(null), wiringRefreshCounter = useRef(0);
+    const wiringPhotoPreparing = useRef<object | null>(null);
+    const testHelpRequest = useRef<{ flight: object; abort: AbortController } | null>(null);
+    const [testHelpPendingMessageId, setTestHelpPendingMessageId] = useState<string | null>(null);
+    const [testHelpError, setTestHelpError] = useState<MobileTestHelpError | null>(null);
+    const cancelTestHelp = () => {
+        const pending = testHelpRequest.current;
+        if (pending) {
+            pending.abort.abort();
+            if (wiringFlight.current === pending.flight) { wiringFlight.current = null; setWiringReviewBusy(false); }
+        }
+        testHelpRequest.current = null; setTestHelpPendingMessageId(null); setTestHelpError(null);
+    };
     const [captureTicket, setCaptureTicket] = useState<CaptureTicket | null>(null), ticketRef = useRef<CaptureTicket | null>(null);
     const [captureAttempt, setCaptureAttempt] = useState(0), [clock, setClock] = useState(() => performance.now());
     const lease = useRef({ key: '', deadline: 0 }), owner = useRef(0), workspaceKey = useRef(''), saves = useRef(Promise.resolve());
@@ -70,10 +155,15 @@ export function useMobileBrowser() {
         pairingRef.current = null;
         // Invalidate pending continuations before aborting requests or releasing media.
         owner.current++;
+        cancelTestHelp();
         lifecycleCleanup.current?.(false);
         lease.current = { key: '', deadline: 0 };
         sessionRef.current = null; conversationRef.current = null;
         setSession(null); setConversation(null); setCapture(null); setTicket(null);
+        wiringRefreshCounter.current++; wiringFlight.current = null;
+        wiringPhotoPreparing.current = null;
+        wiringSnapshotRef.current = { review: null, can_act: false };
+        setWiringSnapshot({ review: null, can_act: false }); setWiringReviewBusy(false); setPendingWiringPhoto(null);
         setRtc(idleBrowserRtc()); setConnected(false); setBusy(false);
         try { saveBrowserPairing(null); } catch { /* Memory still returns to pairing; no drafts are removed. */ }
         setPairing(null);
@@ -139,6 +229,8 @@ export function useMobileBrowser() {
             return;
         const previous = sessionRef.current, merged = mergeBrowserSession(previous, next);
         if (previous && previous.context_id !== merged.context_id) {
+            cancelTestHelp();
+            wiringPhotoPreparing.current = null;
             cancelStreamIntent();
             attachmentFlight.current = null;
             setBusy(false);
@@ -146,8 +238,12 @@ export function useMobileBrowser() {
             setCapture(null);
             setTicket(null);
             lease.current = { key: '', deadline: 0 };
+            wiringRefreshCounter.current++; wiringFlight.current = null;
+            wiringSnapshotRef.current = { review: null, can_act: false };
+            setWiringSnapshot({ review: null, can_act: false }); setWiringReviewBusy(false); setPendingWiringPhoto(null);
         }
         if (previous?.conversation_id !== merged.conversation_id) {
+            cancelTestHelp();
             conversationRef.current = null;
             setConversation(null);
         }
@@ -164,9 +260,64 @@ export function useMobileBrowser() {
         if (next.id !== (sessionRef.current?.conversation_id ?? pairing?.conversation_id))
             return;
         const merged = mergeBrowserConversation(conversationRef.current, next);
+        if (conversationRef.current && conversationRef.current.context_epoch !== merged.context_epoch) {
+            cancelTestHelp();
+            if (pendingWiringPhotoRef.current?.dialogue) {
+                wiringRefreshCounter.current++; wiringFlight.current = null; wiringPhotoPreparing.current = null;
+                pendingWiringPhotoRef.current = null; setPendingWiringPhoto(null); setWiringReviewBusy(false); setWiringReviewError('');
+            }
+        }
         conversationRef.current = merged;
         setConversation(merged);
+        setTestHelpError(previous => {
+            const offer = merged.messages.find(message => message.id === previous?.messageId)?.test_help_offer;
+            return previous && offer?.offer_id === previous.offerId
+                && offer.state === (previous.op === 'later' ? 'dismissed' : 'started') ? null : previous;
+        });
     }, [pairing?.conversation_id]);
+    const refreshWiringReview = useCallback(async () => {
+        if (!api || wiringFlight.current || !sessionRef.current) return;
+        const serial = owner.current, contextId = sessionRef.current.context_id, request = ++wiringRefreshCounter.current;
+        try {
+            const next = await api.request<MobileWiringSnapshot>('wiring-review');
+            if (serial !== owner.current || contextId !== sessionRef.current?.context_id || request !== wiringRefreshCounter.current) return;
+            const previous = wiringSnapshotRef.current.review;
+            if (previous && next.review?.id === previous.id && next.review.revision < previous.revision) return;
+            wiringSnapshotRef.current = next; setWiringSnapshot(next);
+            if (next.conversation) acceptConversation(next.conversation);
+            const pending = pendingWiringPhotoRef.current, updated = next.review;
+            if (pending && updated?.id === pending.review.id && updated.round === pending.review.round
+                && updated.component_id === pending.review.component_id && pending.contextId === contextId) {
+                const slot = updated.slots[pending.role] as (NonNullable<WiringReviewState['slots'][WiringPhotoRole]> & { provenance?: { asset_id?: string; sha256?: string } }) | null;
+                const asset = pending.attachment.asset as (BrowserAttachment['asset'] & { sha256?: string });
+                // A failed response is ambiguous: the next snapshot may prove
+                // the same immutable asset was saved, without approving the photo.
+                if (slot && asset?.id && slot.provenance?.asset_id === asset.id
+                    && slot.sha256 === (asset.sha256 ?? slot.provenance.sha256)) {
+                    pendingWiringPhotoRef.current = null; setPendingWiringPhoto(null); setWiringReviewError('');
+                }
+            }
+            const recovery = wiringRecovery.current;
+            if (recovery && updated?.id === recovery.review.id && updated.round === recovery.review.round && updated.component_id === recovery.review.component_id) {
+                const action = recovery.action, slot = action.role ? updated.slots[action.role] : null, receipt = slot?.photo_acceptance;
+                if (action.op === 'accept_photo' && slot && slot.capture_id === action.capture_id && slot.sha256 === action.sha256
+                    && receipt?.source === 'human' && receipt.capture_id === slot.capture_id && receipt.sha256 === slot.sha256 && receipt.round === updated.round
+                    || (action.op === 'analyse' && ['analysing', 'ready', 'needs_human'].includes(updated.status) && updated.revision > recovery.review.revision)) {
+                    wiringRecovery.current = null; setWiringReviewError('');
+                }
+            }
+        } catch (cause) {
+            if (serial === owner.current && contextId === sessionRef.current?.context_id && request === wiringRefreshCounter.current) {
+                const missing = cause && typeof cause === 'object' && 'status' in cause && cause.status === 404
+                    && 'detail' in cause && ['Not Found', 'HTTP 404'].includes(String(cause.detail));
+                if (missing) {
+                    // Existing deployments without the new endpoint retain
+                    // normal phone chat and single-photo capture behaviour.
+                    wiringSnapshotRef.current = { review: null, can_act: false }; setWiringSnapshot({ review: null, can_act: false }); setWiringReviewError('');
+                } else setWiringReviewError(wiringErrorText(cause));
+            }
+        }
+    }, [api]);
     const refresh = useCallback(async () => {
         if (!api)
             return;
@@ -179,6 +330,7 @@ export function useMobileBrowser() {
             const chat = await api.request<AssistantConversation>('conversation?limit=60');
             if (serial === owner.current && request === refreshCounter.current)
                 acceptConversation(chat);
+            if (serial === owner.current) await refreshWiringReview();
         }
         catch (cause) {
             if (serial === owner.current) {
@@ -188,10 +340,12 @@ export function useMobileBrowser() {
             }
             throw cause;
         }
-    }, [api, acceptSession, acceptConversation]);
+    }, [api, acceptSession, acceptConversation, refreshWiringReview]);
     useEffect(() => {
         owner.current++;
+        cancelTestHelp();
         const serial = owner.current;
+        wiringPhotoPreparing.current = null;
         attachmentFlight.current = null;
         setBusy(false);
         sessionRef.current = null;
@@ -199,6 +353,9 @@ export function useMobileBrowser() {
         setSession(null);
         setConversation(null);
         setCapture(null);
+        wiringRefreshCounter.current++; wiringFlight.current = null;
+        wiringSnapshotRef.current = { review: null, can_act: false };
+        setWiringSnapshot({ review: null, can_act: false }); setWiringReviewError(''); setWiringReviewBusy(false); setPendingWiringPhoto(null);
         setTicket(null);
         setConnected(false);
         lease.current = { key: '', deadline: 0 };
@@ -207,6 +364,15 @@ export function useMobileBrowser() {
         const pub = new BrowserPublisher(api, state => {
             if (serial !== owner.current) return;
             if (state.stats !== rtcMeasurement.current.stats) rtcMeasurement.current = { stats: state.stats, at: performance.now() };
+            // A completed publisher negotiation owns this generation; chat refresh
+            // failures must not prevent recovery of an already-running camera.
+            const context = sessionRef.current, started = startedStream.current;
+            if (state.publishing && state.stream && Number.isInteger(state.generation) && state.generation! >= 1
+                && streamWanted.current && context && (!started || started.owner !== serial
+                    || started.session !== context.session_id || started.context !== context.context_id || started.generation !== state.generation)) {
+                startedStream.current = { owner: serial, session: context.session_id, context: context.context_id,
+                    generation: state.generation!, startedAt: Date.now() };
+            }
             if (!state.publishing) { lease.current = { ...lease.current, deadline: 0 }; setClock(performance.now()); }
             if (state.sourceChanged && streamWanted.current && sessionRef.current) {
                 sourceRestart.current = { owner: serial, intent: streamIntent.current,
@@ -270,6 +436,7 @@ export function useMobileBrowser() {
         const cleanup = (notifyServer = true) => {
             if (stopped) return;
             stopped = true;
+            cancelTestHelp();
             cancelStreamIntent();
             streamFlight.current = null; setStreamBusy(false);
             owner.current++;
@@ -398,11 +565,189 @@ export function useMobileBrowser() {
         }
     } };
     const removeAttachment = (id: string) => void commit(d => ({ ...d, attachments: d.attachments.filter(a => a.id !== id) })).catch(() => undefined);
+    const wiringCurrent = (review: WiringReviewState, contextId: string) => {
+        const current = wiringSnapshotRef.current.review;
+        return contextId === sessionRef.current?.context_id && wiringSnapshotRef.current.can_act
+            && current?.id === review.id && current.round === review.round && current.component_id === review.component_id
+            && current.revision === review.revision;
+    };
+    const wiringChatCurrent = (request: MobileWiringPhotoRequest) => {
+        const context = sessionRef.current, chat = conversationRef.current;
+        const message = chat?.messages.find(item => item.id === request.message_id);
+        const flow = message ? mobileWiringPhotoFlow(message, context, chat, wiringSnapshotRef.current.review, wiringSnapshotRef.current.can_act) : null;
+        return Boolean(flow && context?.context_id === request.contextId && chat?.id === request.conversationId
+            && chat.context_epoch === request.epoch && flow.flow_id === request.flow_id && flow.role === request.role
+            && flow.review_id === request.review.id && flow.revision === request.review.revision && flow.round === request.review.round);
+    };
+    const prepareWiringChatPhoto = (message: AssistantMessage): MobileWiringPhotoRequest | null => {
+        const context = sessionRef.current, chat = conversationRef.current, review = wiringSnapshotRef.current.review;
+        const entry = chat?.messages.find(item => item.id === message.id);
+        const flow = entry ? mobileWiringPhotoFlow(entry, context, chat, review, wiringSnapshotRef.current.can_act) : null;
+        if (!ready || !connected || !context || !chat || !review || !flow?.role || wiringFlight.current || wiringPhotoPreparing.current
+            || message.wiring_flow?.flow_id !== flow.flow_id) return null;
+        return { message_id: message.id, flow_id: flow.flow_id, request_id: browserUuid(), role: flow.role, review,
+            contextId: context.context_id, conversationId: chat.id, epoch: chat.context_epoch };
+    };
+    const testHelpAction = async (message: AssistantMessage, op: 'start' | 'later') => {
+        const context = sessionRef.current, chat = conversationRef.current;
+        const currentMessage = chat?.messages.find(item => item.id === message.id);
+        const offer = currentMessage ? mobileTestHelpOffer(currentMessage, context, chat) : null;
+        if (!api || !ready || !connected || !context || !chat || !offer || wiringFlight.current
+            || op === 'start' && !offer.can_act || op === 'later' && !offer.can_dismiss
+            || message.test_help_offer?.offer_id !== offer.offer_id) return false;
+        const serial = owner.current, epoch = chat.context_epoch, flight = {}, abort = new AbortController();
+        wiringFlight.current = flight; testHelpRequest.current = { flight, abort };
+        wiringRefreshCounter.current++; refreshCounter.current++; operations.current.add(abort);
+        setWiringReviewBusy(true); setTestHelpPendingMessageId(message.id); setTestHelpError(null);
+        const current = () => {
+            const latest = conversationRef.current, entry = latest?.messages.find(item => item.id === message.id), fresh = entry?.test_help_offer;
+            return serial === owner.current && !abort.signal.aborted && wiringFlight.current === flight
+                && context.context_id === sessionRef.current?.context_id && context.conversation_id === sessionRef.current?.conversation_id
+                && latest?.context_epoch === epoch && entry?.epoch === epoch && fresh?.offer_id === offer.offer_id
+                && fresh.project_id === offer.project_id && fresh.project_revision === offer.project_revision
+                && fresh.guide_run === offer.guide_run && fresh.guide_key === offer.guide_key
+                && !['dismissed', 'stale'].includes(fresh.state)
+                && (!sessionRef.current?.available_context || sessionRef.current.available_context.context_id === context.context_id);
+        };
+        try {
+            const next = await api.request<MobileWiringSnapshot>('wiring-review', { method: 'POST', body: {
+                invitation: { op, message_id: message.id, offer_id: offer.offer_id, context_id: context.context_id },
+            }, signal: abort.signal, timeoutMs: 90000 });
+            if (!current()) return false;
+            const receipt = next.offer;
+            if (!receipt || receipt.offer_id !== offer.offer_id || receipt.message_id !== message.id
+                || receipt.context_epoch !== epoch || receipt.project_id !== offer.project_id || receipt.project_revision !== offer.project_revision
+                || receipt.guide_run !== offer.guide_run || receipt.guide_key !== offer.guide_key
+                || receipt.state !== (op === 'later' ? 'dismissed' : 'started')
+                || next.conversation && (next.conversation.id !== chat.id || next.conversation.context_epoch !== epoch)
+                || op === 'start' && next.review?.component_id !== offer.component_id) throw Error('拍照邀請回覆與目前作品不一致，請重新取得引導後再試。');
+            wiringRefreshCounter.current++; refreshCounter.current++;
+            const previous = wiringSnapshotRef.current.review;
+            if (!previous || next.review?.id !== previous.id || next.review.revision >= previous.revision) {
+                wiringSnapshotRef.current = next; setWiringSnapshot(next);
+            }
+            const synchronized = next.conversation ?? conversationRef.current!;
+            acceptConversation({ ...synchronized, messages: synchronized.messages.map(item => item.id === message.id
+                ? { ...item, test_help_offer: receipt } : item) });
+            setTestHelpError(null); return true;
+        } catch (cause) {
+            if (current()) setTestHelpError({ messageId: message.id, offerId: offer.offer_id, op, text: wiringErrorText(cause) });
+            return false;
+        } finally {
+            operations.current.delete(abort);
+            if (testHelpRequest.current?.flight === flight) testHelpRequest.current = null;
+            if (wiringFlight.current === flight) { wiringFlight.current = null; setWiringReviewBusy(false); setTestHelpPendingMessageId(null); }
+        }
+    };
+    const wiringReviewAction = async (action: WiringReviewAction) => {
+        const review = wiringSnapshotRef.current.review, context = sessionRef.current;
+        if (!api || !review || !context || wiringFlight.current) return null;
+        // A paired phone may collect photographs and observe results; physical
+        // confirmations, wiring changes and tests remain explicit desktop actions.
+        if (!['accept_photo', 'crop', 'analyse'].includes(action.op)) {
+            const message = '手機只能拍攝照片與查看分析，接線確認請回到電腦操作。'; setWiringReviewError(message); throw Error(message);
+        }
+        if (action.review_id !== review.id || action.revision !== review.revision || !wiringCurrent(review, context.context_id)) {
+            const message = '照片輪次或視角已更新，請查看目前這一輪再操作。'; setWiringReviewError(message); throw Error(message);
+        }
+        const serial = owner.current, flight = {}, abort = new AbortController();
+        wiringFlight.current = flight; wiringRefreshCounter.current++; operations.current.add(abort);
+        setWiringReviewBusy(true); setWiringReviewError('');
+        const current = () => serial === owner.current && context.context_id === sessionRef.current?.context_id && wiringFlight.current === flight;
+        try {
+            const next = await api.request<MobileWiringSnapshot>('wiring-review', { method: 'POST', body: { action }, signal: abort.signal, timeoutMs: 90000 });
+            if (!current()) return null;
+            wiringRefreshCounter.current++; wiringSnapshotRef.current = next; setWiringSnapshot(next);
+            wiringRecovery.current = null;
+            return next.review;
+        } catch (cause) {
+            if (current()) { wiringRecovery.current = { action, review }; setWiringReviewError(wiringErrorText(cause)); }
+            throw cause;
+        } finally {
+            operations.current.delete(abort);
+            if (wiringFlight.current === flight) { wiringFlight.current = null; setWiringReviewBusy(false); }
+        }
+    };
+    const runWiringPhoto = async (pending: PendingWiringPhoto) => {
+        if (!api || wiringFlight.current) return false;
+        if (!wiringCurrent(pending.review, pending.contextId) || pending.dialogue && !wiringChatCurrent(pending.dialogue)) {
+            setWiringReviewError('照片輪次或視角已更新，這張待送照片不能加入新一輪；請重拍目前要求的視角。');
+            return false;
+        }
+        const serial = owner.current, flight = {}, abort = new AbortController();
+        wiringFlight.current = flight; wiringRefreshCounter.current++; operations.current.add(abort);
+        setWiringReviewBusy(true); setWiringReviewError('');
+        const current = () => serial === owner.current && pending.contextId === sessionRef.current?.context_id && wiringFlight.current === flight
+            && (!pending.dialogue || wiringChatCurrent(pending.dialogue));
+        try {
+            let attachment = pending.attachment;
+            if (!attachment.asset) {
+                const asset = await api.upload(attachment, progress => { if (current()) setPendingWiringPhoto(value => value ? { ...value, attachment: { ...value.attachment, progress } } : null); }, abort.signal);
+                if (!current()) return false;
+                attachment = { ...attachment, asset, progress: 1 };
+                pendingWiringPhotoRef.current = { ...pending, attachment };
+                setPendingWiringPhoto({ ...pending, attachment });
+            }
+            if (!current()) return false;
+            const next = await api.request<MobileWiringSnapshot>('wiring-review', { method: 'POST', body: {
+                action: boundWiringAction(pending.review, { op: 'capture', role: pending.role }), asset_id: attachment.asset!.id,
+                ...(pending.dialogue ? { dialogue: { message_id: pending.dialogue.message_id, flow_id: pending.dialogue.flow_id, request_id: pending.dialogue.request_id } } : {}),
+            }, signal: abort.signal, timeoutMs: 90000 });
+            if (!current()) return false;
+            if (pending.dialogue) {
+                const slot = next.review?.slots[pending.role] as (NonNullable<WiringReviewState['slots'][WiringPhotoRole]> & { provenance?: { asset_id?: string } }) | null | undefined;
+                const accepted = slot?.photo_acceptance, asset = attachment.asset as BrowserAttachment['asset'] & { sha256?: string };
+                if (!next.conversation || next.conversation.id !== pending.dialogue.conversationId || next.conversation.context_epoch !== pending.dialogue.epoch
+                    || next.review?.id !== pending.review.id || next.review.round !== pending.review.round || next.review.component_id !== pending.review.component_id
+                    || next.review.revision < pending.review.revision || !slot || !slot.sha256 || slot.provenance?.asset_id !== asset.id
+                    || asset.sha256 && asset.sha256 !== slot.sha256 || accepted?.source !== 'human'
+                    || accepted.capture_id !== slot.capture_id || accepted.sha256 !== slot.sha256 || accepted.round !== next.review.round)
+                    throw Error('照片回覆與目前拍照問題不一致，請重新取得對話後再試。');
+            }
+            wiringRefreshCounter.current++; refreshCounter.current++; wiringSnapshotRef.current = next; setWiringSnapshot(next);
+            if (next.conversation) acceptConversation(next.conversation);
+            pendingWiringPhotoRef.current = null; setPendingWiringPhoto(null);
+            return true;
+        } catch (cause) {
+            if (current()) setWiringReviewError(wiringErrorText(cause));
+            return false;
+        } finally {
+            operations.current.delete(abort);
+            if (wiringFlight.current === flight) { wiringFlight.current = null; setWiringReviewBusy(false); }
+        }
+    };
+    const uploadWiringPhoto = async (file: File, role: WiringPhotoRole, review: WiringReviewState, dialogue?: MobileWiringPhotoRequest) => {
+        const contextId = sessionRef.current?.context_id;
+        if (dialogue && (dialogue.contextId !== contextId || dialogue.conversationId !== conversationRef.current?.id
+            || dialogue.epoch !== conversationRef.current?.context_epoch)) return false;
+        if (!ready || !contextId || wiringFlight.current || wiringPhotoPreparing.current || !wiringCurrent(review, contextId)
+            || dialogue && (dialogue.role !== role || dialogue.review !== review || !wiringChatCurrent(dialogue))) {
+            setWiringReviewError('照片輪次或視角已更新，請查看目前這一輪後重新拍攝。'); return false;
+        }
+        const serial = owner.current, preparation = {}; wiringPhotoPreparing.current = preparation;
+        try {
+            const attachment = await browserAttachment(file);
+            if (serial !== owner.current || !wiringCurrent(review, contextId) || dialogue && !wiringChatCurrent(dialogue)) return false;
+            if (attachment.type !== 'image') throw Error('接線視角需要照片，請重新拍攝。');
+            const pending = { attachment, role, review, contextId, ...(dialogue ? { dialogue } : {}) };
+            pendingWiringPhotoRef.current = pending;
+            setPendingWiringPhoto(pending);
+            return await runWiringPhoto(pending);
+        } catch (cause) { if (serial === owner.current && contextId === sessionRef.current?.context_id) setWiringReviewError(wiringErrorText(cause)); return false; }
+        finally { if (wiringPhotoPreparing.current === preparation) wiringPhotoPreparing.current = null; }
+    };
+    const uploadWiringChatPhoto = (file: File, request: MobileWiringPhotoRequest) => uploadWiringPhoto(file, request.role, request.review, request);
+    const retryWiringPhoto = async () => pendingWiringPhoto ? runWiringPhoto(pendingWiringPhoto) : false;
+    const discardWiringPhoto = () => { if (!wiringFlight.current) { pendingWiringPhotoRef.current = null; setPendingWiringPhoto(null); setWiringReviewError(''); } };
     const removeOutbox = (id: string) => { if (!sending.current.has(id))
         void commit(d => ({ ...d, outbox: d.outbox.filter(o => o.id !== id) })).catch(() => undefined); };
     const updateOutbox = async (id: string, update: (item: BrowserOutbox) => BrowserOutbox, save = true) => commit(d => ({ ...d, outbox: d.outbox.map(item => item.id === id ? update(item) : item) }), save);
+    // Read the latest server snapshot at the event boundary, including a reply
+    // that arrived after the composer rendered or while an attachment uploaded.
+    const chatModelBusy = () => Boolean(assistantWiringAnalysis(conversationRef.current) || assistantModelRunning(conversationRef.current));
+    const chatSendBlocked = busy || streamBusy || wiringReviewBusy || chatModelBusy();
     const deliver = async (item: BrowserOutbox) => {
-        if (!api || sending.current.has(item.id))
+        if (!api || sending.current.has(item.id) || chatModelBusy() || wiringFlight.current)
             return;
         if (item.payload.context_id !== sessionRef.current?.context_id) {
             setError('這則待送訊息屬於另一個專案版本；請回到原專案後重試。');
@@ -430,8 +775,12 @@ export function useMobileBrowser() {
             }
             if (!current())
                 return;
+            if (chatModelBusy() || wiringFlight.current)
+                throw Error('AI 正在分析，完成後才能送出這則訊息。待送文字與附件已保留。');
             const payload = { ...item.payload, asset_ids: item.attachments.length ? assets : item.payload.asset_ids };
             await updateOutbox(item.id, o => ({ ...o, payload }));
+            if (chatModelBusy() || wiringFlight.current)
+                throw Error('AI 正在分析，完成後才能送出這則訊息。待送文字與附件已保留。');
             ++refreshCounter.current;
             const next = await api.request<AssistantConversation>('messages', { method: 'POST', body: payload, signal: abort.signal, timeoutMs: 90000 });
             if (!current())
@@ -454,7 +803,7 @@ export function useMobileBrowser() {
     };
     const send = async (options: SendOptions = {}) => {
         const context = sessionRef.current;
-        if (!ready || !context || !api)
+        if (!ready || !context || !api || busy || streamBusy || attachmentFlight.current || wiringFlight.current || chatModelBusy())
             return;
         // An explicit photo action belongs to that photo; leave unrelated composer media intact.
         const text = options.text ?? draftRef.current.text, attachments = options.capture_id ? [] : draftRef.current.attachments;
@@ -494,10 +843,7 @@ export function useMobileBrowser() {
         const resumed = await restartMobileStream(() => pub.stop(), () => pub.start(streamOptions.current),
             () => current() && browserForeground() && (!automatic || (!ticketRef.current && !draftRef.current.captureJob)));
         if (resumed && current()) {
-            const startedAt = Date.now();
             await refresh();
-            if (current() && sessionRef.current?.stream.active) startedStream.current = { owner: serial,
-                session: context.session_id, context: context.context_id, generation: sessionRef.current.stream.generation, startedAt };
         }
     }
     catch (cause) {
@@ -661,8 +1007,12 @@ export function useMobileBrowser() {
         stats: { appliedBitrateKbps: rtc.stats.appliedBitrateKbps, parameterStatus: rtc.stats.parameterStatus } };
     const receiveFresh = mobileVideoFresh(session?.stream);
     return { pairing, api, session, conversation, capture, captureImageUrl: image.url, imageError: captureError || image.error,
+        wiringReview: wiringSnapshot.review, wiringComponentLabel: wiringSnapshot.component_label, wiringCanAct: wiringSnapshot.can_act,
+        wiringReviewBusy, wiringReviewError, pendingWiringPhoto, wiringReviewAction, uploadWiringPhoto, retryWiringPhoto, discardWiringPhoto, refreshWiringReview,
+        prepareWiringChatPhoto, uploadWiringChatPhoto,
+        testHelpAction, testHelpPendingMessageId, testHelpError,
         draft: workspace.text, setDraft, attachments: workspace.attachments, outbox: workspace.outbox, captureTicket, captureJob: workspace.captureJob,
-        busy: busy || streamBusy, error, connected, ready, secureContext, rtc: currentRtc,
+        busy: busy || streamBusy, chatSendBlocked, wiringAnalysis: assistantWiringAnalysis(conversation), error, connected, ready, secureContext, rtc: currentRtc,
         previewFresh: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && lease.current.deadline > clock,
         canCapture: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && !!session?.stream.can_capture && lease.current.deadline > clock && !busy && !streamBusy, inheritedMediaLabel,
         pair, disconnect, join, send, retry, removeOutbox, removeAttachment, addFiles, startStream, stopStream, beginCapture, finishCapture, cancelCapture, retryCapture, discardCapture, openCapture, selectWire, older, refresh,

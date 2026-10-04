@@ -31,12 +31,12 @@ const recognitionOverlay = compile("components/ObjectRecognitionOverlay.tsx", { 
 
 export async function renderWiringVideo({ displayMode = "standard", boardId = "raspberry-pi-5", realtimeEnabled = true,
   state = "running", eyeActive = displayMode === "smart-glasses-demo", cameraSource = eyeActive ? "xreal" : "device",
-  hasTarget = true, manualOnly = false, searching = false, bodyEvidence = null, componentBodyBox = null, boardBodyPartial = false,
+  hasTarget = true, manualOnly = false, searching = false, visualHeld = false, connectionKind = "direct", bodyEvidence = null, componentBodyBox = null, boardBodyPartial = false,
   boardPoseQuality = null, componentPoseQuality = null, backendDown = false, connected = true,
   extraComponents = [], componentId = "hc-sr04", targetComponentId = componentId,
   overlayComponentId = null, overlayOverview = false, captureTask = null, viewControl = null, alternateView = null, calibrateOpen = false,
   sourceChanging = false, sourceUnavailable = false, cameraIdentity = cameraSource,
-  sourceControl = null, sourceError = '', onRetrySource = undefined } = {}) {
+  sourceControl = null, viewNavigation = null, sourceError = '', onRetrySource = undefined } = {}) {
   const detection = { type: "detection", board_id: boardId, runtime_revision: 12, frame_id: 77, ts_ms: 1000,
     tracking: searching ? "searching" : "locked", confidence: .92, video_size: [1920,1080],
     outline: searching ? null : [[100,100],[700,100],[700,600],[100,600]],
@@ -67,7 +67,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     "../lib/wiringLabelLayout":compile("lib/wiringLabelLayout.ts"),
     "../lib/capabilities":compile("lib/capabilities.ts"),"../lib/useSmoothedDetection":smooth,"../lib/wsClient":ws });
   const tracker = dataUrl(`export const calls=[]; export function useRealtimeTracking(...args){calls.push(args);return {frame:args[0]?${JSON.stringify(frame)}:null,fps:args[0]?30:0};}`);
-  const guide = dataUrl(`export const calls=[];export function useGuidedPose(target,display){calls.push(target);const s=display??${JSON.stringify(snapshot)};const pose=s.componentPoses.find(p=>p.component_id===target?.componentId)??null;return {...s,pose,visualReady:!${searching}&&Boolean(pose),visualHeld:false,visualDetection:s.detection,visualPose:pose};}`);
+  const guide = dataUrl(`export const calls=[];export function useGuidedPose(target,display){calls.push(target);const s=display??${JSON.stringify(snapshot)};const pose=s.componentPoses.find(p=>p.component_id===target?.componentId)??null;return {...s,pose,visualReady:!${searching}&&Boolean(pose),visualHeld:${visualHeld},visualDetection:s.detection,visualPose:pose};}`);
   const pinRecorder = dataUrl(`import {createElement} from ${JSON.stringify(react)}; import {PinOverlay as Actual} from ${JSON.stringify(pinOverlay)};
     export const calls=[]; export function PinOverlay(props){calls.push(props);return createElement(Actual,props);}`);
   const viewUrl = compile("components/VideoView.tsx", {
@@ -89,13 +89,13 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
   const pinModule=await import(pinRecorder); pinModule.calls.length=0;
   const trackerModule=await import(tracker); trackerModule.calls.length=0;
   const guideModule=await import(guide); guideModule.calls.length=0;
-  const target=hasTarget?{componentId:targetComponentId,boardPinId:"GPIO17",componentPinId:"TRIG",connectionKind:"direct",manualOnly}:null;
+  const target=hasTarget?{componentId:targetComponentId,boardPinId:"GPIO17",componentPinId:"TRIG",connectionKind,manualOnly}:null;
   const element=createElement(VideoView, {
     displayMode,glassesStatus:{active:eyeActive,state,runtime_revision:12,requested:{width:1920,height:1080,fps:30,denoise:"clean"}},onGlassesDisplayFps(){},
     config:{board_id:boardId,camera_source:cameraSource,camera_identity:cameraIdentity,runtime_revision:12,video_size:[1920,1080],realtime_tracking:realtimeEnabled},pinsById:new Map(),
     highlightIds:new Set(["GPIO17"]),selectedPinId:"GPIO17",onSelectPin(){},backendDown,legend:{colorVar:"--ok",label:"Selected target",count:1},
     outlineMm:[85,56],boardName:boardId,calibrateOpen,onCloseCalibrate(){},onCalibrationSuccess(){},guideTarget:target,
-    viewControl,alternateView,sourceChanging,sourceUnavailable,sourceControl,sourceError,onRetrySource,
+    viewControl,viewNavigation,alternateView,sourceChanging,sourceUnavailable,sourceControl,sourceError,onRetrySource,
     opticalHudCalibration:null,onOpticalHudCalibrationComplete(){},
     overlayComponentId,overlayOverview,debugCaptureTask:captureTask,
   });

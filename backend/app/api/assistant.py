@@ -1,8 +1,10 @@
 from typing import Literal
 from fastapi import APIRouter, Request, Query, HTTPException
 from pydantic import BaseModel, Field
-from app.assistant import SendRequest
+from app.assistant import SendRequest, TestHelpMetadata, TestHelpAction
 from app.designs import GenerateRequest
+from app.api.debug_sessions import SessionContext
+from app.guided_wiring_review import WiringReviewAction
 
 router = APIRouter(prefix="/api/assistant/conversations", tags=["assistant"])
 
@@ -18,6 +20,7 @@ class Import(BaseModel):
     source_id: str = Field(min_length=1, max_length=150)
     messages: list[dict] = Field(max_length=1000)
     kind: Literal["legacy-design", "legacy-debug"] = "legacy-design"
+    test_help: TestHelpMetadata | None = None
 
 
 class Confirm(BaseModel):
@@ -34,6 +37,14 @@ class Reset(BaseModel):
 
 class Retry(BaseModel):
     request_id: str = Field(min_length=1, max_length=100)
+
+
+class WiringFlowAction(BaseModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    message_id: str = Field(min_length=1, max_length=100)
+    flow_id: str = Field(min_length=1, max_length=100)
+    action: WiringReviewAction
+    context: SessionContext | None = None
 
 
 def guarded(fn):
@@ -60,12 +71,39 @@ def send(cid: str, body: SendRequest, request: Request):
 
 @router.post("/{cid}/import")
 def import_messages(cid: str, body: Import, request: Request):
-    return guarded(lambda: request.app.state.assistant.import_messages(cid, body.source_id, body.messages, body.kind))
+    return guarded(lambda: request.app.state.assistant.import_messages(cid, body.source_id, body.messages, body.kind,
+        body.test_help.model_dump() if body.test_help else None))
+
+
+@router.post("/{cid}/test-help")
+def test_help_action(cid: str, body: TestHelpAction, request: Request):
+    from app.api.mobile import desktop
+    desktop(request)
+    try:
+        return guarded(lambda: request.app.state.mobile_service.test_help_action(cid, body.model_dump()))
+    except (ValueError, KeyError) as error:
+        raise HTTPException(409, str(error)) from error
 
 
 @router.post("/{cid}/confirm")
 def confirm(cid: str, body: Confirm, request: Request):
     return guarded(lambda: request.app.state.assistant.confirm(cid, body.revision, body.mode, body.request_id, body.generation))
+
+
+@router.post("/{cid}/wiring-flow")
+def wiring_flow_action(cid: str, body: WiringFlowAction, request: Request):
+    from app.api.mobile import desktop
+    desktop(request)
+    return guarded(lambda: request.app.state.assistant.wiring_flow_action(cid, body.model_dump()))
+
+
+@router.get("/{cid}/wiring-flow/receipts/{request_id}")
+def wiring_flow_receipt(cid: str, request_id: str, request: Request):
+    from app.api.mobile import desktop
+    desktop(request)
+    if not 0 < len(request_id) <= 100:
+        raise HTTPException(422, "Invalid request ID")
+    return guarded(lambda: request.app.state.assistant.wiring_flow_receipt(cid, request_id))
 
 
 @router.post("/{cid}/restore-checklist")

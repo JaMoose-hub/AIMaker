@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import ts from 'typescript';
-function load(file){const exports={};const code=ts.transpileModule(readFileSync(new URL(file,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;new Function('exports',code)(exports);return exports;}
+function load(file,modules={}){const exports={};const code=ts.transpileModule(readFileSync(new URL(file,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;new Function('exports','require',code)(exports,name=>{if(!(name in modules))throw Error(`Unexpected import ${name}`);return modules[name];});return exports;}
 const domain=load('../src/lib/mobileBrowser.ts'),rtc=load('../src/lib/mobileBrowserRtc.ts');
 const session=(stream={})=>({session_id:'s',conversation_id:'chat',context_id:'ctx',view:{capture_id:null,wire_id:null,revision:1},stream:{active:true,publisher_connected:true,generation:3,preview_seq:8,can_capture:true,valid_for_ms:1200,...stream}});
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
@@ -176,6 +176,7 @@ test('publisher sends one rear camera, real generation and requested 8 Mbps with
   assert.deepEqual(s.calls.find(c=>c.path==='stream'&&c.method==='POST').body,{bitrate_kbps:8000});
   assert.deepEqual(s.calls.find(c=>c.path==='stream/offer').body,{sdp:'offer',type:'offer',role:'publisher',generation:7});
   assert.equal(s.states.at(-1).settings.frameRate,30);assert.equal(s.states.at(-1).stats.sendFps,undefined);
+  assert.equal(s.states.at(-1).generation,7,'Recovery identity comes from this successful publisher offer');
   await s.publisher.stop();assert.equal(s.stops(),1);assert.equal(s.peer.closed,true);
 });
 
@@ -597,4 +598,93 @@ test('formal capture obtains ticket before releasing RTC and never manufactures 
   const handoff=rtc.browserCaptureHandoff({async request(path){calls.push(path);return ticket;}},{async stop(){calls.push('stop');await stopped;}});
   await turn();assert.deepEqual(calls,['capture-ticket','stop']);let done=false;handoff.then(()=>done=true);await turn();assert.equal(done,false);release();assert.equal(await handoff,ticket);
   let didStop=false;await assert.rejects(rtc.browserCaptureHandoff({async request(){throw Error('not locked');}},{async stop(){didStop=true;}}));assert.equal(didStop,false);
+});
+
+async function streamHookFixture(run) {
+  const names=['window','document','WebSocket','navigator','setTimeout','clearTimeout','setInterval','clearInterval'];
+  const saved=Object.fromEntries(names.map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)])),oldNow=Date.now;
+  let now=10000,failPath=null,negotiationFails=false,startCalls=0;
+  const sockets=[],tickers=new Set(),states=[],refs=[],memos=[],effects=[];
+  let si=0,ri=0,mi=0,ei=0;
+  const same=(a,b)=>a&&b&&a.length===b.length&&a.every((value,index)=>Object.is(value,b[index]));
+  const hooks={useState(initial){const index=si++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return[states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},
+    useRef(initial){return refs[ri++]??={current:initial};},
+    useMemo(callback,deps){const index=mi++,previous=memos[index];if(!previous||!same(previous.deps,deps))memos[index]={deps,value:callback()};return memos[index].value;},
+    useCallback(callback,deps){return hooks.useMemo(()=>callback,deps);},
+    useEffect(callback,deps){const index=ei++,previous=effects[index];if(!previous||!same(previous.deps,deps))effects[index]={deps,callback,pending:true,cleanup:previous?.cleanup};}};
+  const backend={...session({active:false,generation:0}),context:{round:1}};
+  class Api {
+    constructor(pairing){this.pairing=pairing;}
+    cancelPending(){}
+    async request(path){
+      if(failPath&&path.startsWith(failPath))throw Error(`${failPath} unavailable`);
+      if(path==='session')return structuredClone(backend);
+      if(path.startsWith('conversation'))return{id:'chat',messages:[],jobs:[],context_epoch:0,round:1};
+      if(path==='wiring-review')return{review:null,can_act:false};
+      return{};
+    }
+  }
+  class Publisher {
+    constructor(api,changed){this.changed=changed;}
+    async stop(){this.changed(rtc.idleBrowserRtc());}
+    stopLocal(){this.changed(rtc.idleBrowserRtc());}
+    async start(){
+      startCalls++;backend.stream={...backend.stream,active:true,generation:7};
+      this.changed({...rtc.idleBrowserRtc(),status:'negotiating'});
+      if(negotiationFails)throw Error('negotiation failed');
+      this.changed({...rtc.idleBrowserRtc(),stream:{},publishing:true,generation:7});
+    }
+  }
+  const globals={window:{isSecureContext:true,location:{origin:'https://phone.test',href:'https://phone.test/mobile'},addEventListener(){},removeEventListener(){}},
+    document:{visibilityState:'visible',addEventListener(){},removeEventListener(){}},navigator:{mediaDevices:{getUserMedia(){}}},
+    WebSocket:class {static OPEN=1;static CONNECTING=0;readyState=1;constructor(){sockets.push(this);}close(){}},
+    setTimeout:()=>1,clearTimeout(){},setInterval(callback){tickers.add(callback);return callback;},clearInterval(callback){tickers.delete(callback);}};
+  for(const [name,value]of Object.entries(globals))Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});
+  Date.now=()=>now;
+  const viewer=load('../src/lib/mobileViewerStats.ts');
+  const {useMobileBrowser}=load('../src/lib/useMobileBrowser.ts',{react:hooks,
+    './mobileBrowser':{...domain,MobileBrowserApi:Api,loadBrowserPairing:()=>({...pairingFixture,session_id:'s',context_id:'ctx'}),
+      loadBrowserDraft:async()=>domain.emptyBrowserDraft(),saveBrowserDraft:async()=>{},saveBrowserPairing(){}},
+    './mobileBrowserRtc':{...rtc,BrowserPublisher:Publisher},'./mobile':{acceptMobileCapture:()=>true,mobileVideoFresh:()=>false,mobileVideoAgeMs:()=>now-10000},
+    './mobileViewerStats':viewer,'./wiringReview':load('../src/lib/wiringReview.ts'),'./assistantAnalysis':load('../src/lib/assistantAnalysis.ts')});
+  const render=()=>{si=ri=mi=ei=0;const result=useMobileBrowser();for(const effect of effects){if(effect.pending){effect.pending=false;effect.cleanup?.();effect.cleanup=effect.callback();}}return result;};
+  const flush=async()=>{for(let i=0;i<4;i++){await turn();render();}};
+  try {
+    render();await flush();
+    await run({render,flush,startCalls:()=>startCalls,setFailure:path=>{failPath=path;},failNegotiation:()=>{negotiationFails=true;},
+      pushSession(){sockets.at(-1).onmessage?.({data:JSON.stringify({type:'state',session:backend})});},
+      tick(ms){now+=ms;for(const ticker of tickers)ticker();}});
+  } finally {
+    for(const effect of [...effects].reverse())effect.cleanup?.();
+    Date.now=oldNow;
+    for(const name of names){if(saved[name])Object.defineProperty(globalThis,name,saved[name]);else delete globalThis[name];}
+  }
+}
+
+test('successful publication remains recoverable when session, chat or wiring refresh fails',async()=>{
+  for(const path of ['session','conversation','wiring-review'])await streamHookFixture(async f=>{
+    f.setFailure(path);await f.render().startStream();assert.equal(f.startCalls(),1);
+    await f.flush();assert.equal(f.render().rtc.generation,7);
+    f.tick(6000);await f.flush();
+    if(path==='session')assert.equal(f.startCalls(),1,'A stale server generation cannot authorize recovery');
+    f.pushSession();await f.flush();
+    assert.equal(f.startCalls(),2,`${path} failure must not lose the successfully negotiated generation`);
+    f.tick(6000);await f.flush();assert.equal(f.startCalls(),2,'Recovery remains limited to one attempt');
+  });
+});
+
+test('an active server snapshot cannot create recovery ownership after failed negotiation or explicit stop',async()=>{
+  for(const stopped of [false,true])await streamHookFixture(async f=>{
+    if(!stopped)f.failNegotiation();
+    await f.render().startStream();
+    if(stopped)await f.render().stopStream();
+    f.pushSession();f.tick(6000);await f.flush();
+    assert.equal(f.startCalls(),1,'Only a still-owned successful publisher may restart');
+  });
+});
+
+test('failed remote negotiation never exposes a successful publisher generation',async()=>{
+  const s=setup({peer:{async setRemoteDescription(){throw Error('answer rejected');}}});
+  await assert.rejects(s.publisher.start(),/answer rejected/);
+  assert.equal(s.states.some(state=>state.publishing||state.generation!==undefined),false);
 });

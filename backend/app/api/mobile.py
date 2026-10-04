@@ -9,10 +9,12 @@ from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.designs import GenerateRequest
 from app.mobile import MAX_UPLOAD
+from app.guided_wiring_review import WiringReviewAction, WiringDialogueReference
+from app.assistant import TestHelpAction
 from app.mobile_web import ROOT as WEB_ROOT, web_configuration
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
@@ -183,7 +185,54 @@ async def join(request: Request):
 def conversation(request: Request, before: int | None = Query(default=None, ge=0), limit: int = Query(default=50, ge=1, le=100), session_id: str | None = None):
     service = request.app.state.mobile_service
     sid = identity(request, session_id)
-    return request.app.state.assistant.read(service.require(sid)["conversation_id"], before, limit)
+    return service.conversation(sid, before, limit)
+
+
+class MobileTestHelpAction(TestHelpAction):
+    context_id: str = Field(min_length=1, max_length=100)
+
+
+class MobileWiringReviewBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: WiringReviewAction | None = None
+    invitation: MobileTestHelpAction | None = None
+    asset_id: str | None = Field(default=None, min_length=1, max_length=100)
+    dialogue: WiringDialogueReference | None = None
+
+    @model_validator(mode="after")
+    def one_action(self):
+        if (self.action is None) == (self.invitation is None) or (self.invitation and (self.asset_id or self.dialogue)):
+            raise ValueError("Choose exactly one review or invitation action")
+        return self
+
+
+def review_call(request, work):
+    try:
+        return work()
+    except (ValueError, KeyError) as error:
+        raise HTTPException(409, str(error)) from error
+
+
+@router.get("/wiring-review")
+def wiring_review(request: Request):
+    sid = identity(request)
+    return review_call(request, lambda: request.app.state.mobile_service.wiring_review(sid))
+
+
+@router.post("/wiring-review")
+def wiring_review_action(body: MobileWiringReviewBody, request: Request):
+    sid = identity(request)
+    if body.invitation:
+        return review_call(request, lambda: request.app.state.mobile_service.wiring_review_invitation(sid, body.invitation.model_dump()))
+    return review_call(request, lambda: request.app.state.mobile_service.wiring_review_action(
+        sid, body.action.model_dump(), body.asset_id, body.dialogue.model_dump() if body.dialogue else None))
+
+
+@router.get("/wiring-review/evidence/{capture_id}")
+def wiring_review_evidence(capture_id: str, request: Request):
+    sid = identity(request)
+    data, mime = review_call(request, lambda: request.app.state.mobile_service.wiring_review_evidence(sid, capture_id))
+    return Response(data, media_type=mime, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/messages", status_code=202)

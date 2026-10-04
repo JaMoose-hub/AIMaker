@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { GuideMode, ProjectDesign, ProjectWire } from "../lib/maker";
 import { useMakerText } from "../lib/useMaker";
 import { CircuitDiagram } from "./CircuitDiagram";
@@ -16,10 +17,10 @@ export function WiringViewToggle({ diagramVisible, captureRequired = false, disa
   </button>;
 }
 
-export function StepDiagramView({ design, wire, capturePending = false }: { design: ProjectDesign; wire: ProjectWire; capturePending?: boolean }) {
+export function StepDiagramView({ design, wire, capturePending = false, viewControls }: { design: ProjectDesign; wire: ProjectWire; capturePending?: boolean; viewControls?: ReactNode }) {
   const tr = useMakerText();
   return <section id="current-step-diagram" className="maker-2d-main" aria-label={tr("本步驟 2D 接線圖", "This step's 2D wiring")}>
     {capturePending ? <p className="step-diagram-capture-notice" role="status">{tr("AI 正在等待實物照片；查看接法後可返回鏡頭拍攝。", "AI is waiting for a hardware photo; return to the camera after checking the wiring.")}</p> : null}
-    <CircuitDiagram design={design} activeId={wire.id} readableDefault workspace />
+    <CircuitDiagram design={design} activeId={wire.id} readableDefault workspace viewControls={viewControls} />
   </section>;
 }

@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { useI18n } from "../lib/i18n";
 import type { AssistantMessage } from "../lib/assistant";
 import { conversationMessageNote, conversationMessages } from "../lib/assistantHistory";
+import { AssistantAnalysisTime } from "./AssistantAnalysisTime";
+import { WiringCaptureFraming } from "./WiringChatMessage";
 import { mobileVideoFresh, type MobileCapture } from "../lib/mobile";
-import { useMobileAssetUrl, useMobileBrowser } from "../lib/useMobileBrowser";
+import { mobileTestHelpOffer, mobileWiringPhotoFlow, useMobileAssetUrl, useMobileBrowser, type MobileWiringPhotoRequest } from "../lib/useMobileBrowser";
 import { captureBrowserVideoFrame } from "../lib/mobileBrowserCapture";
 import type { CaptureTicket } from "../lib/mobileBrowser";
 import { mobileObjectName, mobilePairingCode, mobilePhotoGeometry, mobilePhotoLayout, mobilePhotoMatches,
@@ -44,6 +46,72 @@ function AssetView({ api, asset }: { api: Workspace["api"]; asset: Asset }) {
   </figure>;
 }
 
+/** Persisted message actions are explicit consent; ordinary chat replies stay ordinary messages. */
+export function MobileTestHelpActions({ w, message }: { w: Workspace; message: AssistantMessage }) {
+  const tr = useMobileText();
+  const offer = mobileTestHelpOffer(message, w.session, w.conversation);
+  const error = w.testHelpError?.messageId === message.id && w.testHelpError.offerId === message.test_help_offer?.offer_id ? w.testHelpError.text : null;
+  if (!offer) return error ? <p className="mw-error-text" role="alert">{error}</p> : null;
+  const pending = w.testHelpPendingMessageId === message.id;
+  const disabled = !w.ready || !w.connected || w.wiringReviewBusy || w.testHelpPendingMessageId !== null;
+  const continuation = offer.reusable_review || offer.state === "started";
+  return <div className="mw-test-help-actions" data-offer-id={offer.offer_id} aria-busy={pending}>
+    <div className="mw-row">
+      <button type="button" className="mw-button mw-primary" disabled={disabled || w.busy || !offer.can_act} onClick={() => void w.testHelpAction(message, "start")}>
+        <Symbol name="camera" />{continuation ? tr("繼續照片核對", "Continue photo review") : tr("拍照檢查", "Photo check")}
+      </button>
+      <button type="button" className="mw-button mw-secondary" disabled={disabled || !offer.can_dismiss} onClick={() => void w.testHelpAction(message, "later")}>{tr("稍後", "Later")}</button>
+    </div>
+    {pending ? <small role="status">{tr("正在處理這個操作…", "Completing this action…")}</small> : null}
+    {error ? <p className="mw-error-text" role="alert">{error}</p> : null}
+  </div>;
+}
+
+/** A wiring photo is a normal shared user message; its original opens only on request. */
+export function MobileWiringChatPhoto({ w, message }: { w: Workspace; message: AssistantMessage }) {
+  const tr = useMobileText();
+  const media = useMobileAssetUrl(w.api, message.wiring_flow?.kind === "photo" ? message.wiring_flow.image_url : undefined);
+  const [opened, setOpened] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { const element = dialog.current; if (opened) element?.showModal(); return () => element?.close(); }, [opened]);
+  if (message.wiring_flow?.kind !== "photo" || !message.wiring_flow.image_url) return null;
+  return <figure className="mw-message-media mw-wiring-chat-photo">
+    {media.url ? <button type="button" className="mw-photo-open" onClick={() => setOpened(true)} aria-label={tr("放大查看接線照片原圖", "View the original wiring photo larger")}><img src={media.url} alt={tr("已提交的接線照片", "Submitted wiring photo")} loading="lazy" /></button> : null}
+    {media.error ? <button type="button" className="mw-quiet" onClick={media.retry}>{tr("重新讀取照片", "Reload photo")}</button> : null}
+    {opened && media.url ? <dialog ref={dialog} className="mw-wiring-original" onCancel={event => { event.preventDefault(); setOpened(false); }}>
+      <header><strong>{tr("接線照片原圖", "Original wiring photo")}</strong><button type="button" className="mw-quiet" autoFocus onClick={() => setOpened(false)}>{tr("關閉", "Close")}</button></header>
+      <img src={media.url} alt={tr("接線照片原圖", "Original wiring photo")} />
+    </dialog> : null}
+  </figure>;
+}
+
+/** One explicit camera submission answers the exact current server question. */
+export function MobileWiringChatActions({ w, message }: { w: Workspace; message: AssistantMessage }) {
+  const tr = useMobileText();
+  const camera = useRef<HTMLInputElement>(null);
+  const requested = useRef<MobileWiringPhotoRequest | null>(null);
+  const flow = mobileWiringPhotoFlow(message, w.session, w.conversation, w.wiringReview, w.wiringCanAct);
+  const role = message.wiring_flow?.kind === "photo_request" ? message.wiring_flow.role : undefined;
+  const pending = w.pendingWiringPhoto?.dialogue?.message_id === message.id ? w.pendingWiringPhoto : null;
+  const disabled = !w.ready || !w.connected || w.busy || w.wiringReviewBusy;
+  if (!flow && !pending && !role) return null;
+  return <div className="mw-wiring-chat-actions" aria-busy={Boolean(pending && w.wiringReviewBusy)}>
+    {role ? <WiringCaptureFraming role={role} current={Boolean(flow)} /> : null}
+    {flow ? <button type="button" className="mw-button mw-secondary" disabled={disabled} onClick={() => {
+      const target = w.prepareWiringChatPhoto(message);
+      if (target) { requested.current = target; camera.current?.click(); }
+    }}><Symbol name="camera" />{tr("拍這張照片", "Take this photo")}</button> : null}
+    <input ref={camera} type="file" accept="image/*" capture="environment" className="mw-file-input" aria-label={tr("拍攝這一題要求的照片", "Capture the photo requested in this question")} onChange={event => {
+      const file = event.target.files?.[0], target = requested.current; event.target.value = ""; requested.current = null;
+      if (file && target) void w.uploadWiringChatPhoto(file, target);
+    }} />
+    {pending ? <><small role="status">{w.wiringReviewBusy ? `${tr("正在提交照片", "Submitting photo")} · ${Math.round((pending.attachment.progress ?? 0) * 100)}%` : tr("尚未確認照片是否送達，可取得最新對話後重試。", "Photo delivery is not confirmed. Reload the conversation, then retry.")}</small>
+      {!w.wiringReviewBusy ? <div className="mw-row"><button type="button" className="mw-quiet" disabled={disabled || !flow} onClick={() => void w.retryWiringPhoto()}>{tr("重試這張照片", "Retry this photo")}</button>
+        <button type="button" className="mw-quiet" onClick={() => void w.refresh()}>{tr("重新取得對話", "Reload conversation")}</button><button type="button" className="mw-quiet" onClick={w.discardWiringPhoto}>{tr("移除待送照片", "Remove pending photo")}</button></div> : null}</> : null}
+    {w.wiringReviewError ? <p className="mw-error-text" role="alert">{w.wiringReviewError}</p> : null}
+  </div>;
+}
+
 export function ChatView({ w, onPhoto, onCamera }: { w: Workspace; onPhoto: (id: string) => void; onCamera?: () => void }) {
   const tr = useMobileText();
   const { locale } = useI18n();
@@ -56,27 +124,37 @@ export function ChatView({ w, onPhoto, onCamera }: { w: Workspace; onPhoto: (id:
   const visibleMessages = conversationMessages(w.conversation, showCleared);
   const hasCleared = w.conversation?.messages.some(message => message.epoch !== w.conversation?.context_epoch);
   const latest = visibleMessages.at(-1)?.id;
-  useEffect(() => { if (follow.current && messages.current) messages.current.scrollTop = messages.current.scrollHeight; }, [latest]);
+  const analysisMessageId = w.wiringAnalysis ? visibleMessages.filter(message => message.role === "assistant"
+    && message.epoch === w.conversation?.context_epoch && message.round === w.conversation?.round
+    && !message.archived && message.wiring_flow?.current && message.wiring_flow.kind === "analysing").at(-1)?.id : null;
+  useEffect(() => { if (follow.current && messages.current) messages.current.scrollTop = messages.current.scrollHeight; }, [latest, w.wiringReview?.revision]);
   return <section className="mw-chat" aria-label={tr("共用對話", "Shared conversation")}>
     <div className="mw-messages" ref={messages} onScroll={() => { const el = messages.current; if (el) follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }} role="log" aria-live="polite">
       {w.conversation?.before != null ? <button type="button" className="mw-quiet mw-history" onClick={() => void w.older()}>{tr("載入較早訊息", "Earlier messages")}</button> : null}
       {hasCleared ? <button type="button" className="mw-quiet mw-history" aria-expanded={showCleared} onClick={() => setClearedHistoryKey(showCleared ? null : historyKey)}>{showCleared ? tr("隱藏已清除紀錄", "Hide cleared history") : tr("查看已清除紀錄", "View cleared history")}</button> : null}
       {!visibleMessages.length ? <div className="mw-empty"><Symbol name="chat" /><h2>{tr("接著聊，從這裡開始。", "Continue your project here.")}</h2><p>{tr("與電腦共用同一份對話。你可以提問、附上照片，或拍下目前的接線。", "The same conversation as your desktop. Ask a question, add a photo, or capture the wiring in front of you.")}</p></div> : null}
-      {visibleMessages.map(message => { const note = conversationMessageNote(message, w.conversation!); return <article key={message.id} className={`mw-message ${message.role === "user" ? "is-user" : "is-assistant"}${note ? " is-archived" : ""}`}>
+      {visibleMessages.map(message => { const note = conversationMessageNote(message, w.conversation!); return <article key={message.id} data-message-id={message.id} className={`mw-message ${message.role === "user" ? "is-user" : "is-assistant"}${note ? " is-archived" : ""}`}>
         <header><strong>{message.role === "user" ? tr("你", "You") : "Tinkro"}</strong><time>{message.created_at ? new Date(message.created_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) : ""}</time></header>
         <p>{message.text}</p>
+        {w.wiringAnalysis && message.id === analysisMessageId ? <AssistantAnalysisTime startedAt={w.wiringAnalysis.startedAt} active className="mw-analysis-time" />
+          : message.role === "assistant" && typeof message.wiring_flow?.elapsed_ms === "number"
+            ? <AssistantAnalysisTime active={false} durationMs={message.wiring_flow.elapsed_ms} className="mw-analysis-time" /> : null}
+        <MobileTestHelpActions w={w} message={message} />
+        <MobileWiringChatActions w={w} message={message} />
+        <MobileWiringChatPhoto w={w} message={message} />
         {message.attachments?.map(asset => <AssetView key={asset.asset_id} asset={asset} api={w.api} />)}
-        {message.capture_id ? <button type="button" className="mw-photo-link" onClick={() => onPhoto(message.capture_id!)}><Symbol name="photo" />{tr("查看 GPIO 照片", "View GPIO photo")}</button> : null}
+        {message.capture_id && !message.wiring_flow ? <button type="button" className="mw-photo-link" onClick={() => onPhoto(message.capture_id!)}><Symbol name="photo" />{tr("查看 GPIO 照片", "View GPIO photo")}</button> : null}
         {note === "previous_context" ? <small>{tr("先前聊天上下文", "Earlier conversation context")}</small> : note === "previous_round" ? <small>{tr("先前輪次", "Earlier round")}</small> : null}
       </article>; })}
-      {w.conversation?.jobs.some(job => job.status === "running") ? <div className="mw-thinking" role="status"><span />{tr("Tinkro 正在思考…", "Tinkro is thinking…")}</div> : null}
+      {w.wiringAnalysis && !analysisMessageId ? <AssistantAnalysisTime startedAt={w.wiringAnalysis.startedAt} active className="mw-thinking mw-analysis-time" />
+        : !w.wiringAnalysis && w.conversation?.jobs.some(job => job.status === "running") ? <div className="mw-thinking" role="status"><span />{tr("Tinkro 正在思考…", "Tinkro is thinking…")}</div> : null}
       {w.outbox.map(item => <article className="mw-outbox" key={item.id}><strong>{tr("待送訊息", "Pending message")}</strong><p>{item.payload.text}</p>
         {item.attachments.map(asset => <small key={asset.id}>{asset.name} · {Math.round((asset.progress ?? 0) * 100)}%</small>)}
         <p className="mw-error-text">{item.error ?? tr("傳送中…", "Sending…")}</p><div className="mw-row">
-          <button type="button" className="mw-quiet" disabled={w.busy} onClick={() => void w.retry(item.id)}>{tr("重試", "Retry")}</button>
+          <button type="button" className="mw-quiet" disabled={w.chatSendBlocked} onClick={() => void w.retry(item.id)}>{tr("重試", "Retry")}</button>
           <button type="button" className="mw-quiet" disabled={w.busy} onClick={() => w.removeOutbox(item.id)}>{tr("移除", "Remove")}</button></div></article>)}
     </div>
-    <form className="mw-composer" onSubmit={event => { event.preventDefault(); follow.current = true; void w.send(); }}>
+    <form className="mw-composer" onSubmit={event => { event.preventDefault(); if (w.chatSendBlocked) return; follow.current = true; void w.send(); }}>
       {w.inheritedMediaLabel ? <p className="mw-reference" role="status"><Symbol name="link" />{w.inheritedMediaLabel}</p> : null}
       {w.attachments.length ? <div className="mw-draft-assets">{w.attachments.map(asset => <div key={asset.id}>
         {asset.previewUrl && asset.type === "image" ? <img src={asset.previewUrl} alt={asset.name} /> : <Symbol name="photo" />}
@@ -88,7 +166,8 @@ export function ChatView({ w, onPhoto, onCamera }: { w: Workspace; onPhoto: (id:
         onChange={event => { void w.addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
         <button type="button" className="mw-quiet" disabled={w.busy} onClick={() => attachments.current?.click()}><Symbol name="photo" />{tr("加入附件", "Add media")}</button>
         {onCamera ? <button type="button" className="mw-quiet" disabled={w.busy} onClick={onCamera}><Symbol name="camera" />{tr("拍照問 AI", "Photo for AI")}</button> : <span>{tr("照片或短片", "Photos or short video")}</span>}
-        <button className="mw-send" type="submit" disabled={w.busy || (!w.draft.trim() && !w.attachments.length)} aria-label={tr("送出訊息", "Send message")}><Symbol name="arrow" /></button></div>
+        <button className="mw-send" type="submit" disabled={w.chatSendBlocked || (!w.draft.trim() && !w.attachments.length)} aria-label={tr("送出訊息", "Send message")} aria-describedby={w.wiringAnalysis ? "mw-analysis-send-note" : undefined}><Symbol name="arrow" /></button></div>
+      {w.wiringAnalysis ? <small id="mw-analysis-send-note" className="mw-composer-note">{tr("分析完成後才能送出，草稿可以繼續編輯。", "Send after analysis finishes. You can keep editing your draft.")}</small> : null}
     </form>
   </section>;
 }

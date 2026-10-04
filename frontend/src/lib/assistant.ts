@@ -5,11 +5,35 @@ import { MAKER_STORAGE } from "./makerMigration";
 import { prepareProjectWiringEdit } from "./wiringEdit";
 import type { DebugConversation } from "./debugSessions";
 import type { DebugSession } from "./debugSessions";
+import type { DebugContext } from "./debug";
+import type { WiringReviewAction } from "./wiringReview";
+import type { WiringChatFlow, WiringChatActionOp } from "./wiringChat";
+import { wiringReceiptSignature, type WiringActionOutbox, type WiringGuideReceipt } from "./wiringReceipt";
+import { assistantWiringAnalysis, type AssistantWiringAnalysis } from './assistantAnalysis';
 import { componentTestKey } from "./componentTests";
 import { currentWire } from "./maker";
+import type { ComponentTestHelpContext, TestHelpInvitation } from "./componentTestHelp";
+
+export interface AssistantTestHelpOffer {
+  offer_id: string; message_id: string;
+  state: 'pending' | 'started' | 'dismissed' | 'stale'; can_act: boolean; can_dismiss: boolean;
+  component_id: string; reusable_review: boolean; review_id?: string;
+  project_id: string; project_revision: number; guide_run: number; context_epoch: number; guide_key: string;
+  test_id: string | null; reason: string | null; mode: 'wiring' | 'setup';
+}
+export interface AssistantTestHelpResult {
+  offer: AssistantTestHelpOffer; debug_session_id?: string; debug_session?: DebugSession; conversation?: AssistantConversation;
+}
+export interface AssistantWiringFlowResult {
+  conversation: AssistantConversation; debug_session_id: string; debug_session: DebugSession;
+  request_id?: string; guide_receipt?: WiringGuideReceipt | null; outbox?: WiringActionOutbox;
+}
 
 export interface AssistantMessage {
   id: string; role: "user" | "assistant"; text: string; source: string; created_at: number | null;
+  import_key?: string;
+  test_help_offer?: AssistantTestHelpOffer;
+  wiring_flow?: WiringChatFlow;
   stage: MakerStage; capability: string; epoch: number; round: number; archived?: boolean;
   session_id?: string; evidence_ids?: string[];
   attachments?: { asset_id: string; id?: string; image_url: string; url?: string; thumbnail_url?: string; capture_id?: string;
@@ -30,6 +54,7 @@ export interface AssistantActiveMedia {
   asset_ids: string[]; capture_id?: string | null; attachments: NonNullable<AssistantMessage["attachments"]>; epoch: number; round: number;
 }
 export interface AssistantConversation {
+  wiring_analysis?: AssistantWiringAnalysis | null;
   id: string; kind: "project" | "demo"; project_id: string | null; locale: string;
   messages: AssistantMessage[]; jobs: AssistantJob[]; before: number | null; total: number; context_epoch: number; round: number;
   active_media?: AssistantActiveMedia | null;
@@ -43,7 +68,21 @@ export function currentAssistantMedia(record: AssistantConversation | null, roun
 }
 const KEY = "boardvision.assistant.v1";
 const DEMO_KEY = "boardvision.assistant-demo.v1";
+const WIRING_OUTBOX_KEY = `${KEY}.wiring-outbox`;
+function savedWiringOutbox(): WiringActionOutbox | null {
+  try { const value = JSON.parse(localStorage.getItem(WIRING_OUTBOX_KEY) || 'null');
+    return value?.request_id && value?.action && value?.context && typeof value.before_signature === 'string' ? value : null;
+  } catch { return null; }
+}
 export const newConversationId = () => crypto.randomUUID();
+async function sha256(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+/** Match Python fingerprint's ensure_ascii=False and default array separators. */
+export function testHelpImportKey(sourceId: string, text: string) {
+  return sha256(`[${[sourceId, 'test-help-invitation', 'assistant', text].map(value => JSON.stringify(value)).join(', ')}]`);
+}
 function savedId(key: string) {
   try { return localStorage.getItem(key) || newConversationId(); } catch { return newConversationId(); }
 }
@@ -98,6 +137,10 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
   const [pending, setPending] = useState(false);
   const [storageError, setStorageError] = useState(false);
   const [connectionError, setConnectionError] = useState("");
+  const [wiringOutbox, setWiringOutbox] = useState<WiringActionOutbox | null>(savedWiringOutbox);
+  const [wiringReceiptError, setWiringReceiptError] = useState('');
+  const wiringOutboxRef = useRef(wiringOutbox); wiringOutboxRef.current = wiringOutbox;
+  const recoveryFlight = useRef(false);
   const latest = useRef(state); latest.current = state;
   const activeId = useRef(projectId); activeId.current = projectId;
   const flight = useRef(false);
@@ -109,7 +152,10 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
   const debugImportKey = useRef("");
   const record = demoOpen ? demo : project;
   const id = demoOpen ? demoId : projectId;
-  const busy = pending || Boolean(record?.jobs.some(job => job.status === "running"));
+  const wiringAnalysis = assistantWiringAnalysis(record);
+  const busy = pending || Boolean(record?.jobs.some(job => job.status === "running")) || Boolean(wiringAnalysis);
+  const helpScope = useRef({ projectId, epoch: project?.context_epoch ?? 0, busy, demoOpen, project });
+  helpScope.current = { projectId, epoch: project?.context_epoch ?? 0, busy, demoOpen, project };
   const draft = demoOpen ? demoDraft : state.prompt;
   const setDraft = (text: string) => demoOpen ? setDemoDraft(text) : setState(previous => ({ ...previous, prompt: text }));
 
@@ -121,10 +167,16 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
     } catch { setStorageError(true); }
   }, [projectId, demoId, demoOpen, demoDraft]);
 
-  const accept = useCallback((next: AssistantConversation) => {
+  const accept = useCallback((next: AssistantConversation, recoveredHistory = false) => {
     if (next.kind === "demo") { setDemo(previous => mergeConversation(previous, next)); return; }
     if (next.id !== activeId.current) return;
-    setProject(previous => mergeConversation(previous, next));
+    setProject(previous => {
+      if (recoveredHistory && previous?.id === next.id && previous.context_epoch !== next.context_epoch) return previous;
+      const base = recoveredHistory && previous?.id === next.id && (next.before ?? 0) < (previous.before ?? 0)
+        ? { ...previous, messages: [...new Map([...next.messages, ...previous.messages].map(message => [message.id, message])).values()] }
+        : previous;
+      return mergeConversation(base, next);
+    });
     for (const job of next.jobs) {
       if (job.status !== "completed" || !validDesign(job.result) || delivered.current.has(job.id)) continue;
       delivered.current.add(job.id);
@@ -183,12 +235,15 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
 
   useEffect(() => {
     if (!project || !debugConversation || debugConversation.project_id !== state.design?.id) return;
-    const key = JSON.stringify([projectId, debugConversation.id, debugConversation.messages]);
+    // Guidance is imported by the server through its trusted event link, never by a second client import.
+    const messages = debugConversation.messages.filter(message => !message.wiring_flow);
+    if (!messages.length) return;
+    const key = JSON.stringify([projectId, debugConversation.id, messages]);
     if (debugImportKey.current === key) return;
     debugImportKey.current = key;
     void makerRequest<AssistantConversation>(`assistant/conversations/${projectId}/import`, {
       source_id: `debug:${debugConversation.id}`, kind: "legacy-debug",
-      messages: debugConversation.messages.map(message => ({ ...message, round: state.guide.run ?? 0 })),
+      messages: messages.map(message => ({ ...message, round: state.guide.run ?? 0 })),
     }).then(accept).catch(cause => { debugImportKey.current = ""; setError(String(cause)); });
   }, [project, projectId, debugConversation, state.design?.id, state.guide.run, accept]);
 
@@ -228,6 +283,207 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
       else setState(current => activeId.current === id ? { ...current, prompt: clearAcceptedDraft(current.prompt, text) } : current);
     }
     return accepted;
+  }
+  /** Explicit test-help action uses the project chat and leaves the composer untouched. */
+  async function sendTestHelp(snapshot: MakerState, text: string, evidence?: ComponentTestHelpContext) {
+    if (!text.trim() || busy || flight.current || demoOpen || latest.current.aiJobId ||
+      !snapshot.design || snapshot.design !== latest.current.design || snapshot.code !== latest.current.code ||
+      (snapshot.guide.run ?? 0) !== (latest.current.guide.run ?? 0)) return false;
+    if (evidence && (evidence.project_id !== snapshot.design.id || evidence.project_revision !== snapshot.design.revision ||
+      evidence.component_id !== snapshot.debug?.componentId || evidence.test_id !== (snapshot.debug?.runId ?? null))) return false;
+    // Keep this request independent of another debug session and older photos.
+    const base = assistantWorkspacePayload(snapshot, locale, selectedModel, null, "debug", text);
+    const workspace = { ...base, context: { ...base.context,
+      ...(evidence ? { component_test_help: structuredClone(evidence) } : {}) } };
+    const key = JSON.stringify([projectId, text, workspace, project?.context_epoch]);
+    const request_id = requestId(key, null);
+    const accepted = await perform(() => makerRequest<AssistantConversation>(`assistant/conversations/${projectId}/messages`, {
+      request_id, text, ...workspace, inherit_media: false, asset_ids: [], capture_id: null,
+    }));
+    if (accepted) {
+      retry.current = null;
+      try { localStorage.removeItem(`${KEY}.outbox`); } catch { setStorageError(true); }
+    }
+    return accepted;
+  }
+  /** Known test symptoms need a short invitation, rather than another model diagnosis. */
+  async function offerTestHelp(snapshot: MakerState, invitation: TestHelpInvitation, evidence: ComponentTestHelpContext): Promise<string | false> {
+    const validBinding = () => !helpScope.current.demoOpen && !helpScope.current.project?.jobs.some(job => job.status === 'running')
+      && helpScope.current.projectId === projectId && activeId.current === projectId && !latest.current.aiJobId && Boolean(snapshot.design
+      && snapshot.design === latest.current.design && snapshot.code === latest.current.code
+      && (snapshot.guide.run ?? 0) === (latest.current.guide.run ?? 0)
+      && invitation.projectId === snapshot.design.id && invitation.revision === snapshot.design.revision
+      && snapshot.design.component_ids.some(cid => cid === invitation.componentId)
+      && invitation.guideKey === componentTestKey(snapshot.design, latest.current.guide, invitation.componentId)
+      && invitation.guideRun === (snapshot.guide.run ?? 0) && invitation.contextEpoch === helpScope.current.epoch
+      && invitation.componentId === snapshot.debug?.componentId && evidence.component_id === invitation.componentId
+      && evidence.project_id === invitation.projectId && evidence.project_revision === invitation.revision
+      && evidence.test_id === (snapshot.debug?.runId ?? null));
+    const canBegin = () => !helpScope.current.busy && !flight.current && validBinding();
+    if (!canBegin()) return false;
+    const issue = JSON.stringify([projectId, invitation.contextEpoch, invitation.projectId, invitation.revision,
+      invitation.componentId, invitation.guideKey, invitation.guideRun, evidence.test_id, evidence.reason]);
+    const source_id = `test-help:${await sha256(issue)}`;
+    const importKey = await testHelpImportKey(source_id, invitation.text);
+    const codeHash = await sha256(snapshot.code);
+    if (!canBegin()) return false;
+    flight.current = true; setPending(true); setError('');
+    try {
+      let next = await makerRequest<AssistantConversation>(`assistant/conversations/${projectId}/import`, {
+        source_id, kind: 'legacy-debug', messages: [{ id: 'test-help-invitation', role: 'assistant',
+          text: invitation.text, stage: snapshot.stage, round: invitation.guideRun, created_at: Date.now() / 1000 }],
+        test_help: { offer_id: invitation.id, project_id: invitation.projectId, project_revision: invitation.revision,
+          component_id: invitation.componentId, guide_key: invitation.guideKey, guide_run: invitation.guideRun,
+          context_epoch: invitation.contextEpoch, test_id: evidence.test_id ?? null, reason: evidence.reason ?? null, mode: invitation.mode,
+          code_hash: codeHash },
+      });
+      const validPage = (page: AssistantConversation) => page.id === projectId && page.kind === 'project'
+        && page.context_epoch === invitation.contextEpoch && page.round <= invitation.guideRun
+        && !page.jobs.some(job => job.status === 'running');
+      const findReceipt = (page: AssistantConversation | null) => page?.messages.find(message => message.import_key === importKey
+        && message.role === 'assistant' && message.source === 'legacy-debug' && message.text === invitation.text
+        && message.epoch === invitation.contextEpoch && message.round === invitation.guideRun && !message.archived && Boolean(message.id));
+      if (!validBinding() || !validPage(next)) return false;
+      const cached = helpScope.current.project;
+      let receipt = findReceipt(next) ?? (cached && validPage(cached) ? findReceipt(cached) : undefined);
+      if (receipt && !findReceipt(next)) next = mergeConversation(cached, next);
+      while (!receipt && next.before !== null && next.before > 0) {
+        const before = next.before;
+        const previous = await makerRequest<AssistantConversation>(`assistant/conversations/${projectId}?before=${before}&limit=100`);
+        if (!validBinding() || !validPage(previous)) return false;
+        // A decreasing cursor bounds recovery; an unknown receipt cannot loop forever.
+        if (previous.before !== null && previous.before >= before) break;
+        next = { ...next, before: previous.before,
+          messages: [...new Map([...previous.messages, ...next.messages].map(message => [message.id, message])).values()] };
+        receipt = findReceipt(next);
+      }
+      if (!receipt) throw new Error(locale === 'en' ? 'The photo-check invitation could not be retrieved. Retry Ask AI for help.'
+        : '尚未取得拍照檢查邀請，請再按一次「請 AI 幫忙」。');
+      if (!validBinding()) return false;
+      accept(next, true);
+      return receipt.id;
+    } catch (cause) { if (validBinding()) setError(String(cause)); return false; }
+    finally { flight.current = false; setPending(false); }
+  }
+  async function testHelpAction(invitation: TestHelpInvitation, op: 'start' | 'later'): Promise<AssistantTestHelpResult | false> {
+    const originalProject = latest.current.design;
+    const originalCode = latest.current.code;
+    const currentOffer = () => helpScope.current.project?.messages.find(item => item.id === invitation.messageId)?.test_help_offer;
+    const valid = () => !helpScope.current.demoOpen && activeId.current === projectId
+      && latest.current.design === originalProject && latest.current.code === originalCode && originalProject?.id === invitation.projectId
+      && originalProject.revision === invitation.revision && helpScope.current.epoch === invitation.contextEpoch
+      && (latest.current.guide.run ?? 0) === invitation.guideRun
+      && componentTestKey(originalProject, latest.current.guide, invitation.componentId) === invitation.guideKey
+      && currentOffer()?.offer_id === invitation.id && currentOffer()?.state !== 'stale'
+      && (op === 'later' || currentOffer()?.state !== 'dismissed');
+    const message = helpScope.current.project?.messages.find(item => item.id === invitation.messageId);
+    const offer = message?.test_help_offer;
+    if (!valid() || flight.current || op === 'start' && helpScope.current.busy
+      || !(op === 'start' ? offer?.can_act : offer?.can_dismiss)
+      || message?.role !== 'assistant' || message.source !== 'legacy-debug' || message.archived
+      || message.epoch !== invitation.contextEpoch || message.round !== invitation.guideRun
+      || !offer || offer.mode !== 'wiring' || !['pending', 'started'].includes(offer.state)
+      || offer.offer_id !== invitation.id || offer.message_id !== invitation.messageId) return false;
+    flight.current = true; setPending(true); setError('');
+    try {
+      const result = await makerRequest<AssistantTestHelpResult>(`assistant/conversations/${projectId}/test-help`, {
+        op, offer_id: invitation.id, message_id: invitation.messageId,
+      });
+      if (!valid() || result.offer?.offer_id !== invitation.id || result.offer.message_id !== invitation.messageId
+        || result.offer.state !== (op === 'later' ? 'dismissed' : 'started')) return false;
+      setProject(current => current?.id === projectId && current.context_epoch === invitation.contextEpoch
+        ? { ...current, messages: current.messages.map(item => item.id === invitation.messageId
+          ? { ...item, test_help_offer: result.offer } : item) } : current);
+      if (result.conversation?.id === projectId && result.conversation.context_epoch === invitation.contextEpoch) accept(result.conversation, true);
+      return result;
+    } catch (cause) { if (valid()) setError(String(cause)); return false; }
+    finally { flight.current = false; setPending(false); }
+  }
+  /** A message-bound action shares the existing chat and never consumes the draft. */
+  async function wiringFlowAction(message: AssistantMessage, action: WiringReviewAction, context?: DebugContext): Promise<AssistantWiringFlowResult | false> {
+    const snapshot = latest.current;
+    const epoch = helpScope.current.epoch;
+    const flow = message.wiring_flow;
+    const currentMessage = () => helpScope.current.project?.messages.find(item => item.id === message.id);
+    const validScope = () => !helpScope.current.demoOpen && activeId.current === projectId
+      && helpScope.current.epoch === epoch && latest.current.design === snapshot.design
+      && latest.current.code === snapshot.code && latest.current.guide === snapshot.guide;
+    const current = currentMessage();
+    const reference = current?.wiring_flow;
+    if (!validScope() || !snapshot.design || flight.current || helpScope.current.busy
+      || message.role !== 'assistant' || message.archived || message.epoch !== epoch
+      || message.round !== (snapshot.guide.run ?? 0) || !flow || !reference?.current || !reference.can_act
+      || reference.flow_id !== flow.flow_id || reference.review_id !== flow.review_id
+      || reference.revision !== flow.revision || reference.round !== flow.round
+      || !reference.actions.includes(action.op as WiringChatActionOp)
+      || action.review_id !== reference.review_id || action.revision !== reference.revision
+      || action.component_id !== reference.component_id) return false;
+    const previousOutbox = wiringOutboxRef.current;
+    const sameOutbox = previousOutbox?.conversation_id === projectId && previousOutbox.context_epoch === epoch
+      && previousOutbox.message_id === message.id && previousOutbox.flow_id === flow.flow_id
+      && previousOutbox.before_signature === wiringReceiptSignature(snapshot)
+      && JSON.stringify(previousOutbox.action) === JSON.stringify(action);
+    if (previousOutbox && !sameOutbox && previousOutbox.conversation_id === projectId && previousOutbox.context_epoch === epoch
+      && previousOutbox.before_signature === wiringReceiptSignature(snapshot)) return false;
+    const frozenContext = sameOutbox ? previousOutbox!.context : context;
+    const key = JSON.stringify(['wiring-flow', projectId, epoch, message.id, flow.flow_id, action, frozenContext]);
+    const request_id = sameOutbox ? previousOutbox!.request_id : requestId(key);
+    const outbox: WiringActionOutbox | null = ['review', 'changed'].includes(action.op) && frozenContext ? {
+      request_id, conversation_id: projectId, context_epoch: epoch, message_id: message.id, flow_id: flow.flow_id,
+      action, context: frozenContext, before_signature: wiringReceiptSignature(snapshot),
+      ...(sameOutbox ? { before_binding: previousOutbox!.before_binding } : debugSession?.binding ? { before_binding: structuredClone(debugSession.binding) } : {}),
+    } : null;
+    if (outbox) {
+      // Freeze the explicit decision before transmission; a retry retains its original timestamp and identity.
+      try { localStorage.setItem(WIRING_OUTBOX_KEY, JSON.stringify(outbox)); }
+      catch { setError('無法保存這次決定，請確認瀏覽器儲存空間後重試。'); return false; }
+      wiringOutboxRef.current = outbox; setWiringOutbox(outbox); setWiringReceiptError('');
+    }
+    flight.current = true; setPending(true); setError('');
+    try {
+      const result = await makerRequest<AssistantWiringFlowResult>(`assistant/conversations/${projectId}/wiring-flow`, {
+        request_id, message_id: message.id, flow_id: flow.flow_id, action, ...(frozenContext ? { context: frozenContext } : {}),
+      });
+      if (!validScope() || result.conversation.id !== projectId || result.conversation.context_epoch !== epoch
+        || result.debug_session.id !== result.debug_session_id) return false;
+      accept(result.conversation, true);
+      return { ...result, ...(outbox ? { outbox } : {}) };
+    } catch (cause) { if (validScope()) {
+      if (outbox) setWiringReceiptError('尚未確認剛才的決定是否送達，請重試取得確認結果。');
+      else setError(String(cause));
+    } return false; }
+    finally { flight.current = false; setPending(false); }
+  }
+  function acknowledgeWiringFlow(request_id: string) {
+    if (wiringOutboxRef.current?.request_id !== request_id) return;
+    wiringOutboxRef.current = null; setWiringOutbox(null); setWiringReceiptError('');
+    try { localStorage.removeItem(WIRING_OUTBOX_KEY); } catch { setStorageError(true); }
+  }
+  async function recoverWiringFlow(retryMissing = false): Promise<AssistantWiringFlowResult | false> {
+    const outbox = wiringOutboxRef.current;
+    const valid = () => outbox && activeId.current === outbox.conversation_id && !helpScope.current.demoOpen
+      && helpScope.current.epoch === outbox.context_epoch && wiringReceiptSignature(latest.current) === outbox.before_signature;
+    if (!outbox || flight.current || recoveryFlight.current || !valid()) return false;
+    recoveryFlight.current = true;
+    try {
+      let response = await makerRequest<AssistantWiringFlowResult & { receipt_state: 'done' | 'pending' | 'missing' }>(
+        `assistant/conversations/${outbox.conversation_id}/wiring-flow/receipts/${outbox.request_id}`);
+      if (!valid() || response.conversation.id !== outbox.conversation_id || response.conversation.context_epoch !== outbox.context_epoch) return false;
+      accept(response.conversation, true);
+      if (response.receipt_state === 'missing' && retryMissing) {
+        const prompt = response.conversation.messages.find(item => item.id === outbox.message_id)?.wiring_flow;
+        if (!prompt?.current || !prompt.can_act || prompt.flow_id !== outbox.flow_id || prompt.revision !== outbox.action.revision) return false;
+        response = { ...await makerRequest<AssistantWiringFlowResult>(`assistant/conversations/${outbox.conversation_id}/wiring-flow`, {
+          request_id: outbox.request_id, message_id: outbox.message_id, flow_id: outbox.flow_id, action: outbox.action, context: outbox.context,
+        }), receipt_state: 'done' };
+      }
+      if (!valid() || response.receipt_state !== 'done' || !response.guide_receipt || !response.debug_session) {
+        setWiringReceiptError('尚未取得確認結果，請按「重試取得確認結果」。'); return false;
+      }
+      accept(response.conversation, true);
+      return { ...response, outbox };
+    } catch { if (valid()) setWiringReceiptError('確認結果暫時無法取得，請再試一次。'); return false; }
+    finally { recoveryFlight.current = false; }
   }
   async function confirmDemo(mode: "builtin" | "ai") {
     if (!demo?.demo || busy) return false;
@@ -285,8 +541,11 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
     ? retry.current?.reference : undefined;
   const mediaReference = pendingReference === undefined ? currentAssistantMedia(record, mobileWorkspace.round)
     : pendingReference && record ? currentAssistantMedia({ ...record, active_media: pendingReference }, mobileWorkspace.round) : null;
-  return { record, project, demo, demoOpen, setDemoOpen, busy, pending, draft, setDraft, error: error || connectionError, storageError,
-    send, confirmDemo, adoptDemo, startConversation, prepareConversation, activateConversation, archiveWiring, mediaReference,
+  return { record, project, demo, demoOpen, setDemoOpen, busy, pending, wiringAnalysis, draft, setDraft, error: error || connectionError, storageError,
+    send, sendTestHelp, offerTestHelp, testHelpAction, wiringFlowAction, recoverWiringFlow, acknowledgeWiringFlow, confirmDemo, adoptDemo, startConversation, prepareConversation, activateConversation, archiveWiring, mediaReference,
+    wiringReceiptPending: Boolean(wiringOutbox && wiringOutbox.conversation_id === projectId && wiringOutbox.context_epoch === (project?.context_epoch ?? 0)
+      && wiringOutbox.before_signature === wiringReceiptSignature(state)),
+    wiringReceiptMessageId: wiringOutbox?.message_id, wiringReceiptRequestId: wiringOutbox?.request_id, wiringReceiptError,
     reportError: (cause: unknown) => setError(String(cause)), acceptExternal: accept,
     mobileContext: { conversation_id: projectId, title: state.design?.title ?? "Tinkro",
       ...mobileWorkspace, context: { ...mobileWorkspace.context, assistant_context_epoch: project?.context_epoch ?? 0 } },

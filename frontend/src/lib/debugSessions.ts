@@ -3,6 +3,8 @@ import { makerRequest } from "./maker";
 import type { DebugContext, DebugIssue } from "./debug";
 import type { ProjectDesign } from "./maker";
 import type { FrozenCircuitProfile } from "./circuitLayout";
+import type { WiringReviewAction, WiringReviewState } from "./wiringReview";
+import type { WiringChatFlow } from "./wiringChat";
 
 export type DebugSessionStatus = "diagnosing" | "awaiting_capture" | "awaiting_ready" | "testing" |
   "awaiting_visual" | "awaiting_repair" | "awaiting_trial_visual" | "complete" | "paused" | "stopped" | "error";
@@ -35,6 +37,7 @@ export interface DebugMessage {
   id: string; role: "user" | "assistant"; text: string; created_at: number;
   capture_ids?: string[]; model?: string | null; effort?: string | null; elapsed_ms?: number;
   session_id?: string; check_id?: string;
+  wiring_flow?: WiringChatFlow;
   diagram_refs?: { snapshot_id: string; wire_ids: string[]; caption?: string; initial_focus_wire_id?: string }[];
 }
 export interface DiagramSnapshot {
@@ -57,7 +60,7 @@ export interface DebugSession {
   trial_result?: { id: string; outcome: string; phase?: string; reason?: string | null } | null;
   camera_verdict?: "read_current_frame" | "display_abnormal" | "inconclusive" | null;
   jobs: { id: string; kind: string; state: string; run_id?: string; component_id?: string; error?: string; owner?: string }[];
-  diagnosis?: { case_id?: string; issues?: DebugIssue[] } | null;
+  diagnosis?: { case_id?: string; issues?: DebugIssue[]; hardware_blocker?: string | null } | null;
   report?: { confirmed: string[]; uncertain: string[]; next_step: string } | null;
   budget?: { model_calls: number; max_model_calls: number; tests: Record<string, number>; max_tests_per_component: number; captures: number; max_captures: number };
   binding?: { target_id?: string; project_id?: string | null; code_hash?: string; wiring_hash?: string; test_keys?: Record<string, string> };
@@ -68,10 +71,11 @@ export interface DebugSession {
   conversation_current?: boolean;
   wiring_target?: DebugContext["wiring_target"];
   wiring_edit_ready?: boolean;
+  wiring_review?: WiringReviewState | null;
   model_started_at?: number | null; model_elapsed_ms?: number | null; model_capture_ids?: string[];
   error?: string | null; updated_at: number;
 }
-export type DebugSessionAction = "ready" | "capture" | "continue" | "message" | "stop" | "start_trial" | "analyse" | "context_changed" | "start_debug" | "prepare_wiring";
+export type DebugSessionAction = "ready" | "capture" | "continue" | "message" | "stop" | "start_trial" | "analyse" | "context_changed" | "start_debug" | "prepare_wiring" | "wiring_review";
 
 /** A wire binding is a keyed map; JSON property order does not change it. */
 export function sameDebugTestKeys(left: Record<string, string> = {}, right: Record<string, string> = {}) {
@@ -198,7 +202,7 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
     return () => { controller.abort(); window.clearTimeout(timer); mounted.current = false; };
   }, [enabled, projectId, sessionId]);
 
-  async function create(context: DebugContext, symptom: string, model: string, effort: string, responseMode: DebugResponseMode = "fast", options: { purpose?: DebugPurpose; initial_action?: "message" | "capture" } = {}) {
+  async function create(context: DebugContext, symptom: string, model: string, effort: string, responseMode: DebugResponseMode = "fast", options: { purpose?: DebugPurpose; initial_action?: "message" | "capture" | "collect" } = {}) {
     if (flight.current || !projectId || context.project?.id !== projectId) return undefined;
     const conversationId = conversation?.project_id === projectId ? conversation.id :
       record?.binding?.project_id === projectId ? record.conversation_id : undefined;
@@ -209,11 +213,20 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
         purpose: options.purpose ?? "debug", ...(conversationId ? { conversation_id: conversationId } : {}),
         ...(options.initial_action ? { initial_action: options.initial_action } : {}),
       });
-      if (mounted.current && version === epoch.current) { setRecord(next); setSessionId(next.id); saveSession(projectId, next.id); }
+      if (!mounted.current || version !== epoch.current) return undefined;
+      setRecord(next); setSessionId(next.id); saveSession(projectId, next.id);
       return next;
     } catch (cause) {
       if (mounted.current && version === epoch.current) setError(cause instanceof Error ? cause.message : "connection_lost");
     } finally { flight.current = false; if (mounted.current) setPending(false); }
+  }
+  function adoptReview(next: DebugSession) {
+    if (!mounted.current || !enabled || !projectId || flight.current || next.binding?.project_id !== projectId
+      || next.conversation_current === false || next.current_target === false || !next.wiring_review
+      || ["stopped", "complete", "error"].includes(next.status) || next.phase === "backend_restarted") return false;
+    epoch.current++;
+    setRecord(next); setSessionId(next.id); saveSession(projectId, next.id); setError("");
+    return true;
   }
 
   async function restartConversation() {
@@ -246,14 +259,20 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
     } finally { flight.current = false; if (mounted.current) setPending(false); }
   }
 
-  async function action(actionName: DebugSessionAction, context?: DebugContext, text?: string, responseMode?: DebugResponseMode) {
-    if (flight.current || !record) return undefined;
+  async function action(actionName: DebugSessionAction, context?: DebugContext, text?: string, responseMode?: DebugResponseMode,
+    wiringReview?: WiringReviewAction, createdSessionId?: string) {
+    // A collect-only session can be created and populated within one user action,
+    // before React has rendered its returned record.
+    const targetId = createdSessionId ?? record?.id;
+    if (flight.current || !targetId || (context && context.project?.id !== projectId)) return undefined;
     flight.current = true; const version = ++epoch.current; setPending(true); setError("");
     try {
-      const next = await makerRequest<DebugSession>(`debug/sessions/${encodeURIComponent(record.id)}/actions`, {
+      const next = await makerRequest<DebugSession>(`debug/sessions/${encodeURIComponent(targetId)}/actions`, {
         action: actionName, ...(context ? { context } : {}), request_id: crypto.randomUUID(), ...(text ? { text } : {}), ...(responseMode ? { response_mode: responseMode } : {}),
+        ...(wiringReview ? { wiring_review: wiringReview } : {}),
       });
-      if (mounted.current && version === epoch.current) setRecord(next);
+      if (!mounted.current || version !== epoch.current) return undefined;
+      setRecord(next);
       return next;
     } catch (cause) {
       if (mounted.current && version === epoch.current) setError(cause instanceof Error ? cause.message : "connection_lost");
@@ -276,5 +295,5 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
     } finally { staleFlight.current = false; }
   }
 
-  return { record, conversation, pending, error, resetVersion, restartConversation, create, action, contextChanged };
+  return { record, conversation, pending, error, resetVersion, restartConversation, create, adoptReview, action, contextChanged };
 }

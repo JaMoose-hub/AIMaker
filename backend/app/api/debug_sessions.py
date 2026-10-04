@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.api.debug import Context
 from app.debug_support import sanitize
+from app.guided_wiring_review import WiringReviewAction
 
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
@@ -32,15 +33,16 @@ class CreateSession(BaseModel):
     request_id: str = Field(min_length=1, max_length=100)
     purpose: Literal["debug", "wiring_review"] = "debug"
     conversation_id: str | None = Field(default=None, max_length=100)
-    initial_action: Literal["message", "capture"] | None = None
+    initial_action: Literal["message", "capture", "collect"] | None = None
 
 
 class SessionAction(BaseModel):
-    action: Literal["ready", "capture", "continue", "message", "stop", "start_trial", "analyse", "context_changed", "start_debug", "prepare_wiring"]
+    action: Literal["ready", "capture", "continue", "message", "stop", "start_trial", "analyse", "context_changed", "start_debug", "prepare_wiring", "wiring_review"]
     request_id: str = Field(min_length=1, max_length=100)
     context: SessionContext | None = None
     text: str | None = Field(default=None, max_length=2000)
     response_mode: Literal["fast", "thorough"] | None = None
+    wiring_review: WiringReviewAction | None = None
 
 
 def _guard(request, fn):
@@ -74,7 +76,7 @@ def action(session_id: str, body: SessionAction, request: Request):
     return _guard(request, lambda: request.app.state.debug_sessions.action(
         session_id, body.action, body.request_id,
         context=body.context.model_dump() if body.context else None, text=body.text,
-        response_mode=body.response_mode))
+        response_mode=body.response_mode, wiring_review=body.wiring_review.model_dump() if body.wiring_review else None))
 
 
 @router.get("/sessions/{session_id}/evidence/{capture_id}")

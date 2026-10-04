@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { ProjectDesign, ProjectWire } from "../lib/maker";
 import { guideFor, type GuidedComponentId } from "../lib/componentWiringGuides";
 import { circuitLayout, circuitSelection, wireColor, CIRCUIT_WIDTH, PI_TERMINAL_X, MODULE_X, type DiagramPin, type FrozenCircuitProfile } from "../lib/circuitLayout";
@@ -9,9 +9,9 @@ import { CircuitViewport } from "./CircuitViewport";
 
 const shortNames: Record<GuidedComponentId, string> = { "hc-sr04": "HC-SR04+", "mrd-tf240-8p-cs": "MRD-TFT240" };
 
-export function CircuitDiagram({ design, activeId, onSelect, selectedId, onClearSelection, readableDefault = false, frozenProfile, compactPreview = false, workspace = false, focusLabel }: {
+export function CircuitDiagram({ design, activeId, onSelect, selectedId, onClearSelection, readableDefault = false, frozenProfile, compactPreview = false, workspace = false, focusLabel, viewControls }: {
   design: ProjectDesign; activeId?: string; onSelect?: (wire: ProjectWire) => void;
-  selectedId?: string | null; onClearSelection?: () => void; readableDefault?: boolean; frozenProfile?: FrozenCircuitProfile; compactPreview?: boolean; workspace?: boolean; focusLabel?: string;
+  selectedId?: string | null; onClearSelection?: () => void; readableDefault?: boolean; frozenProfile?: FrozenCircuitProfile; compactPreview?: boolean; workspace?: boolean; focusLabel?: string; viewControls?: ReactNode;
 }) {
   const tr = useMakerText();
   const { tx } = useI18n();
@@ -111,12 +111,15 @@ export function CircuitDiagram({ design, activeId, onSelect, selectedId, onClear
   </>;
   const diagram = (fill = false) => <>
     {!fill ? moduleTabs : null}
-    <div className="circuit-inspector" aria-live="polite">
+    <div className={`circuit-inspector${fill && viewControls ? ' image-workspace-heading' : ''}`}>
+      {fill ? viewControls : null}
+      <div className="circuit-inspector-content" aria-live="polite">
       {fill && focus ? <><small>{focusLabel ?? tr("目前這一步", "Current step")}</small><h2>{focus.componentPin} <span aria-hidden="true">→</span> {focus.boardLabel}</h2>
         {focus.connectionKind === "divider" ? <span className="maker-warning">{tr("ECHO 需分壓，不可直連 GPIO", "ECHO needs a divider, not a direct GPIO wire")}</span> : null}</>
         : focus ? <><strong>{shortNames[focus.componentId]} · {focus.componentPin} <span>→</span> Pi {focus.boardLabel}</strong><span>{tx(focus.instruction)} {focus.connectionKind === "divider" ? tr("不可直接接線。", "Never connect directly.") : ""}</span></>
         : selectedModule && selected ? <><strong>{shortNames[selected.componentId]} · {selected.pinId}</strong><span>{pending ? tx(pending.reason) : tr("此作品未使用此腳位，不需要接線。", "Not used in this project. Leave unconnected.")}</span></>
         : <><strong>{tr("認零件 → 找接腳 → 沿線接到 Pi", "Identify module → find pin → follow the wire")}</strong><span>{tr("點選模組接腳或線路，查看兩端腳位與接法。", "Select a module pin or wire to inspect both endpoints.")}</span></>}
+      </div>
     </div>
     <CircuitViewport key={`${design.component_ids.join(":")}:${filter ?? "all"}`} width={CIRCUIT_WIDTH} height={layout.height}
       preferredScale={readableDefault ? 0.65 : undefined} fitToViewport={fill}

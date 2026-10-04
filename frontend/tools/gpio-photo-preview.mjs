@@ -1,11 +1,15 @@
 // Isolated UI fixture: no proxies, hardware, cloud models or real media devices.
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
 import {maker,designFor,board,componentTests} from './project_guide_fixture.mjs';
-const dist=new URL('../dist/',import.meta.url);
+const dist=process.env.GPIO_PREVIEW_DIST ? pathToFileURL(process.env.GPIO_PREVIEW_DIST.replaceAll('\\','/')+'/') : new URL('../dist/',import.meta.url);
 // Optional local saved-photo replay. No detector/API/proxy or camera is started.
-const replay=process.env.GPIO_REPLAY_PACKET ? JSON.parse(await readFile(process.env.GPIO_REPLAY_PACKET,'utf8')) : null;
-const replayImage=replay ? await readFile(process.env.GPIO_REPLAY_IMAGE) : null;
+// Replay the exact current localhost capture without recapturing or mutating it.
+const replayUrl=process.env.GPIO_REPLAY_CAPTURE_URL ? new URL(process.env.GPIO_REPLAY_CAPTURE_URL) : null;
+if(replayUrl && (replayUrl.origin!=='http://127.0.0.1:8100' || !/^\/api\/photo-wiring\/captures\/[a-f0-9]+$/.test(replayUrl.pathname)))throw Error('Only local saved captures are allowed');
+const replay=replayUrl ? await (await fetch(replayUrl)).json() : process.env.GPIO_REPLAY_PACKET ? JSON.parse(await readFile(process.env.GPIO_REPLAY_PACKET,'utf8')) : null;
+const replayImage=replayUrl ? Buffer.from(await (await fetch(new URL(replayUrl.pathname+'/image',replayUrl.origin))).arrayBuffer()) : replay ? await readFile(process.env.GPIO_REPLAY_IMAGE) : null;
 if(replay) {
   const {createHash}=await import('node:crypto');
   if(createHash('sha256').update(replayImage).digest('hex')!==replay.image_sha256)throw Error('Replay image hash mismatch');
@@ -40,6 +44,10 @@ const fixed=${JSON.stringify(fixed)},design=${JSON.stringify(design)},board=${JS
 const dockCase=(${JSON.stringify(dockCases)})[options.get('guide-case')];
 if(dockCase){localStorage.setItem('boardvision.maker.v1',JSON.stringify(dockCase.state));fixed['/api/pi/component-tests']=dockCase.tests;fixed['/api/pi/status'].connected=dockCase.tests.connected;}
 const replay=${JSON.stringify(replay)};
+if(options.get('photo-case')==='missing-tft') {
+  const s=${JSON.stringify(state)};s.guide={...s.guide,phase:'active',componentIndex:1,index:6};
+  localStorage.setItem('boardvision.maker.v1',JSON.stringify(s));
+}
 fixed['/api/config'].realtime_tracking=options.get('tracking')==='1';
 let sourceKind='webcam',sourceGeneration=null;
 const trackingCanvas=document.createElement('canvas');trackingCanvas.width=1920;trackingCanvas.height=1080;
@@ -71,6 +79,13 @@ function packet(source,body={}) {
     const mapped=p=>({...p,frame_id:seq,runtime_revision:revision});
     Object.assign(result,{detection:mapped(replay.detection),components:replay.components.map(mapped),
       localization:replay.localization,image_sha256:replay.image_sha256,captured_at:replay.captured_at});
+  }
+  // Explicit UI-only regression: HC located while the selected TFT is not.
+  if(options.get('photo-case')==='missing-tft') {
+    const cid='mrd-tf240-8p-cs',module=result.components.find(p=>p.component_id===cid);
+    Object.assign(module,{tracking:'searching',pins:[],outline:null,body:{box:[1040,620,1510,820],confidence:.73,partial:true}});
+    Object.assign(result.localization.find(p=>p.object_id===cid),{status:'uncertain',reason:'invalid_model_geometry',
+      evidence:{},raw_outline_px:null,corrected_outline_px:null});
   }
   return result;
 }
@@ -108,10 +123,21 @@ window.fetch=async(input,init={})=>{
       detection:{...p.detection,runtime_revision:revision},components:p.components.map(c=>({...c,runtime_revision:revision}))});
   }
   if(path in fixed&&method==='GET')return json(fixed[path]);
+  // Guide restart QA uses only these local receipts; no debug worker or model is started.
+  if(path==='/api/debug/conversations/restart'&&method==='POST') {
+    const conversation={id:'offline-debug-'+(++seq),project_id:body.project_id,messages:[],check_ids:[],archived:false};
+    fixed['/api/debug/conversations']={conversation};return json({conversation});
+  }
   if(path==='/api/assistant/conversations'&&method==='POST') {chat={id:body.id,kind:'project',locale:body.locale,project_id:design.id,messages:[],jobs:[],before:null,total:0,context_epoch:0,round:0,demo:null};return json(chat);}
+  if(path.startsWith('/api/assistant/conversations/')&&['reset','import'].includes(path.split('/').at(-1))&&method==='POST') {
+    if(path.endsWith('/reset'))chat={...chat,messages:[],jobs:[],total:0,round:body.round??chat?.round??0,context_epoch:(chat?.context_epoch??0)+1};
+    return json(chat);
+  }
   if(path.startsWith('/api/assistant/conversations/')&&method==='GET')return json(chat);
   if(path==='/api/ai/estimate')return json({model:'gpt-6-luna',effort:'low',input_tokens:{min:1,max:1},output_tokens:{min:1,max:1},expected_output_tokens:1,api_equivalent_usd:null,reference_credits:null,unavailable_reason:'unknown_price',rates:null});
   if(path==='/api/mobile/context') {context=body;return json({});}
+  if(path==='/api/mobile/web-config')return json({available:true,base_url:location.origin,web_url:location.origin+'/mobile'});
+  if(path==='/api/mobile/pairings')return json({code:'123456',base_url:location.origin,base_urls:[location.origin],web_url:location.origin+'/mobile?code=123456',expires_at:Date.now()/1000+300});
   if(path==='/api/mobile/desktop-session')return json({session:phoneSession(url.searchParams.get('conversation_id'))});
   if(path==='/api/mobile/session')return json(phoneSession(context?.conversation_id));
   if(path==='/api/mobile/stream/offer')return json({type:'answer',sdp:'offline'});
@@ -145,13 +171,31 @@ window.RTCPeerConnection=class{
     this.stream=c.captureStream(5);this.connectionState='connected';window.__gpioQa.viewers.opened++;this.ontrack?.({streams:[this.stream],receiver:{}});this.onconnectionstatechange?.();}
   async getStats(){return new Map();}close(){clearInterval(this.frameTimer);if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null;window.__gpioQa.viewers.closed++;}}
 };
+if(new URLSearchParams(location.search).has('header-panels'))window.addEventListener('DOMContentLoaded',()=>{
+  const status=document.createElement('output');status.id='header-panel-monitor';
+  status.style.cssText='position:fixed;left:12px;bottom:6px;z-index:1000;font:11px monospace;color:#8bd7c5;background:#111b22;padding:4px 7px;border-radius:5px;pointer-events:none';
+  document.body.append(status);let previous=null,overlaps=0,changes=0;
+  const observe=()=>{
+    const active=[document.querySelector('#mobile-companion-panel')?'phone':null,
+      document.querySelector('.pi-device-menu[open]')?'pi':null,
+      document.querySelector('.runtime-settings[open]')?'settings':null].filter(Boolean);
+    const key=active.join(',');if(key===previous)return;previous=key;changes++;
+    if(active.length>1)overlaps++;
+    status.dataset.active=key;status.dataset.overlaps=String(overlaps);status.dataset.changes=String(changes);
+    status.textContent='Offline UI · active: '+(key||'none')+' · overlaps: '+overlaps;
+  };
+  new MutationObserver(observe).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});observe();
+});
 `;
 const html=(await readFile(new URL('index.html',dist),'utf8')).replace('<head>','<head><script src="/fixture.js"></script>');
+const baselineEntry=process.env.GPIO_HEADER_BASELINE_ENTRY;
+if(baselineEntry&&!/^\/assets\/index-[\w-]+\.js$/.test(baselineEntry))throw Error('Invalid header baseline asset');
 const server=createServer(async(req,res)=>{
-  const path=new URL(req.url,'http://127.0.0.1').pathname;
+  const url=new URL(req.url,'http://127.0.0.1'),path=url.pathname;
   if(req.method!=='GET'){res.writeHead(405);res.end('Offline fixture: no mutations');return;}
   let content,type;
-  if(path==='/'){content=html;type='text/html';}
+  if(path==='/'){content=baselineEntry&&url.searchParams.has('legacy-header')
+    ? html.replace(/src="\/assets\/index-[\w-]+\.js"/,`src="${baselineEntry}"`) : html;type='text/html';}
   else if(path==='/fixture.js'){content=bootstrap;type='text/javascript';}
   else if(path==='/video'||path==='/frame.jpg'||/^\/api\/(mobile|photo-wiring)\/captures\/[^/]+\/image$/.test(path)){content=replayImage||svg;type=replayImage?'image/jpeg':'image/svg+xml';}
   else if(/^\/(assets|brand|demo)\/[a-zA-Z0-9._-]+$/.test(path)||path==='/theme.js'){

@@ -26,6 +26,7 @@ PHONE_ROUTES = {
     "/api/mobile/session": {"GET", "DELETE"},
     "/api/mobile/join": {"POST"},
     "/api/mobile/conversation": {"GET"},
+    "/api/mobile/wiring-review": {"GET", "POST"},
     "/api/mobile/messages": {"POST"},
     "/api/mobile/assets": {"POST"},
     "/api/mobile/stream": {"POST", "DELETE"},
@@ -40,6 +41,7 @@ PHONE_ROUTES = {
 }
 ASSET_ROUTE = re.compile(r"^/api/mobile/assets/[A-Za-z0-9_-]{1,100}/(?:file|thumbnail)$")
 CAPTURE_ROUTE = re.compile(r"^/api/mobile/captures/[A-Za-z0-9_-]{1,100}$")
+REVIEW_EVIDENCE_ROUTE = re.compile(r"^/api/mobile/wiring-review/evidence/[A-Za-z0-9_-]{1,100}$")
 HOP_HEADERS = {b"connection", b"keep-alive", b"proxy-authenticate", b"proxy-authorization",
                b"te", b"trailer", b"transfer-encoding", b"upgrade"}
 FORWARDED_HEADERS = {b"forwarded", b"x-forwarded-for", b"x-forwarded-host", b"x-forwarded-proto", b"x-real-ip"}
@@ -50,7 +52,7 @@ PUBLIC_STATIC = {"/theme.js": "application/javascript; charset=utf-8",
 
 def phone_route(path: str, method: str) -> bool:
     return method in PHONE_ROUTES.get(path, set()) or (
-        method == "GET" and bool(ASSET_ROUTE.fullmatch(path) or CAPTURE_ROUTE.fullmatch(path)))
+        method == "GET" and bool(ASSET_ROUTE.fullmatch(path) or CAPTURE_ROUTE.fullmatch(path) or REVIEW_EVIDENCE_ROUTE.fullmatch(path)))
 
 
 def upstream_headers(scope: dict) -> list[tuple[bytes, bytes]]:

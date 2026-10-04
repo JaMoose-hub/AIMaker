@@ -3,8 +3,8 @@ import { useI18n } from "../lib/i18n";
 import "./LiveCameraOverlay.css";
 
 /** Presentation only: the existing VideoView and source controller retain ownership. */
-export function LiveCameraOverlay({ controls, changing, unavailable, offline, phone, error, onRetry }: {
-  controls?: ReactNode; changing: boolean; unavailable: boolean; offline: boolean;
+export function LiveCameraOverlay({ navigation, controls, changing, unavailable, offline, phone, error, onRetry }: {
+  navigation?: ReactNode; controls?: ReactNode; changing: boolean; unavailable: boolean; offline: boolean;
   phone: boolean; error: string; onRetry?: () => void;
 }) {
   const { locale } = useI18n();
@@ -17,12 +17,13 @@ export function LiveCameraOverlay({ controls, changing, unavailable, offline, ph
     : changing ? tr('畫面準備好後會自動顯示', 'Video will appear when ready')
     : phone ? tr('請確認手機已開啟串流', 'Make sure streaming is on your phone')
     : tr('請確認鏡頭已連接', 'Check that the camera is connected');
-  return <div className="live-camera-overlay">
-    {controls ? <div className="live-camera-dock">{controls}
+  const dock = controls ? <div className="live-camera-dock">{controls}
       {error && !blocked ? <span className="live-camera-switch-error" role="status" title={error}>
         {tr('未能切換，保留原來源', 'Switch failed · original source retained')}
       </span> : null}
-    </div> : null}
+    </div> : null;
+  return <div className="live-camera-overlay">
+    {navigation ? <div className="live-camera-toolbar">{navigation}{dock}</div> : dock}
     {blocked ? <div className="live-camera-message" role="status">
       <div className="live-camera-message-card">
         <svg className="live-camera-message-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">

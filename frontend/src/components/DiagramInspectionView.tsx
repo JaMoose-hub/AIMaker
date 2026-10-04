@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectDesign } from "../lib/maker";
 import { diagramMatchesCurrent, type DiagramInspection } from "../lib/debugEvidence";
 import { useMakerText } from "../lib/useMaker";
 import { CircuitDiagram } from "./CircuitDiagram";
 
 /** Transient, read-only view of an AI message's frozen diagram, not a guide step. */
-export function DiagramInspectionView({ inspection, currentDesign, capturePending = false, onReturn }: {
-  inspection: DiagramInspection; currentDesign: ProjectDesign; capturePending?: boolean; onReturn: () => void;
+export function DiagramInspectionView({ inspection, currentDesign, capturePending = false, onReturn, viewControls }: {
+  inspection: DiagramInspection; currentDesign: ProjectDesign; capturePending?: boolean; onReturn: () => void; viewControls?: ReactNode;
 }) {
   const tr = useMakerText();
   const { snapshot, wireId } = inspection;
@@ -21,6 +21,7 @@ export function DiagramInspectionView({ inspection, currentDesign, capturePendin
   return <section ref={panel} id="current-step-diagram" className="maker-2d-main ai-diagram-workspace" tabIndex={-1}
     aria-label={tr("AI 引用的 2D 接線圖", "AI-referenced 2D wiring diagram")}>
     <header className="diagram-inspection-heading">
+      {viewControls}
       <div><strong>{tr("AI 接法", "AI wiring")} · v{snapshot.project_revision}</strong><span className={current ? "" : "maker-warning"}>{current ? tr("目前版本 · 僅供檢視", "Current version · read only") : tr("歷史版本 · 僅供檢視", "Historical version · read only")}</span></div>
       <button type="button" onClick={() => { setSelectedId(selectedId === null ? wireId : null); setView(value => value + 1); }}>{selectedId === null ? tr("返回 AI 指出的接線", "Return to AI's wire") : tr("查看完整電路", "View full circuit")}</button>
       <button type="button" onClick={onReturn}>{tr("返回目前步驟", "Back to current step")}</button>

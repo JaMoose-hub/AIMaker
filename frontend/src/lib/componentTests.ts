@@ -1,4 +1,4 @@
-import { makerRequest, wireSignature, type MakerState, type ProjectDesign, type ProjectGuideState } from "./maker";
+import { makerRequest, resumeProjectGuide, wireSignature, type MakerState, type ProjectDesign, type ProjectGuideState } from "./maker";
 import type { PiExecutionStatus } from "./piApi";
 
 export interface ComponentTestRun {
@@ -18,6 +18,24 @@ export interface ComponentTestStatus {
   ok?: boolean; error?: string;
   execution?: PiExecutionStatus;
 }
+
+/** A live reading belongs to a healthy sampling phase, never a saved result. */
+export function ultrasonicTestReadings(run: ComponentTestRun | null | undefined,
+  { now, stale = false, error = null }: { now: number; stale?: boolean; error?: string | null }) {
+  if (!run || run.component_id !== "hc-sr04") return null;
+  const validCm = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0 && value < 400;
+  const sampling = run.reserved && run.outcome === "running" && !run.invalidated && !stale && !error && !run.reason
+    && ["sampling_near", "sampling_far"].includes(run.phase);
+  const age = run.latest ? now - run.latest.at : NaN;
+  const fresh = sampling && run.latest && validCm(run.latest.cm) && Number.isFinite(age) && age >= 0 && age < 2;
+  const samples = ["near", "far"].flatMap(phase => {
+    const sample = run.samples[phase];
+    if (!sample || !Number.isInteger(sample.count) || sample.count < 0) return [];
+    return [{ phase, count: sample.count, medianCm: sample.count > 0 && validCm(sample.median_cm) ? sample.median_cm : null }];
+  });
+  return { sampling, liveCm: fresh ? run.latest!.cm : null,
+    expiresAt: fresh ? run.latest!.at + 2 : null, samples };
+}
 export function componentComplete(design: ProjectDesign, session: ProjectGuideState, cid: string) {
   const wires = design.wiring.filter(w => w.componentId === cid);
   return wires.length > 0 && wires.every(w => session.confirmed[w.id]?.signature === wireSignature(w));
@@ -27,7 +45,8 @@ export function selectTestModule(design: ProjectDesign, session: ProjectGuideSta
   if (!cid) return session;
   const steps = design.wiring.filter(w => w.componentId === cid);
   const complete = componentComplete(design, session, cid);
-  return { ...session, componentIndex, index: complete ? steps.length - 1 : 0,
+  const base = session.inspection ? resumeProjectGuide(session) : session;
+  return { ...base, componentIndex, index: complete ? steps.length - 1 : 0,
     phase: complete ? "review" : "prepare", checks: [] };
 }
 export function componentTestKey(design: ProjectDesign, session: ProjectGuideState, cid: string) {

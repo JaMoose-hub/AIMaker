@@ -8,6 +8,9 @@ const BACKEND_WS = "ws://127.0.0.1:8100";
 // in both `vite dev` and the production build served by the backend itself.
 export default defineConfig({
   plugins: [react()],
+  // Open desktop and phone tabs still reference their original hashed chunks.
+  // Keep them available when rebuilding the frontend served by the backend.
+  build: { emptyOutDir: false },
   server: {
     proxy: {
       "/api": { target: BACKEND_HTTP, changeOrigin: true },

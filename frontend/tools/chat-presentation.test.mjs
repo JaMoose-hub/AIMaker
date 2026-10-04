@@ -68,7 +68,7 @@ test('unified draft has a slim theme-aware scrollbar without arrows and remains 
   assert.match(css,/@supports selector\(::-webkit-scrollbar\)\s*\{\s*\.assistant-input textarea\s*\{ scrollbar-width: auto; scrollbar-color: auto;/);
 });
 
-test('AI orb has a dimensional cyan-blue core and an interaction-only directional affordance',()=>{
+test('AI orb has low-gloss midnight glass and an interaction-only directional affordance',()=>{
   const css=read('../src/assistant.css');
   const orb=css.slice(css.indexOf('.assistant-orb {'),css.indexOf('.assistant-resizer {'));
   assert.match(orb,/width: 36px; height: 36px/);
@@ -86,13 +86,31 @@ test('AI orb has a dimensional cyan-blue core and an interaction-only directiona
   assert.match(css,/\.assistant-workspace :focus-visible\s*\{ outline: 2px solid var\(--brand-link\)/);
 });
 
+test('orb ambience uses slow decorative motion without animating layout or flashing',()=>{
+  const css=read('../src/assistant.css');
+  assert.match(css,/animation: assistant-orb-breathe 4\.6s ease-in-out infinite/);
+  assert.match(css,/animation: assistant-orb-drift 10s linear infinite/);
+  assert.match(css,/animation: assistant-orb-orbit 12s linear infinite/);
+  assert.match(css,/linear-gradient\(145deg, #203f51, #142c42 55%, #0d192e\)/);
+  assert.match(css,/\.assistant-collapse::before\s*\{[^}]*inset: -9px;[^}]*pointer-events: none/);
+  assert.match(css,/\.assistant-collapse::after\s*\{[^}]*mask-image: radial-gradient[^}]*pointer-events: none/);
+  for(const name of ['breathe','drift','orbit']) {
+    const frames=css.match(new RegExp(`@keyframes assistant-orb-${name} \\{([^]*?)\\} \\}`))?.[1];
+    assert.ok(frames);assert.doesNotMatch(frames,/\b(width|height|top|left|right|bottom|filter|box-shadow):/);
+  }
+  assert.match(css,/:root\[data-theme="light"\] \.assistant-collapse::before/);
+});
+
 test('workspace transitions and send decorations respect reduced motion',()=>{
   const css=read('../src/assistant.css');
   const reduced=css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
   assert.match(reduced,/\.assistant-workspace\.is-unified \{ transition: none;/);
   assert.match(reduced,/\.assistant-send-pending i \{ animation: none;/);
   assert.match(reduced,/\.assistant-collapse::before \{ animation: none;/);
+  assert.match(reduced,/\.assistant-collapse::after \{ animation: none; transition: none;/);
+  assert.match(reduced,/\.assistant-orb-energy \{ animation: none;/);
+  assert.match(reduced,/\.assistant-collapse:is\(:hover, :focus-visible, :active\) \.assistant-orb \{ transform: none;/);
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)\s*\{ \.assistant-workspace \*\s*\{[^}]*transition: none !important/);
-  assert.match(css,/\.assistant-input-actions\s*\{[^}]*border-radius: 999px/);
+  assert.match(css,/\.assistant-input-actions\s*\{[^}]*background: transparent;[^}]*box-shadow: none/);
   assert.doesNotMatch(css,/writing-mode: vertical-rl/);
 });

@@ -12,6 +12,8 @@
 .mw-button { min-width:44px; min-height:48px; border:1px solid transparent; border-radius:var(--radius-control); display:flex; align-items:center; justify-content:center; gap:9px; padding:11px 16px; font-weight:600!important; text-decoration:none; text-align:center; }
 .mw-primary { background:var(--mw-action); color:#04241f; border-color:var(--mw-action); }
 .mw-secondary { border-color:var(--mw-line-strong); background:var(--mw-panel); color:var(--mw-ink); }
+.mobile-web-app .mw-capture-button { background:#2a5f9e; border-color:#2a5f9e; color:#fff; }
+.mobile-web-app .mw-capture-button:enabled:active { background:#234f84; border-color:#234f84; }
 .mw-quiet { min-width:44px; min-height:44px; padding:7px 10px; border:0; border-radius:var(--radius-control); display:inline-flex; align-items:center; justify-content:center; gap:7px; color:var(--mw-accent); background:transparent; font-weight:500!important; }
 .mw-icon-button { min-width:44px; min-height:44px; padding:4px; border:1px solid var(--mw-line-strong); border-radius:var(--radius-control); background:var(--mw-panel); color:var(--mw-ink); font-size:21px!important; line-height:1; }
 .mw-row { display:flex; align-items:center; gap:10px; }
@@ -86,9 +88,17 @@
 .mw-message { max-width:94%; align-self:flex-start; background:var(--chat-ai-bg); border:1px solid var(--chat-ai-border); border-radius:var(--radius-card); padding:12px 14px; min-width:110px; }
 .mw-message.is-user { align-self:flex-end; background:var(--chat-user-bg); border-color:var(--chat-user-border); }.mw-message.is-archived { border-style:dashed; }
 .mw-message>header { display:flex; justify-content:space-between; gap:15px; font-size:11px; margin-bottom:6px; }.mw-message>header strong { font-weight:600; color:var(--chat-ai-ink); }.mw-message.is-user>header strong { color:var(--chat-user-ink); }.mw-message time { color:var(--mw-muted); font-size:9px; }.mw-message>p { white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.65; }.mw-message>small { font-size:10px; color:var(--mw-secondary); }
+.mw-test-help-actions { display:grid; gap:9px; margin-top:12px; padding-top:12px; border-top:1px solid var(--chat-ai-border); }
+.mw-test-help-actions .mw-row { flex-wrap:wrap; align-items:stretch; gap:8px; }
+.mw-test-help-actions .mw-button { min-height:48px; flex:0 1 auto; padding:10px 13px; font-size:13px; white-space:normal; }
+.mw-test-help-actions .mw-button svg { width:16px; height:16px; flex-shrink:0; }
+.mw-test-help-actions>small { font-size:11px; color:var(--mw-secondary); }
+.mw-test-help-actions .mw-error-text { font-size:12px; overflow-wrap:anywhere; }
 .mw-message-media { margin:9px 0 0; border-radius:var(--radius-control); overflow:hidden; background:var(--mw-subtle); }.mw-message-media img,.mw-message-media video { display:block; width:100%; max-height:280px; object-fit:contain; background:#0a0b10; }.mw-message-media figcaption { font-size:9px; color:var(--mw-secondary); padding:5px 7px; overflow-wrap:anywhere; }
 .mw-photo-link { display:flex; align-items:center; gap:5px; min-height:44px; background:transparent; color:var(--mw-accent); border:0; padding:7px 0 0; font-size:11px!important; }.mw-photo-link svg { width:17px; height:17px; }
 .mw-thinking { display:flex; gap:8px; align-items:center; color:var(--mw-secondary); font-size:11px; padding:5px 0; }.mw-thinking>span { width:6px; height:6px; border-radius:50%; background:var(--mw-action); }
+.mw-analysis-time { color:var(--mw-secondary); font-size:12px; font-variant-numeric:tabular-nums; }
+.mw-composer-note { display:block; color:var(--mw-secondary); font-size:11px; margin-top:5px; }
 .mw-outbox { align-self:stretch; background:var(--surface-warning); border:1px solid var(--line-warn); border-radius:var(--radius-card); padding:12px; font-size:12px; }.mw-outbox p { margin:5px 0; overflow-wrap:anywhere; }.mw-outbox small { display:block; color:var(--mw-secondary); }.mw-outbox .mw-row { justify-content:flex-end; }
 .mw-composer { flex:none; padding:11px 14px 10px; background:var(--mw-panel); border-top:1px solid var(--mw-line); }
 .mw-composer textarea { display:block; resize:none; width:100%; min-height:64px; max-height:130px; padding:9px 10px; border:1px solid transparent; border-radius:14px; color:var(--mw-ink); background:linear-gradient(var(--mw-chat),var(--mw-chat)) padding-box,linear-gradient(90deg,rgb(124 92 255 / 90%),rgb(65 122 190 / 95%),rgb(22 185 166 / 90%)) border-box; font-size:16px; line-height:1.45; }.mw-composer textarea::placeholder { color:var(--mw-muted); font-size:13px; }
@@ -128,3 +138,18 @@
   .mobile-web-app[data-tab=camera] .mw-tabs svg { width:19px; height:19px; }
 }
 @media(prefers-reduced-motion:reduce) { .mobile-web-app * { scroll-behavior:auto!important; } }
+
+/* Role-bound photo actions belong to the normal shared message. */
+.mw-wiring-chat-actions { margin-top:10px; display:grid; gap:8px; }
+.mw-wiring-chat-actions>.mw-button { justify-self:start; min-height:48px; padding:9px 12px; font-size:12px; }
+.mw-wiring-chat-actions>.mw-button svg { width:17px; height:17px; }
+.mw-wiring-chat-actions>small { font-size:11px; color:var(--mw-secondary); overflow-wrap:anywhere; }
+.mw-wiring-chat-actions .mw-row { flex-wrap:wrap; gap:8px; }
+.mw-wiring-chat-actions .mw-quiet { min-height:44px; font-size:11px; }
+.mw-wiring-chat-actions .mw-error-text { font-size:12px; overflow-wrap:anywhere; }
+.mw-wiring-chat-photo .mw-photo-open { display:block; width:100%; padding:0; border:0; background:transparent; cursor:zoom-in; }
+.mw-wiring-original { width:calc(100% - 24px); max-width:720px; max-height:calc(100dvh - 24px); margin:auto; padding:12px; border:1px solid var(--mw-line-strong); border-radius:var(--radius-card); background:var(--mw-panel); color:var(--mw-ink); overflow:auto; }
+.mw-wiring-original::backdrop { background:#061018aa; }
+.mw-wiring-original>header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.mw-wiring-original>img { display:block; width:100%; height:auto; max-height:72dvh; object-fit:contain; }
+.mw-wiring-original>p { margin-top:10px; color:var(--mw-secondary); font-size:12px; }

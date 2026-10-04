@@ -23,13 +23,17 @@
 .photo-poc-primary { background:#39a99426; border-color:#55c5af65; color:var(--text,#eaf0f6); font-weight:650; }
 .photo-poc-image-stage { position:relative; aspect-ratio:16/10; width:100%; overflow:hidden; background:#060b10; border-radius:8px; }
 .photo-poc-image-stage>img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
-.photo-poc-pin-overlay { position:absolute; inset:0; width:100%; height:100%; }
+.photo-poc-pin-overlay { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
 .photo-poc-pin-overlay :is(polygon,circle) { vector-effect:non-scaling-stroke; }
 /* Reuse live board-outline, pin-dot and guide-connection-* styles. Frozen
    evidence stays still: rings indicate the selected lesson, not live tracking. */
 .photo-poc-pin-overlay .photo-poc-active-pin :is(.guidance-halo,.pin-dot) { animation:none; }
 .photo-poc-pin-overlay text { fill:#eaf5ff; stroke:#081729; stroke-width:4; paint-order:stroke; font-family:var(--font); font-weight:600; }
 .photo-poc-pin-overlay .photo-poc-active-pin text { fill:#ffe08a; font-weight:600; }
+.photo-poc-pin-overlay .photo-poc-guide-callout .component-pin-callout-arrow { animation:none; }
+.photo-poc-pin-overlay .photo-poc-guide-callout text { stroke:none; paint-order:normal; }
+.photo-poc-pin-overlay .photo-poc-guide-callout :is(.pi-row-label-text,.component-row-label-text) { fill:#ffe08a; }
+.photo-poc-pin-overlay .photo-poc-guide-callout .header-count-hint { fill:#f0f4fa; font-weight:500; }
 .photo-poc-pin-overlay .photo-poc-uncertain-outline polygon { fill:none; filter:none; stroke:#edba60; stroke-dasharray:6 4; }
 .photo-poc-pin-overlay .photo-poc-uncertain-outline .photo-poc-object-label { fill:#ffdb8c; }
 .photo-poc-pin-overlay .photo-poc-raw-outline polygon { fill:none; filter:none; stroke:#f09dc8; stroke-dasharray:7 5; }

@@ -1,4 +1,6 @@
-"""Fixed-photo GPIO guidance POC; preview continues, inference is on demand.
+"""Fixed-photo GPIO guidance with an isolated one-shot live snapshot path.
+
+The legacy POC lease can pause inference; workspace snapshots keep it running.
 
 Photo evidence belongs to one immutable source frame.  Local poses are navigation
 hints, and cloud opinions never write manual confirmations or drive hardware.
@@ -124,7 +126,7 @@ def context_mutation(method, path):
 
 
 def session_transition(method, path):
-    return (method == "POST" and path.rstrip("/") == "/api/photo-wiring/sessions"
+    return (method == "POST" and path.rstrip("/") in {"/api/photo-wiring/sessions", "/api/photo-wiring/snapshot"}
             or method == "DELETE" and path.startswith("/api/photo-wiring/sessions/"))
 
 
@@ -389,86 +391,131 @@ class PhotoWiringService:
         component_ids = validate_plan(body)
         with self.lock:
             session = self._session(session_id)
-            if self.busy:
-                raise HTTPException(409, "photo_check_busy")
-            started_ms = self.clock()*1000
-            seq = self.state.frame_bus.latest_seq
-            slot = self.state.frame_bus.get_latest(timeout=2, newer_than=seq)
-            if slot is None or slot.seq <= seq or not math.isfinite(slot.ts_ms) or slot.ts_ms < started_ms or not 0 <= self.clock()*1000-slot.ts_ms <= 2000:
-                raise HTTPException(503, "photo_new_frame_unavailable")
-            frame = slot.frame
-            if not isinstance(frame, np.ndarray) or frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[2] != 3 or min(frame.shape[:2]) < 16 or frame.nbytes > MAX_PIXELS_BYTES:
-                raise HTTPException(422, "photo_invalid_pixels")
-            # All inference and image encoding refer to this one copied frame.
-            slot = FrameSlot(frame.copy(), slot.frame_id, slot.ts_ms, slot.seq)
-            if self._context() != session["context"]:
-                raise HTTPException(409, "photo_context_changed")
-            if self._detector is None:
-                detector = self.detector_factory()
-                configure = getattr(detector, "set_yolo_only", None)
-                if configure is None:
-                    detector.close()
-                    raise HTTPException(503, "photo_gpio_detector_unavailable")
-                configure(True)
-                self._detector = detector
-            # The direct YOLO search has a region cursor. Each new photograph
-            # starts from the full frame rather than a previous photo's miss.
-            self._detector.set_yolo_only(True)
-            runtime_revision = session["context"][1]
-            size = (slot.frame.shape[1], slot.frame.shape[0])
-            board = self._detector.detect(slot.frame, slot.frame_id, slot.ts_ms)
-            if (board is None or board.board_id != "raspberry-pi-5" or board.frame_id != slot.frame_id or board.ts_ms != slot.ts_ms):
-                raise HTTPException(503, "photo_board_frame_mismatch")
-            board, board_localization = self.geometry.board(slot.frame, board, self._detector)
-            detection = detection_message(board, size, runtime_revision)
-            localization = [board_localization]
-            components = []
-            candidates = [*getattr(self.state, "component_workers", [])]
-            legacy = getattr(self.state, "component_worker", None)
-            if legacy is not None and legacy not in candidates:
-                candidates.append(legacy)
-            for component_id in component_ids:
-                worker = next((w for w in candidates if getattr(getattr(w, "_profile", None), "component_id", None) == component_id), None)
-                if worker is None:
-                    components.append(dict(type="component_pose", component_id=component_id,
-                        frame_id=slot.frame_id, ts_ms=slot.ts_ms, video_size=list(size),
-                        runtime_revision=runtime_revision, tracking="searching", confidence=0., pins=[], outline=None))
-                    localization.append(dict(object_id=component_id,status="not_found",method="unavailable",
-                        reason="component_detector_missing",raw_outline_px=None,corrected_outline_px=None,
-                        candidate_pins=[],evidence=dict(model_confidence=0.,model_forwards=0,
-                            board_geometry_verified=False,pin_geometry_verified=False)))
-                    continue
+            return self._capture_frame(session_id, session, body, component_ids)
+
+    def snapshot(self, body):
+        """A one-shot photo without entering the legacy inference pause lease.
+
+        Read one fresh FrameBus image, use independent photo search state, and
+        retain the live source/workers/pose holders. The same local models may
+        serialize a forward with live inference; this does not promise zero
+        resource contention or camera-motion effects.
+        """
+        component_ids = validate_plan(body)
+        with self.lock:
+            self.expire_lease()
+            if self.closed:
+                raise HTTPException(503, "photo_service_closed")
+            if self.session is not None or self._pending_resume:
+                raise HTTPException(409, "photo_session_busy")
+            if self.state.config.camera.source not in {"device", "phone"} or self.state.runtime_manager.snapshot().board_id != "raspberry-pi-5":
+                raise HTTPException(409, "photo_poc_requires_pi5_webcam")
+            tuner = getattr(self.state, "camera_tuner", None)
+            if tuner is not None and tuner.snapshot().get("busy"):
+                raise HTTPException(409, "camera_adjustment_busy")
+            glasses = getattr(self.state, "glasses_stream", None)
+            if glasses is not None:
+                status = glasses.snapshot()
+                if status.get("active") or status.get("state") in {"starting", "switching", "restoring", "stopping"}:
+                    raise HTTPException(409, "camera_source_switch_busy")
+            camera_lock = getattr(self.state, "camera_control_lock", None)
+            if camera_lock is not None and not camera_lock.acquire(blocking=False):
+                raise HTTPException(409, "camera_adjustment_busy")
+            try:
+                token = uuid4().hex
+                session = dict(context=self._context(), expires=0)
+                return self._capture_frame(token, session, body, component_ids, live=True)
+            finally:
+                if camera_lock is not None:
+                    camera_lock.release()
+
+    def _capture_frame(self, session_id, session, body, component_ids, *, live=False):
+        if self.busy:
+            raise HTTPException(409, "photo_check_busy")
+        started_ms = self.clock()*1000
+        seq = self.state.frame_bus.latest_seq
+        slot = self.state.frame_bus.get_latest(timeout=2, newer_than=seq)
+        if slot is None or slot.seq <= seq or not math.isfinite(slot.ts_ms) or slot.ts_ms < started_ms or not 0 <= self.clock()*1000-slot.ts_ms <= 2000:
+            raise HTTPException(503, "photo_new_frame_unavailable")
+        frame = slot.frame
+        if not isinstance(frame, np.ndarray) or frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[2] != 3 or min(frame.shape[:2]) < 16 or frame.nbytes > MAX_PIXELS_BYTES:
+            raise HTTPException(422, "photo_invalid_pixels")
+        # All inference and image encoding refer to this one copied frame.
+        slot = FrameSlot(frame.copy(), slot.frame_id, slot.ts_ms, slot.seq)
+        if self._context() != session["context"]:
+            raise HTTPException(409, "photo_context_changed")
+        if self._detector is None:
+            detector = self.detector_factory()
+            configure = getattr(detector, "set_yolo_only", None)
+            if configure is None:
+                detector.close()
+                raise HTTPException(503, "photo_gpio_detector_unavailable")
+            configure(True)
+            self._detector = detector
+        # The direct YOLO search has a region cursor. Each new photograph
+        # starts from the full frame rather than a previous photo's miss.
+        self._detector.set_yolo_only(True)
+        runtime_revision = session["context"][1]
+        size = (slot.frame.shape[1], slot.frame.shape[0])
+        board = self._detector.detect(slot.frame, slot.frame_id, slot.ts_ms)
+        if (board is None or board.board_id != "raspberry-pi-5" or board.frame_id != slot.frame_id or board.ts_ms != slot.ts_ms):
+            raise HTTPException(503, "photo_board_frame_mismatch")
+        board, board_localization = self.geometry.board(slot.frame, board, self._detector)
+        detection = detection_message(board, size, runtime_revision)
+        localization = [board_localization]
+        components = []
+        candidates = [*getattr(self.state, "component_workers", [])]
+        legacy = getattr(self.state, "component_worker", None)
+        if legacy is not None and legacy not in candidates:
+            candidates.append(legacy)
+        for component_id in component_ids:
+            worker = next((w for w in candidates if getattr(getattr(w, "_profile", None), "component_id", None) == component_id), None)
+            if worker is None:
+                components.append(dict(type="component_pose", component_id=component_id,
+                    frame_id=slot.frame_id, ts_ms=slot.ts_ms, video_size=list(size),
+                    runtime_revision=runtime_revision, tracking="searching", confidence=0., pins=[], outline=None))
+                localization.append(dict(object_id=component_id,status="not_found",method="unavailable",
+                    reason="component_detector_missing",raw_outline_px=None,corrected_outline_px=None,
+                    candidate_pins=[],evidence=dict(model_confidence=0.,model_forwards=0,
+                        board_geometry_verified=False,pin_geometry_verified=False)))
+                continue
+            if live:
+                photo_context = getattr(worker, "photo_context", None)
+                if not callable(photo_context):
+                    raise HTTPException(503, "photo_component_context_unavailable")
+                worker = photo_context()
+            else:
                 if _running(worker):
                     raise HTTPException(503, "photo_component_worker_running")
                 worker.reset_tracking()
-                result = worker.detect_yolo_frame(slot)
-                if (result.component_id != component_id or result.frame_id != slot.frame_id
-                        or result.ts_ms != slot.ts_ms or tuple(result.video_size) != size):
-                    raise HTTPException(503, "photo_component_frame_mismatch")
-                result, component_localization = self.geometry.component(slot.frame, result, worker)
-                localization.append(component_localization)
-                components.append({**component_pose_message(result), "runtime_revision": runtime_revision})
-            if self._context() != session["context"]:
-                raise HTTPException(409, "photo_context_changed")
-            ok, encoded = cv2.imencode(".jpg", slot.frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-            if not ok:
-                raise HTTPException(503, "photo_encode_failed")
-            image = encoded.tobytes()
-            capture_id = uuid4().hex
-            packet = dict(capture_id=capture_id, session_id=session_id,
-                image_url=f"/api/photo-wiring/captures/{capture_id}/image",
-                captured_at=datetime.now(timezone.utc).isoformat(), image_sha256=hashlib.sha256(image).hexdigest(),
-                frame_id=slot.frame_id, seq=slot.seq, capture_ts_ms=slot.ts_ms, video_size=list(size),
-                runtime_revision=runtime_revision, camera_id=session["context"][2],
-                detection=detection, components=components, localization=localization, quality=image_quality(slot.frame),
-                component_ids=component_ids, **body.model_dump(), same_frame=True, capture_skew_ms=0,
-                coordinates_are_hints_only=True, continuous_inference=False, electrical_verified=False, stale=False)
-            self._purge()
-            while len(self.captures) >= MAX_IMAGES:
-                del self.captures[next(iter(self.captures))]
-            self.captures[capture_id] = dict(packet=copy.deepcopy(packet), image=image, created=self.clock(), context=session["context"])
-            session["expires"] = self.clock()+self.lease_s
-            return packet
+            result = worker.detect_yolo_frame(slot)
+            if (result.component_id != component_id or result.frame_id != slot.frame_id
+                    or result.ts_ms != slot.ts_ms or tuple(result.video_size) != size):
+                raise HTTPException(503, "photo_component_frame_mismatch")
+            result, component_localization = self.geometry.component(slot.frame, result, worker)
+            localization.append(component_localization)
+            components.append({**component_pose_message(result), "runtime_revision": runtime_revision})
+        if self._context() != session["context"]:
+            raise HTTPException(409, "photo_context_changed")
+        ok, encoded = cv2.imencode(".jpg", slot.frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        if not ok:
+            raise HTTPException(503, "photo_encode_failed")
+        image = encoded.tobytes()
+        capture_id = uuid4().hex
+        packet = dict(capture_id=capture_id, session_id=session_id,
+            image_url=f"/api/photo-wiring/captures/{capture_id}/image",
+            captured_at=datetime.now(timezone.utc).isoformat(), image_sha256=hashlib.sha256(image).hexdigest(),
+            frame_id=slot.frame_id, seq=slot.seq, capture_ts_ms=slot.ts_ms, video_size=list(size),
+            runtime_revision=runtime_revision, camera_id=session["context"][2],
+            detection=detection, components=components, localization=localization, quality=image_quality(slot.frame),
+            component_ids=component_ids, **body.model_dump(), same_frame=True, capture_skew_ms=0,
+            coordinates_are_hints_only=True, continuous_inference=live, electrical_verified=False, stale=False)
+        self._purge()
+        while len(self.captures) >= MAX_IMAGES:
+            del self.captures[next(iter(self.captures))]
+        self.captures[capture_id] = dict(packet=copy.deepcopy(packet), image=image, created=self.clock(), context=session["context"])
+        session["expires"] = self.clock()+self.lease_s
+        return packet
 
     def get_capture(self, capture_id):
         with self.lock:

@@ -156,10 +156,19 @@ export function photoOverlayObjects(capture: PhotoCapture, mode: PhotoOverlayMod
   if (mode === "photo") return [];
   return ["raspberry-pi-5", ...capture.components.map(pose => pose.component_id)].map(objectId => {
     const localization = photoLocalizationFor(capture, objectId);
+    const measured = mode === "raw" ? localization.raw_outline_px : localization.corrected_outline_px ?? localization.raw_outline_px;
+    const box = photoPoseFor(capture, objectId)?.body?.box;
+    const [width, height] = capture.video_size;
+    // A body box identifies the object, NOT its orientation or its pins.
+    const candidateBox = box?.length === 4 && box.every(Number.isFinite)
+      && box[0] < box[2] && box[1] < box[3] && box[2] > 0 && box[3] > 0 && box[0] < width && box[1] < height
+      ? [[Math.max(0, box[0]), Math.max(0, box[1])], [Math.min(width, box[2]), Math.max(0, box[1])],
+        [Math.min(width, box[2]), Math.min(height, box[3])], [Math.max(0, box[0]), Math.min(height, box[3])]] as [number, number][] : null;
+    const boxOnly = !measured && !!candidateBox;
     // A detected object must not disappear just because pin refinement failed.
     // Raw candidates stay explicitly uncertain and NEVER supply wire endpoints.
-    return { objectId, localization, outline: mode === "raw" ? localization.raw_outline_px : localization.corrected_outline_px ?? localization.raw_outline_px,
-      pins: mode === "corrected" ? reliablePhotoPose(capture, objectId)?.pins.filter(pin => pin.v) ?? [] : [],
+    return { objectId, localization, outline: measured ?? candidateBox, boxOnly,
+      pins: mode === "corrected" && !boxOnly ? reliablePhotoPose(capture, objectId)?.pins.filter(pin => pin.v) ?? [] : [],
       candidatePins: mode === "corrected" && localization.status !== "located" ? localization.candidate_pins ?? [] : [] };
   });
 }

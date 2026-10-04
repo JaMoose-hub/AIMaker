@@ -6,6 +6,7 @@ import React from 'react';
 import {maker,designFor} from './project_guide_fixture.mjs';
 import {systemText} from './system_text_fixture.mjs';
 import {passiveCountdown,passiveChat} from './capture_ui_fixture.mjs';
+import {wiringEntryHelpers,WiringReviewEntry} from './wiring_review_entry_fixture.mjs';
 
 const source=readFileSync(new URL('../src/components/AiDebugPanel.tsx',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
@@ -22,6 +23,8 @@ function harness({wireIndex=0,english=false,variant='wiring',pending=false,recor
     name.endsWith('/useCaptureCountdown')?{useCaptureCountdown:countdown}:
     name.endsWith('/useChatScroll')?{useChatScroll:passiveChat}:
     name.endsWith('/CaptureCountdown')?{CaptureCountdown:()=>null}:
+    name.endsWith('/wiringReviewEntry')?wiringEntryHelpers:
+    name.endsWith('/WiringReviewEntry')?{WiringReviewEntry}:
     name.endsWith('/componentTests')?{componentComplete:()=>true}:
     name.endsWith('/debugSessions')?{sameDebugTestKeys:()=>true}: {},module);
   const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);

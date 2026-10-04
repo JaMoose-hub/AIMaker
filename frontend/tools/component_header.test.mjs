@@ -63,7 +63,9 @@ test('both module overlays show row direction and preserve ordinals through ever
       assert.deepEqual(pose,before);
       const noSpace=renderToStaticMarkup(createElement(ComponentPinOverlay,{...props,guideLabel:null}));
       assert.ok(!noSpace.includes('class="component-pin-callout"'));
-      assert.ok(noSpace.includes('component-guidance-halo'));
+      assert.ok(noSpace.includes('guidance-active'));
+      assert.ok(noSpace.includes('component-pin-dot'));
+      assert.ok(!noSpace.includes('component-guidance-halo'));
       const missingStart=renderToStaticMarkup(createElement(ComponentPinOverlay,{...props,pose:{...pose,pins:pose.pins.map((p,i)=>({...p,v:i!==0}))}}));
       assert.ok(!missingStart.includes('component-header-start'));
       if(pin!==pins[0]) assert.ok(missingStart.includes(t('headerCount.componentFallback',{pin:pins[0]})));

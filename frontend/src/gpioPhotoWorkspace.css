@@ -1,6 +1,11 @@
 .gpio-photo-workspace { display:flex; flex-direction:column; width:100%; height:100%; min-width:0; min-height:0; overflow:hidden; color:var(--text); background:var(--bg-panel); border:1px solid var(--border); border-radius:10px; }
 .gpio-photo-workspace>header { display:flex; flex:none; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); font-size:12px; }
 .gpio-photo-workspace>header>div { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; min-width:0; }
+.gpio-photo-workspace > header.image-workspace-heading { padding:6px 8px; gap:8px; }
+.gpio-photo-workspace > header.image-workspace-heading > .image-view-controls { flex:none; }
+.gpio-photo-workspace > header.image-workspace-heading > .gpio-photo-metadata { flex:1; overflow:hidden; }
+.gpio-photo-metadata > small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gpio-photo-workspace > header > .gpio-photo-actions { flex:none; align-items:center; margin-left:auto; }
 .gpio-photo-workspace small,.gpio-photo-workspace>footer { color:var(--muted); font-size:11px; }
 .gpio-photo-workspace button,.gpio-image-view-controls button { appearance:none; font-family:inherit; line-height:1.4; font-size:11px; padding:6px 9px; background:var(--bg-panel); color:var(--text); border:1px solid var(--border); border-radius:7px; cursor:pointer; }
 .gpio-photo-workspace button:focus-visible,.gpio-image-view-controls button:focus-visible { outline:2px solid var(--brand-link); outline-offset:2px; }
@@ -11,7 +16,9 @@
 .gpio-photo-workspace .photo-poc-photo-viewport { height:auto; min-height:80px; flex:1; }
 .gpio-photo-workspace .photo-poc-view-tools,.gpio-photo-workspace .photo-poc-focus-tools { flex:none; margin:0; }
 .gpio-photo-workspace .photo-poc-view-options { display:none; }
-.gpio-photo-workspace .photo-poc-focus-tools>span { display:none; }
+.gpio-photo-workspace .photo-poc-focus-tools>span { color:var(--muted); font-size:11px; }
+.gpio-photo-guidance { flex:none; padding:6px 12px; border-bottom:1px solid var(--border); font-size:11px; }
+.gpio-photo-guidance>p { margin:0; color:var(--warn); line-height:1.5; }
 .gpio-photo-workspace>footer { padding:7px 12px; flex:none; border-top:1px solid var(--border); line-height:1.5; }
 .gpio-photo-notice { flex:none; margin:0; padding:7px 12px; color:var(--warn); background:var(--surface-warning); font-size:11px; }
 .gpio-photo-notice button { margin-left:8px; }
@@ -20,6 +27,7 @@
 .gpio-image-view-controls>button[aria-pressed="true"] { background:var(--surface-blue); border-color:var(--brand-link); color:var(--brand-link); }
 .webcam-photo-status { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:7px 10px; color:var(--warn); font-size:11px; }
 @media(max-width:700px) {
+  .gpio-photo-workspace > header.image-workspace-heading > .image-view-controls { flex-basis:100%; }
   .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .video-workspace:has(> .gpio-photo-workspace) { flex:none; min-height:0; height:auto; }
   .gpio-photo-workspace { flex:none; height:400px; min-height:400px; }
   .gpio-photo-workspace>header { flex-wrap:wrap; }

@@ -2,7 +2,10 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSP
 import board from "../../../profiles/boards/raspberry-pi-5/board.json";
 import { useI18n } from "../lib/i18n";
 import type { ProjectDesign } from "../lib/maker";
-import { componentHeaderLocation } from "../lib/componentHeaderGuide";
+import { componentHeaderGuideText, componentHeaderLocation } from "../lib/componentHeaderGuide";
+import { piHeaderGuideText } from "../lib/piHeaderGuide";
+import { headerCountDirection } from "../lib/headerCountDirection";
+import { pointBounds, placeWiringLabelPair } from "../lib/wiringLabelLayout";
 import { anchoredCircuitScroll } from "../lib/circuitZoom";
 import { pinColorVar } from "../lib/capabilities";
 import { componentPinColor, guideConnectionColor } from "../lib/recognitionStyle";
@@ -34,6 +37,7 @@ function errorText(error: unknown) { return error instanceof Error ? error.messa
 function localizationText(value: string, locale: string) {
   const labels: Record<string, [string, string]> = {
     model_only: ["模型原始預測", "Original model prediction"], localization_not_validated: ["這份資料尚未驗證座標", "Coordinates have not been validated"],
+    invalid_model_geometry: ["角度／腳位幾何未通過檢查", "Orientation / pin geometry not validated"],
     sift_reference: ["同張照片的 SIFT 參考特徵比對", "SIFT reference matching in this photo"],
     sift_pcb_j8: ["同張照片特徵、板框與 J8 排針校正", "Photo features, board and J8 header refinement"],
     tft_mounting_holes: ["同張照片的四個固定孔校正", "Four mounting holes in this photo"],
@@ -72,15 +76,45 @@ function localizationText(value: string, locale: string) {
 }
 
 /** A photo-only renderer: no live pose subscriptions, freshness timer or interpolation. */
-export function PhotoPins({ capture, wire, mode = "corrected", labels = false, estimates = false, scale = 1 }: {
+export function PhotoPins({ capture, wire, mode = "corrected", labels = false, estimates = false, scale = 1, calloutArea }: {
   capture: PhotoCapture; wire?: PhotoWire; mode?: PhotoOverlayMode; labels?: boolean; estimates?: boolean; scale?: number;
+  calloutArea?: { width: number; height: number };
 }) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const tr = (zh: string, en: string) => locale === "en" ? en : zh;
   const arrowId = `photo-connection-${useId().replace(/:/g, "")}`;
   const [width, height] = capture.video_size;
-  const boardTarget = mode === "corrected" && wire ? locatedPhotoPin(reliablePhotoPose(capture, "raspberry-pi-5"), wire.board_pin) : null;
-  const moduleTarget = mode === "corrected" && wire ? locatedPhotoPin(reliablePhotoPose(capture, wire.component_id), wire.component_pin) : null;
+  const boardPose = mode === "corrected" ? reliablePhotoPose(capture, "raspberry-pi-5") : null;
+  const modulePose = mode === "corrected" && wire ? reliablePhotoPose(capture, wire.component_id) : null;
+  const boardTarget = wire ? locatedPhotoPin(boardPose, wire.board_pin) : null;
+  const moduleTarget = wire ? locatedPhotoPin(modulePose, wire.component_pin) : null;
+  const objects = photoOverlayObjects(capture, mode);
+  const displayed = (point: { x: number; y: number } | null) => point ? { x: point.x * scale, y: point.y * scale } : null;
+  const labelWidth = Math.max(width * scale, calloutArea?.width ?? 0), labelHeight = Math.max(height * scale, calloutArea?.height ?? 0);
+  const labelOffset = { x: (labelWidth - width * scale) / 2, y: (labelHeight - height * scale) / 2 };
+  const labelPoint = (point: { x: number; y: number } | null) => point ? { x: point.x * scale + labelOffset.x, y: point.y * scale + labelOffset.y } : null;
+  const bounds = (id: string) => pointBounds((objects.find(object => object.objectId === id)?.outline ?? [])
+    .map(([x, y]) => ({ x: x * scale + labelOffset.x, y: y * scale + labelOffset.y })));
+  const piGuide = boardTarget && wire ? piHeaderGuideText(BOARD_PINS.get(wire.board_pin), t) : null;
+  const moduleGuide = moduleTarget && wire ? componentHeaderGuideText(wire.component_id, wire.component_pin, t) : null;
+  const piRow = piGuide ? [...BOARD_PINS.values()].filter(pin => pin.header === "J8" && pin.index % 2 === piGuide.physical % 2)
+    .sort((a, b) => a.index - b.index) : [];
+  const piDirection = piGuide ? headerCountDirection(
+    displayed(locatedPhotoPin(boardPose, piRow[0].id)),
+    displayed(locatedPhotoPin(boardPose, piRow.at(-1)!.id)), width * scale, height * scale, t) : null;
+  const moduleDirection = moduleGuide ? headerCountDirection(
+    displayed(locatedPhotoPin(modulePose, moduleGuide.startPin)),
+    displayed(locatedPhotoPin(modulePose, moduleGuide.pins.at(-1)!)), width * scale, height * scale, t) : null;
+  const piHint = piGuide ? piDirection ? t("headerCount.pi", { direction: piDirection }) : piGuide.countFromLabel : "";
+  const moduleHint = moduleGuide ? t(moduleDirection ? "headerCount.component" : "headerCount.componentFallback",
+    { direction: moduleDirection ?? "", pin: moduleGuide.startPin }) : "";
+  // Lay out the same live instructions in display pixels, so fit/zoom keeps them readable.
+  const callouts = placeWiringLabelPair(
+    { target: piGuide ? labelPoint(boardTarget) : null, bounds: bounds("raspberry-pi-5") },
+    { target: moduleGuide ? labelPoint(moduleTarget) : null, bounds: wire ? bounds(wire.component_id) : null }, labelWidth, labelHeight,
+    // Use photo letterboxing for instructions without moving image pixels or covering other modules.
+    { topInset: 8, maxWidth: Math.min(288, Math.max(200, labelWidth * .28)),
+      obstacles: objects.map(object => bounds(object.objectId)).filter((box): box is NonNullable<typeof box> => box !== null) });
   const radius = Math.min(4.6 / scale, Math.max(3, 1.65 / scale));
   const textSize = Math.max(13, 12 / scale);
   // Leave the exact contacts unobstructed, just like the live guide line.
@@ -91,12 +125,13 @@ export function PhotoPins({ capture, wire, mode = "corrected", labels = false, e
   return <svg className="photo-poc-pin-overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet"
     style={{ "--guide-connection-color": guideConnectionColor(wire?.component_pin ?? "") } as CSSProperties}
     role="img" aria-label={tr("固定照片 GPIO 與零件腳位；高亮目前接線的兩端", "GPIO and module pins on the frozen photo; the current wire endpoints are highlighted")}>
-    {photoOverlayObjects(capture, mode).map(({ objectId, localization, outline, pins, candidatePins }) => <g key={objectId}
-      className={`${objectId === "raspberry-pi-5" ? "photo-poc-board-pins" : "photo-poc-component-pins"} ${mode === "raw" ? "photo-poc-raw-outline" : localization.status !== "located" ? "photo-poc-uncertain-outline" : ""}`}>
+    {objects.map(({ objectId, localization, outline, pins, candidatePins, boxOnly }) => <g key={objectId}
+      data-component-id={objectId}
+      className={`${objectId === "raspberry-pi-5" ? "photo-poc-board-pins" : "photo-poc-component-pins"} ${boxOnly ? "photo-poc-uncertain-outline" : mode === "raw" ? "photo-poc-raw-outline" : localization.status !== "located" ? "photo-poc-uncertain-outline" : ""}`}>
       {outline ? <><polygon className="board-outline" points={outline.map(point => point.join(",")).join(" ")} />
         <text className="photo-poc-object-label object-recognition-label" x={Math.max(12, Math.min(width - 280, Math.min(...outline.map(point => point[0]))))}
           y={Math.max(25, Math.min(height - 10, Math.min(...outline.map(point => point[1])) - 12))} style={{ fontSize: textSize }}>
-          {objectId === "raspberry-pi-5" ? "Pi 5" : componentName(objectId)} · {mode === "raw" ? tr("模型原框", "Model outline") : localization.status === "located" ? tr("座標可靠", "Reliable geometry") : tr("座標待確認", "Geometry uncertain")}</text></> : null}
+          {objectId === "raspberry-pi-5" ? "Pi 5" : componentName(objectId)} · {boxOnly ? tr("已辨識 · 腳位未定位", "Detected · pins not located") : mode === "raw" ? tr("模型原框", "Model outline") : localization.status === "located" ? tr("座標可靠", "Reliable geometry") : tr("座標待確認", "Geometry uncertain")}</text></> : null}
       {pins.map(pin => <g key={pin.id} style={{ "--mk": objectId === "raspberry-pi-5"
         ? BOARD_PINS.has(pin.id) ? pinColorVar(BOARD_PINS.get(pin.id)!) : "var(--cap-other)"
         : componentPinColor(pin.id) } as CSSProperties}><circle className="pin-dot" cx={pin.x} cy={pin.y} r={radius}>
@@ -122,15 +157,26 @@ export function PhotoPins({ capture, wire, mode = "corrected", labels = false, e
         x1={boardTarget.x + dx * inset} y1={boardTarget.y + dy * inset}
         x2={moduleTarget.x - dx * inset} y2={moduleTarget.y - dy * inset} />
     </g> : null}
-    {[boardTarget ? { pin: boardTarget, label: boardPinName(wire!.board_pin) } : null,
-      moduleTarget ? { pin: moduleTarget, label: `${componentName(wire!.component_id)} · ${wire!.component_pin}` } : null]
+    {[boardTarget ? { pin: boardTarget, label: boardPinName(wire!.board_pin), callout: callouts.board } : null,
+      moduleTarget ? { pin: moduleTarget, label: `${componentName(wire!.component_id)} · ${wire!.component_pin}`, callout: callouts.component } : null]
       .map((target, index) => target ? <g key={index} className="photo-poc-active-pin">
-        <circle className="guidance-halo guidance-halo-outer" cx={target.pin.x} cy={target.pin.y} r={17 / scale} />
-        <circle className="guidance-halo guidance-halo-inner" cx={target.pin.x} cy={target.pin.y} r={11 / scale} />
         <g className="pin-marker guidance-target"><circle className="pin-dot" cx={target.pin.x} cy={target.pin.y} r={3 / scale} /></g>
-        <text x={Math.max(12, Math.min(width - textSize * Math.min(target.label.length, 24) * 0.58, target.pin.x + 22 / scale))}
-          y={Math.max(textSize * 1.3, Math.min(height - 10, target.pin.y - 15 / scale))} fontSize={textSize}>{target.label}</text>
+        {!target.callout ? <text x={Math.max(12, Math.min(width - textSize * Math.min(target.label.length, 24) * 0.58, target.pin.x + 22 / scale))}
+          y={Math.max(textSize * 1.3, Math.min(height - 10, target.pin.y - 15 / scale))} fontSize={textSize}>{target.label}</text> : null}
       </g> : null)}
+    <g transform={`translate(${-labelOffset.x / scale} ${-labelOffset.y / scale}) scale(${1 / scale})`}>
+      <defs><marker id={`${arrowId}-callout`} viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto">
+        <path className="component-guidance-arrowhead" d="M 1 1 L 9 5 L 1 9" />
+      </marker></defs>
+      {[{ id: "board", box: callouts.board, title: piGuide?.title, hint: piHint },
+        { id: "component", box: callouts.component, title: moduleGuide?.title, hint: moduleHint }].map(({ id, box, title, hint }) => box && title ?
+        <g key={id} className="component-pin-callout photo-poc-guide-callout" role="img" aria-label={`${title}；${hint}`}>
+          <line className="component-pin-callout-arrow" x1={box.startX} y1={box.startY} x2={box.endX} y2={box.endY} markerEnd={`url(#${arrowId}-callout)`} />
+          <rect className="component-pin-callout-box" x={box.x} y={box.y} width={box.width} height={box.height} rx="8" />
+          <text className={id === "board" ? "pi-row-label-text" : "component-row-label-text"} x={box.x + 10} y={box.y + 21}>{title}</text>
+          <text className="header-count-hint" x={box.x + 10} y={box.y + 40}>{hint}</text>
+        </g> : null)}
+    </g>
   </svg>;
 }
 
@@ -191,7 +237,9 @@ export function PhotoViewport({ capture, wire, imageAttempt, imageLoaded, onLoad
       <div className="photo-poc-zoom-tools"><button type="button" onClick={() => zoom(currentScale / 1.3)} aria-label={tr("縮小照片", "Zoom out photo")}>−</button>
         <output>{Math.round(currentScale * 100)}%</output><button type="button" onClick={() => zoom(currentScale * 1.3)} aria-label={tr("放大照片", "Zoom in photo")}>＋</button>
         <button type="button" onClick={() => { pendingScroll.current = null; setScale(null); viewport.current?.scrollTo(0, 0); }}>{tr("完整照片", "Fit photo")}</button>
-        <button type="button" onClick={() => zoom(1)}>1:1</button></div></div>
+        <button type="button" onClick={() => zoom(1)}>1:1</button>
+        {compact ? <button type="button" disabled={!wire || !photoFocusBox(capture, undefined, wire)}
+          aria-label={tr("放大目前接線兩端", "Zoom to current endpoints")} onClick={() => focus(photoFocusBox(capture, undefined, wire))}>{tr("接線兩端", "Endpoints")}</button> : null}</div></div>
     <div className="photo-poc-view-options"><label><input type="checkbox" checked={labels} disabled={mode === "photo"} onChange={event => setLabels(event.target.checked)} />{tr("顯示全部腳位標籤", "All pin labels")}</label>
       {hasEstimates ? <label className="photo-poc-estimate-option"><input type="checkbox" checked={estimates} disabled={mode !== "corrected"} onChange={event => setEstimates(event.target.checked)} />{tr("顯示未驗證腳位預估", "Show unverified pin estimates")}</label> : null}
       <span>{labels ? tr("密集腳位標籤請用 1:1 或聚焦後查看", "Use 1:1 or focus to read dense pin labels") : tr("放大後可捲動 · + / − 縮放，0 顯示完整照片", "Scroll when enlarged · + / − zoom, 0 fits the photo")}</span></div>
@@ -204,11 +252,15 @@ export function PhotoViewport({ capture, wire, imageAttempt, imageLoaded, onLoad
         <div ref={drawing} className="photo-poc-source-canvas" style={{ width: width * currentScale, height: height * currentScale }}>
           <img key={`${capture.capture_id}:${imageAttempt}`} src={`${capture.image_url}${imageAttempt ? `?retry=${imageAttempt}` : ""}`}
             alt={tr("本次固定接線照片", "Frozen wiring photo")} onLoad={event => onLoad(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={onError} />
-          {imageLoaded && mode !== "photo" ? <PhotoPins capture={capture} wire={wire} mode={mode} labels={labels} estimates={estimates} scale={currentScale} /> : null}
+          {imageLoaded && mode !== "photo" ? <PhotoPins capture={capture} wire={wire} mode={mode} labels={labels} estimates={estimates} scale={currentScale}
+            calloutArea={{ width: Math.max(size.width, width * currentScale), height: Math.max(size.height, height * currentScale) }} /> : null}
         </div></div></div>
-    <div className="photo-poc-focus-tools"><span>{tr("快速查看", "Focus")}</span><button type="button" onClick={() => focus(photoFocusBox(capture, "raspberry-pi-5"))}>Pi 5</button>
-      {capture.components.map(pose => <button type="button" key={pose.component_id} onClick={() => focus(photoFocusBox(capture, pose.component_id))}>{componentName(pose.component_id)}</button>)}
-      <button type="button" disabled={!wire || !photoFocusBox(capture, undefined, wire)} onClick={() => focus(photoFocusBox(capture, undefined, wire))}>{tr("目前接線兩端", "Current endpoints")}</button></div>
+    {!compact ? <div className="photo-poc-focus-tools" role="group" aria-label={tr("放大查看，不切換接線", "Zoom only; does not change wiring")}><span>{tr("放大查看", "Zoom to")}</span>
+      {["raspberry-pi-5", ...capture.components.map(pose => pose.component_id)].map(id => <button type="button" key={id}
+        disabled={!photoFocusBox(capture, id)} title={tr("只放大照片，不切換接線步驟", "Zooms the photo only; does not change the wiring step")}
+        aria-label={tr(`放大 ${id === "raspberry-pi-5" ? "Pi 5" : componentName(id)}`, `Zoom to ${id === "raspberry-pi-5" ? "Pi 5" : componentName(id)}`)}
+        onClick={() => focus(photoFocusBox(capture, id))}>{id === "raspberry-pi-5" ? "Pi 5" : componentName(id)}</button>)}
+      <button type="button" disabled={!wire || !photoFocusBox(capture, undefined, wire)} onClick={() => focus(photoFocusBox(capture, undefined, wire))}>{tr("目前接線兩端", "Current endpoints")}</button></div> : null}
     {mode === "raw" ? <p className="photo-poc-diagnostic-note">{tr("粉紅虛框是模型原始預測，用來比較偏差；不提供可信 GPIO 座標。", "Pink dashed outlines are original model predictions for comparison; they do not provide reliable GPIO coordinates.")}</p>
       : estimates && hasEstimates ? <p className="photo-poc-diagnostic-note">{tr("空心淡色腳位是未驗證的 profile 預估；排針接點仍待校正，不能作為接線通過依據。", "Faint hollow pins are unverified profile estimates; contacts still need refinement and cannot support a wiring pass.")}</p> : null}
   </div>;

@@ -1,5 +1,7 @@
 /* Device identity is separate from connection status. Settings stay outside
    both groups; these styles never change a camera or Pi controller. */
+.mobile-device-icon, .pi-device-icon { display:none; }
+.runtime-settings-icon { width:16px; height:16px; flex:none; }
 .app.tinkro-theme:not(.display-mode-active) .maker-device-connections {
   display:flex; align-items:center; gap:10px; min-width:0;
 }
@@ -97,4 +99,43 @@
   .app.tinkro-theme:not(.display-mode-active) .maker-device-group>.mobile-toolbar-slot { margin-left:auto; }
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group .pi-global-control { flex:1; }
   .app.tinkro-theme:not(.display-mode-active) .maker-header-controls .maker-device-group .pi-global-row { flex:1; }
+}
+
+/* Header shortcuts: one icon per existing control, with status kept in the
+   dot, accessible name and tooltip. Popovers keep their full labels. */
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls {
+  display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-device-connections {
+  display:flex; flex:none; flex-wrap:nowrap; gap:6px;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-device-group {
+  padding:0; border:0; background:transparent;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-device-label,
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .pi-device-chevron { display:none; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated :is(.mobile-connection-label,.pi-device-state,.pi-device-count,.pi-header-stop-label,.runtime-settings-label) {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls :is(.mobile-connect-button,.pi-device-trigger,.runtime-settings>summary,.pi-header-stop) {
+  position:relative; display:inline-flex; align-items:center; justify-content:center; flex:none;
+  width:32px; height:32px; min-width:32px; min-height:32px; padding:0; gap:0;
+  border-radius:8px; border:1px solid var(--border-strong); background:var(--control-bg); color:var(--text-dim);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated :is(.mobile-device-icon,.pi-device-icon,.runtime-settings-icon) {
+  display:block; width:17px; height:17px; flex:none;
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated :is(.mobile-connection-dot,.pi-device-dot) {
+  position:absolute; top:4px; right:4px; width:5px; height:5px; box-shadow:0 0 0 2px var(--control-bg);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls :is(.mobile-connect-button,.pi-device-trigger,.runtime-settings>summary):is(:hover,:focus-visible),
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls :is(.mobile-connect-button[aria-expanded=true],.pi-device-menu[open]>.pi-device-trigger,.runtime-settings[open]>summary) {
+  color:var(--brand-link); border-color:var(--line-blue); background:var(--surface-blue);
+}
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls .pi-header-stop { color:var(--warn); border-color:var(--line-warn); }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .runtime-settings>summary:focus-visible { outline:2px solid var(--brand-link); outline-offset:2px; }
+@media(max-width:960px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls :is(.mobile-connect-button,.pi-device-trigger,.runtime-settings>summary,.pi-header-stop) {
+    width:44px; height:44px; min-width:44px; min-height:44px;
+  }
 }

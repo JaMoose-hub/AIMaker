@@ -1,0 +1,40 @@
+.deploy-workspace.deploy-resizable,
+.app:not(.display-mode-active) .is-unified .deploy-workspace.deploy-resizable {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  align-items: stretch;
+  gap: 10px;
+}
+.deploy-workspace.deploy-resizable[data-columns="split"],
+.app:not(.display-mode-active) .is-unified .deploy-workspace.deploy-resizable[data-columns="split"] {
+  grid-template-columns: minmax(0, var(--deploy-code-width)) 18px minmax(0, 1fr);
+  gap: 0;
+}
+.deploy-workspace.deploy-resizable[data-columns="stacked"],
+.app:not(.display-mode-active) .is-unified .deploy-workspace.deploy-resizable[data-columns="stacked"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.deploy-splitter { display: none; }
+.deploy-resizable[data-columns="split"] > .deploy-splitter {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  border-radius: 6px;
+}
+.deploy-splitter > span {
+  width: 4px;
+  height: 48px;
+  border-radius: 4px;
+  background: var(--ink-muted, #727b91);
+}
+.deploy-splitter:is(:hover, :focus-visible), .deploy-resizable.is-resizing > .deploy-splitter {
+  background: var(--surface-blue, #243d374d);
+}
+.deploy-splitter:is(:hover, :focus-visible) > span, .deploy-resizable.is-resizing > .deploy-splitter > span {
+  background: var(--brand-link, #7bcab1);
+}
+.deploy-splitter:focus-visible { outline: 2px solid var(--brand-link, #7bcab1); outline-offset: -2px; }
+.deploy-resizable.is-resizing { cursor: col-resize; user-select: none; }

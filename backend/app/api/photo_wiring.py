@@ -15,6 +15,11 @@ def start(request: Request):
     return request.app.state.photo_wiring_service.start()
 
 
+@router.post("/snapshot")
+def snapshot(body: PhotoCaptureRequest, request: Request):
+    return request.app.state.photo_wiring_service.snapshot(body)
+
+
 @router.post("/sessions/{session_id}/heartbeat")
 def heartbeat(session_id: str, request: Request):
     return request.app.state.photo_wiring_service.heartbeat(session_id)

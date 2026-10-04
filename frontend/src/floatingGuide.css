@@ -1,24 +1,33 @@
-/* Content-sized glass dock: camera bounds never change when it opens. */
-.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating { position: relative; display: flex; flex-direction: column; gap: 0; overflow: hidden; }
-.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > .video-workspace { flex: 1 1 0; min-height: 0; overflow: hidden; }
+/* Dock below the image. The expanded toggle shares the guide header;
+   only the collapsed entry needs a separate row. Neither covers image pixels. */
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating { position: relative; display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > .video-workspace { flex: 1 1 0; min-height: min(240px, 36dvh); overflow: hidden; }
 .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating .video-workspace > :is(.video-shell,.maker-2d-main,.gpio-photo-workspace) { flex: 1 1 0; min-height: 0; height: auto; }
-.guide-floating .floating-guide-dock { position: absolute; left: 14px; bottom: 14px; z-index: 28; }
-.app.tinkro-theme:not(.display-mode-active) .guide-floating .floating-guide-dock .guide-visibility-toggle {
+.guide-floating .floating-guide-dock { position: static; flex: none; display: flex; align-items: center; width: 100%; }
+.app.tinkro-theme:not(.display-mode-active) .guide-floating .guide-visibility-toggle {
   position: static; transform: none; margin: 0; display: inline-flex; gap: 8px;
-  min-height: 34px; padding: 6px 10px; border-radius: 10px;
+  min-height: 28px; padding: 4px 10px; border-radius: 7px;
   background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
-  color: var(--text); border: 1px solid var(--line-blue); box-shadow: 0 3px 12px #0002;
+  color: var(--text); border: 1px solid var(--line-blue); box-shadow: none;
   backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
 }
-.app.tinkro-theme:not(.display-mode-active) .guide-floating .floating-guide-dock .guide-visibility-toggle:is(.active,:hover) { color: var(--brand-link); border-color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) .guide-floating .guide-visibility-toggle:is(.active,:hover) { color: var(--brand-link); border-color: var(--brand-link); }
+.app.tinkro-theme:not(.display-mode-active) .guide-floating .guide-panel-header .guide-visibility-toggle {
+  flex: none; gap: 4px; min-height: 28px; padding: 3px 7px; font-size: 11px;
+  background: transparent; border-color: var(--border); color: var(--muted); white-space: nowrap;
+}
+.guide-floating .guide-panel-header .guide-visibility-toggle > svg { display: block; }
+.guide-floating .guide-panel-header .floating-guide-chevron { margin-left: 0; }
+.guide-floating .guide-panel-header-embedded { flex-wrap: wrap; }
+.guide-floating .guide-panel-header-embedded .guide-header-actions { margin-left: auto; gap: 4px; }
 .floating-guide-chevron { margin-left: 4px; font-size: 16px; line-height: 1; }
 .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > :is(.wiring-workspace,.maker-guide-empty) {
-  position: absolute; z-index: 27; inset: auto auto 56px 14px; transform: none;
-  width: min(620px, calc(100% - 28px)); height: auto;
-  max-height: calc(100% - 116px); min-height: 0; margin: 0; grid-area: auto;
-  border: 1px solid color-mix(in srgb, var(--line-blue) 65%, transparent); border-radius: 14px;
+  position: static; flex: 0 0 auto; transform: none;
+  width: 100%; height: auto;
+  max-height: 42%; min-height: 0; margin: 0; grid-area: auto;
+  border: 1px solid color-mix(in srgb, var(--line-blue) 65%, transparent); border-radius: 10px;
   background: color-mix(in srgb, var(--bg-panel) 56%, transparent);
-  box-shadow: 0 8px 24px #0002; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  box-shadow: none; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   overflow: auto; overscroll-behavior: contain; scrollbar-width: thin;
 }
 .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > .wiring-workspace:has(.compact-guide:is(.prepare,.active,.review)) { height: auto; }
@@ -27,14 +36,14 @@
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) {
   display: grid; height: auto; max-height: none; min-height: 0; overflow: visible;
   background: transparent; border: 0; border-radius: 0;
-  grid-template-columns: minmax(0,1fr); grid-template-rows: auto auto auto;
+  grid-template-columns: minmax(0,1fr) minmax(190px,26%); grid-template-rows: auto auto;
 }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) > :is(.guide-panel-body,.guide-panel-footer) {
   grid-column: 1; grid-row: auto; min-height: 0; max-height: none; overflow: visible;
   background: transparent; border: 0; scrollbar-gutter: auto;
 }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) > .guide-panel-body { flex: none; padding: 10px 12px 4px; gap: 6px; }
-.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) > .guide-panel-footer { display: flex; flex-direction: row; justify-content: flex-end; padding: 4px 12px 10px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) > .guide-panel-footer { grid-column: 2; grid-row: 2; display: flex; flex-direction: row; align-items: flex-end; justify-content: flex-end; padding: 10px 12px; border-left: 1px solid var(--border); }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-panel-header-embedded { position: relative; padding: 4px 10px; gap: 8px; background: transparent; border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-panel-header-embedded .guide-panel-progress { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-panel-header-embedded .guide-progress-label { display: block; order: 1; margin-left: auto; }
@@ -44,6 +53,19 @@
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-module-track { gap: 4px; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-module-track > button { min-height: 28px; padding: 3px 6px; font-size: 11px; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-restart-action { min-height: 28px; padding: 3px 7px; font-size: 11px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .guide-panel-header .guide-icon-action {
+  flex: 0 0 28px; width: 28px; height: 28px; min-width: 28px; min-height: 28px;
+  padding: 0; gap: 0; align-items: center; justify-content: center;
+  color: var(--muted); background: transparent; border: 1px solid var(--border); border-radius: 7px;
+  transition: color .15s ease, background-color .15s ease, border-color .15s ease;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .guide-panel-header .guide-icon-action:hover:not(:disabled) {
+  color: var(--brand-link); background: color-mix(in srgb, var(--brand-link) 10%, transparent); border-color: var(--line-blue);
+}
+.guide-floating .guide-icon-action > svg { display: block; flex: none; }
+@media (prefers-reduced-motion: reduce) {
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .guide-panel-header .guide-icon-action { transition: none; }
+}
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-connection-card { padding: 0; border: 0; background: transparent; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-step-label { font-size: 11px; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-step-label strong { font-size: 12px; }
@@ -55,6 +77,36 @@
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) .guide-navigation { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-navigation > button { flex: none; min-height: 32px; padding: 5px 12px; font-size: 12px; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-navigation > .guide-primary-action { min-width: 146px; }
+/* Draw attention to the current action, not more copy or a taller dock. */
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > .wiring-workspace:has(.compact-guide.active) {
+  border-color: color-mix(in srgb, var(--brand-teal) 48%, var(--border));
+  background: linear-gradient(105deg, color-mix(in srgb, var(--brand-teal) 8%, transparent), transparent 70%), color-mix(in srgb, var(--bg-panel) 56%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--brand-teal) 9%, transparent);
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-current-step {
+  padding-left: 12px; border-left: 3px solid var(--brand-teal); border-radius: 2px;
+  animation: guide-step-arrive .65s ease-out both;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-current-step .guide-step-label > span {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--tonal-ink); font-size: 12px; font-weight: 650;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-current-step .guide-step-label > strong {
+  padding: 2px 7px; border-radius: 5px; font-size: 12px;
+  background: color-mix(in srgb, var(--brand-teal) 10%, transparent);
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-current-step .guide-endpoint > span { font-size: 12px; font-weight: 600; color: var(--text); }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-current-step .guide-endpoint > strong { font-size: 26px; line-height: 1.1; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-current-step .guide-pin-link { color: var(--tonal-ink); }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide.active .guide-navigation > .guide-primary-action {
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--brand-teal) 20%, transparent);
+}
+@keyframes guide-step-arrive {
+  from { opacity: .65; box-shadow: -5px 0 18px color-mix(in srgb, var(--brand-teal) 28%, transparent); }
+  to { opacity: 1; box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-current-step { animation: none; }
+}
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-prepare-message { padding: 2px 0; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-prepare-message > strong { font-size: 14px; }
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-prepare-message > p { margin: 4px 0; font-size: 12px; }
@@ -89,9 +141,11 @@
 .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace :is(button,summary,input):focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
 .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > [hidden] { display: none; }
 @media (max-width: 700px) {
-  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating { min-height: 460px; }
-  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > :is(.wiring-workspace,.maker-guide-empty) { left: 8px; width: calc(100% - 16px); max-height: calc(100% - 110px); }
-  .guide-floating .floating-guide-dock { left: 8px; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating { min-height: 460px; overflow: visible; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > .video-workspace { flex: none; height: clamp(260px, 42dvh, 380px); min-height: 260px; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage.guide-floating > :is(.wiring-workspace,.maker-guide-empty) { width: 100%; max-height: none; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) { grid-template-columns: minmax(0,1fr); grid-template-rows: auto auto auto; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .compact-guide:is(.prepare,.active,.review) > .guide-panel-footer { grid-column: 1; grid-row: auto; border-left: 0; padding-top: 4px; }
   .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .guide-endpoint { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
   .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .component-test-card[data-view="dock"] .test-visual-confirm { grid-template-columns: minmax(0,1fr); }
   .app.maker-layout:not(.display-mode-active) .is-unified .guide-floating .wiring-workspace .component-test-card[data-view="dock"] > header,

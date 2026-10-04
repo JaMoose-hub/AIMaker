@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { DeploySplitLayout } from "./DeploySplitLayout";
 import { useI18n } from "../lib/i18n";
 import { deployPi, executionPending, programOwner, stopPiProgram } from "../lib/piApi";
 import { usePiConnection } from "../lib/PiConnection";
@@ -78,7 +79,7 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { proj
         <h2>{project?.title ? project.source === "demo" ? systemText(project.title, locale) : project.title : tr("自訂 Pi 程式", "Custom Pi program")}</h2>
         <p className="deploy-project-meta">Raspberry Pi 5{project?.component_ids.map(id => ` · ${id === "hc-sr04" ? "HC-SR04+" : id === "mrd-tf240-8p-cs" ? "MRD-TFT240" : id}`).join("")}</p></div>
     </div>
-    <div className="deploy-workspace" style={{ "--editor-height": `${editorHeight}px` } as CSSProperties}>
+    <DeploySplitLayout editorHeight={editorHeight}>
       <div className="deploy-primary-column">
         <section className="deploy-code-card workflow-surface">
           <div className="deploy-section-heading deploy-code-title">
@@ -126,6 +127,6 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { proj
             }}>{logs || t("pi.noOutput")}</pre>
         </section>
       </div>
-    </div>
+    </DeploySplitLayout>
   </section>;
 }

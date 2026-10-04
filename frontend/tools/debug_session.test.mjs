@@ -6,6 +6,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {systemText} from './system_text_fixture.mjs';
 import {passiveCountdown,passiveChat} from './capture_ui_fixture.mjs';
+import {recommendWiringReview,WiringReviewEntry} from './wiring_review_entry_fixture.mjs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const makerCatalog = JSON.parse(read('../../profiles/component-catalog.json'));
@@ -34,13 +35,13 @@ assert.ok(declaration);
 const js = ts.transpileModule(declaration.getText(tree).replace(/^export\s+/, ''), {
   compilerOptions: {target:ts.ScriptTarget.ES2022, jsx:ts.JsxEmit.React},
 }).outputText;
-const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys','PhotoEvidenceCard','DiagramEvidenceCard','debugEvidenceUrl','evidenceSessionId','makerCatalog','systemText','useCaptureCountdown','CaptureCountdown','useChatScroll',
+const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys','PhotoEvidenceCard','DiagramEvidenceCard','debugEvidenceUrl','evidenceSessionId','makerCatalog','systemText','useCaptureCountdown','CaptureCountdown','useChatScroll','recommendWiringReview','WiringReviewEntry',
   `${js}; return AiDebugPanel;`)(React, () => (zh) => zh, value => [value, () => {}], effect, effect, value => ({current:value}),
     status => ['complete','stopped','error'].includes(status), value => String(value), (_, guide) => guide.complete, sameDebugTestKeys,
-    photoModule.PhotoEvidenceCard,()=>null,evidenceHelpers.debugEvidenceUrl,evidenceHelpers.evidenceSessionId,makerCatalog,systemText,passiveCountdown,()=>null,passiveChat);
+    photoModule.PhotoEvidenceCard,()=>null,evidenceHelpers.debugEvidenceUrl,evidenceHelpers.evidenceSessionId,makerCatalog,systemText,passiveCountdown,()=>null,passiveChat,recommendWiringReview,WiringReviewEntry);
 const AiDebugPanel = makePanel();
 
-const context = {project:{id:'project'}, code:'draft', test_keys:{'hc-sr04':'hc-key','mrd-tf240-8p-cs':'tft-key'}, entry:{}}; // gitleaks:allow -- synthetic wiring signatures, not credentials
+const context = {project:{id:'project',component_ids:['hc-sr04','mrd-tf240-8p-cs']}, code:'draft', test_keys:{'hc-sr04':'hc-key','mrd-tf240-8p-cs':'tft-key'}, entry:{}}; // gitleaks:allow -- synthetic wiring signatures, not credentials
 const state = {design:{id:'project',component_ids:['hc-sr04','mrd-tf240-8p-cs']}, guide:{complete:true}, aiModel:'codex', aiEffort:'low', debug:{}};
 const base = {
   id:'session',status:'awaiting_visual',phase:'tft_visual',symptom:'screen dark',instruction:'請查看螢幕',

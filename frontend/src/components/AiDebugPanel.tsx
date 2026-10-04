@@ -1,32 +1,44 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMakerText } from "../lib/useMaker";
 import { systemText } from "../lib/systemText";
-import { makerCatalog, type MakerState } from "../lib/maker";
+import { makerCatalog, type MakerState, type ProjectGuideState } from "../lib/maker";
 import type { DebugContext } from "../lib/debug";
-import type { DebugMessage, DebugResponseMode, DebugSessionAction, useDebugSession } from "../lib/debugSessions";
+import type { DebugMessage, DebugResponseMode, DebugSession, DebugSessionAction, useDebugSession } from "../lib/debugSessions";
 import { sameDebugTestKeys } from "../lib/debugSessions";
-import { componentComplete } from "../lib/componentTests";
+import { componentComplete, componentTestKey } from "../lib/componentTests";
+import type { TestHelpInvitation } from "../lib/componentTestHelp";
 import { PhotoEvidenceCard } from "./PhotoEvidenceCard";
 import { DiagramEvidenceCard } from "./DiagramEvidenceCard";
 import { debugEvidenceUrl, evidenceSessionId, type DiagramInspection } from "../lib/debugEvidence";
 import { useCaptureCountdown } from "../lib/useCaptureCountdown";
 import { CaptureCountdown } from "./CaptureCountdown";
 import { useChatScroll } from "../lib/useChatScroll";
+import { WiringReviewCard } from "./WiringReviewCard";
+import { WiringReviewEntry } from "./WiringReviewEntry";
+import { recommendWiringReview } from "../lib/wiringReviewEntry";
+import { boundWiringAction, type WiringReviewAction, type WiringHumanDecision } from "../lib/wiringReview";
+import { confirmReviewedWire, unconfirmReviewedWire, invalidateReviewedComponent, contextWithReviewGuide } from "../lib/wiringReviewGuide";
 
 type SessionControl = ReturnType<typeof useDebugSession>;
 const isTerminal = (status?: string) => status === "complete" || status === "stopped" || status === "error";
 const epochTime = (value: string | number, locale: string) => new Date(typeof value === "string" ? value : value < 1e12 ? value * 1000 : value).toLocaleTimeString(locale);
 
 export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, repairAppliedHash, repairCandidateReady, session, webcamReady, eyeActive, cameraSource, cameraRuntimeRevision, onReturnWebcam,
-  onCase, onRetest, onTrial, onReviewRepair, onManual, onWiring, onDiagram, variant = "debug", wiringTarget, onOpenDebug, operationCard, headerControls, actionsOnly = false, phonePreview = false, cameraStatusInView = false }: {
+  onCase, onRetest, onTrial, onReviewRepair, onManual, onWiring, onDiagram, onReviewGuideChange, testHelpInvitation, testHelpActionTarget, onTestHelpHandled, onTestHelpAction, variant = "debug", wiringTarget, onOpenDebug, operationCard, headerControls, actionsOnly = false, chatGuidance = false, phonePreview = false, cameraStatusInView = false }: {
   state: MakerState; context: DebugContext; currentCodeHash: string; session: SessionControl; webcamReady: boolean; eyeActive: boolean;
   repairCaseId: string | null; repairAppliedHash: string | null; repairCandidateReady: boolean;
   cameraSource: string | null; cameraRuntimeRevision: number | null;
   onReturnWebcam: () => void; onCase: (id: string) => void; onRetest: (id: string, runId?: string) => void;
   onTrial: (trialId?: string) => void; onReviewRepair: () => void; onManual: () => void; onWiring: (id: string, pin?: string) => void;
   onDiagram?: (inspection: DiagramInspection) => void;
+  onReviewGuideChange?: (guide: ProjectGuideState, expected: MakerState) => void;
+  testHelpInvitation?: TestHelpInvitation | null;
+  testHelpActionTarget?: HTMLElement | null;
+  onTestHelpHandled?: (id: string) => void;
+  onTestHelpAction?: (invitation: TestHelpInvitation, op: "start" | "later") => Promise<DebugSession | boolean>;
   variant?: "debug" | "wiring"; wiringTarget?: DebugContext["wiring_target"]; onOpenDebug?: () => void; operationCard?: React.ReactNode; headerControls?: React.ReactNode;
-  actionsOnly?: boolean; phonePreview?: boolean; cameraStatusInView?: boolean;
+  actionsOnly?: boolean; chatGuidance?: boolean; phonePreview?: boolean; cameraStatusInView?: boolean;
 }) {
   const tr = useMakerText();
   const statusText = (text: string) => systemText(text, tr("zh-TW", "en"));
@@ -37,6 +49,12 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   const [now, setNow] = useState(Date.now());
   const [recordsOpen, setRecordsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [reviewToolbar, setReviewToolbar] = useState<HTMLDivElement | null>(null);
+  const [reviewExpanded, setReviewExpanded] = useState(false);
+  const [reviewReveal, setReviewReveal] = useState<{ token: string; reviewId: string; componentId: string } | null>(null);
+  const [invitationWorking, setInvitationWorking] = useState(false);
+  const invitationFlight = useRef(false);
+  const invitationMounted = useRef(true);
   const toolsTrigger = useRef<HTMLButtonElement>(null);
   const recordsTrigger = useRef<HTMLButtonElement>(null);
   const recordsHeading = useRef<HTMLHeadingElement>(null);
@@ -46,6 +64,11 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   const composing = useRef(false);
   const staleNotified = useRef<string | null>(null);
   const targetNotified = useRef<string | null>(null);
+  const reviewFlight = useRef(false);
+  const reviewLatest = useRef(state);
+  reviewLatest.current = state;
+  const [reviewError, setReviewError] = useState("");
+  const [reviewWorking, setReviewWorking] = useState(false);
   const record = session.record;
   const wiringMode = variant === "wiring";
   const actionContext = wiringTarget ? { ...context, wiring_target: wiringTarget } : context;
@@ -93,6 +116,23 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     (record.camera.source === cameraSource && (record.camera.runtime_revision === cameraRuntimeRevision ||
       (record.camera_current === true && record.camera.runtime_revision > cameraRuntimeRevision)));
   const current = record?.current_target !== false && record?.camera_current !== false && sameProject && sameCode && sameWiring && sameCamera;
+  const wiringRecommendation = recommendWiringReview(record, actionContext, current);
+  const invitation = testHelpInvitation;
+  const invitationCurrent = Boolean(invitation && state.design && !phonePreview && onReviewGuideChange && onTestHelpHandled
+    && invitation.mode === "wiring" && invitation.projectId === state.design.id && invitation.revision === state.design.revision
+    && state.design.component_ids.some(id => id === invitation.componentId)
+    && invitation.guideRun === (state.guide.run ?? 0)
+    && invitation.guideKey === componentTestKey(state.design, state.guide, invitation.componentId)
+    && context.test_keys[invitation.componentId] === invitation.guideKey);
+  const existingReview = record?.wiring_review;
+  const reusableReview = invitationCurrent && active && current && record?.phase !== "backend_restarted"
+    && existingReview && existingReview.component_id === invitation?.componentId
+    && !["stale", "error"].includes(existingReview.status) ? existingReview : null;
+  const invitationLatest = useRef({ invitation, current: invitationCurrent, reusableReview, onTestHelpHandled, onTestHelpAction,
+    busy: session.pending || Boolean(record?.model_busy), state, start: wiringReviewAction });
+  invitationLatest.current = { invitation, current: invitationCurrent, reusableReview, onTestHelpHandled, onTestHelpAction,
+    busy: session.pending || Boolean(record?.model_busy), state, start: wiringReviewAction };
+  const recommendedModule = makerCatalog.modules.find(module => module.id === wiringRecommendation?.component_id);
   const canStart = Boolean(state.design && !phonePreview && (wiringMode ? ["device", "phone"].includes(cameraSource ?? '') && !eyeActive : webcamReady) && !session.pending);
   const canAct = Boolean(active && record?.phase !== "backend_restarted" && current && webcamReady && !session.pending && (!binding?.code_hash || currentCodeHash));
   const approvedRepairCode = record?.status === "awaiting_repair" && sameProject && sameWiring && sameCamera &&
@@ -139,6 +179,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   useEffect(() => {
     if (active && record?.diagnosis?.case_id && record.diagnosis.case_id !== state.debug?.caseId) onCase(record.diagnosis.case_id);
   }, [active, record?.diagnosis?.case_id, state.debug?.caseId, onCase]);
+  useEffect(() => { invitationMounted.current = true; return () => { invitationMounted.current = false; }; }, []);
   useEffect(() => { if (record?.id) setEntry(""); }, [record?.id]);
   useLayoutEffect(() => {
     if (recordsOpen) recordsHeading.current?.focus({preventScroll:true});
@@ -170,21 +211,22 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     return () => window.clearInterval(timer);
   }, [record?.model_busy, record?.model_started_at]);
   useEffect(() => {
-    if (!record || !active || record.phase === "backend_restarted" || current || approvedRepairCode || !sameProject || record.current_target === false || !currentCodeHash || cameraSource === null || cameraRuntimeRevision === null) return;
+    // A server-committed human decision may precede its local ACK. Never retract it with the old guide table.
+    if (chatGuidance && sameProject && sameCode && sameCamera || !record || !active || record.phase === "backend_restarted" || current || approvedRepairCode || !sameProject || record.current_target === false || !currentCodeHash || cameraSource === null || cameraRuntimeRevision === null) return;
     const changedKey = JSON.stringify([record.id, currentCodeHash, cameraSource, cameraRuntimeRevision, context.test_keys]);
     if (staleNotified.current === changedKey) return;
     // Another rapid confirmation may arrive while the prior refresh is in
     // flight. Only an adopted reply acknowledges this exact context.
     void session.contextChanged(actionContext).then(result => { if (result) staleNotified.current = changedKey; });
-  }, [record?.id, active, current, approvedRepairCode, sameProject, currentCodeHash, cameraSource, cameraRuntimeRevision, context, session]);
+  }, [chatGuidance, record?.id, active, current, approvedRepairCode, sameProject, sameCode, sameCamera, currentCodeHash, cameraSource, cameraRuntimeRevision, context, session]);
   useEffect(() => {
     const target = actionContext.wiring_target;
-    if (!record || !active || !wiringMode || !target || !current || record.model_busy || session.pending || record.phase === "backend_restarted") return;
+    if (chatGuidance || !record || !active || !wiringMode || !target || !current || record.model_busy || session.pending || record.phase === "backend_restarted") return;
     if (record.wiring_target?.wire_id === target.wire_id && record.wiring_target.component_id === target.component_id) return;
     const key = `${record.id}:${target.component_id}:${target.wire_id}`;
     if (targetNotified.current === key) return;
     void session.contextChanged(actionContext).then(result => { if (result) targetNotified.current = key; });
-  }, [record?.id, active, wiringMode, actionContext.wiring_target?.component_id, actionContext.wiring_target?.wire_id, record?.wiring_target?.wire_id, record?.model_busy, session.pending, current]);
+  }, [record?.id, active, wiringMode, chatGuidance, actionContext.wiring_target?.component_id, actionContext.wiring_target?.wire_id, record?.wiring_target?.wire_id, record?.model_busy, session.pending, current]);
 
   const examples: Record<string, [string, string]> = {
     distance: ["HC-SR04+ 測不到距離，請檢查感測器與目標。", "HC-SR04+ has no distance reading. Check the sensor and target."],
@@ -241,6 +283,99 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     chat.followNext();
     if (await countdown.run(() => session.action("start_debug", actionContext, undefined, responseMode))) onOpenDebug?.();
   }
+  async function wiringReviewAction(payload: WiringReviewAction) {
+    if (reviewFlight.current || session.pending || record?.model_busy || counting || !state.design || phonePreview) return false;
+    reviewFlight.current = true; setReviewWorking(true); setReviewError("");
+    const originalState = state;
+    const unchanged = () => reviewLatest.current.design === originalState.design
+      && reviewLatest.current.guide === originalState.guide && reviewLatest.current.code === originalState.code;
+    try {
+      let currentRecord = record;
+      if (!active || !current || record?.phase === "backend_restarted") {
+        if (payload.op !== "start") throw new Error(tr("請先開始新一輪接線檢查。", "Start a new wiring review first."));
+        if (active && !await session.action("stop")) return false;
+        if (!unchanged()) return false;
+        currentRecord = await session.create(actionContext,
+          state.debug?.symptom || tr("對照 Pi 兩側與零件接頭的腳位和線色，逐條由我確認。", "Compare both Pi sides and the component header; I will confirm each wire."),
+          state.aiModel, state.aiEffort, responseMode, { purpose: "wiring_review", initial_action: "collect" }) ?? null;
+        if (!currentRecord || !unchanged()) return false;
+        // A new session has no review yet; discard the old card's CAS token.
+        payload = { op: "start", component_id: payload.component_id };
+      }
+      if (!currentRecord) return false;
+      let nextGuide = originalState.guide;
+      let nextContext = actionContext;
+      const retracting = payload.op === "review" && payload.decision !== "confirmed"
+        && Boolean(payload.wire_id && originalState.guide.confirmed[payload.wire_id]);
+      if (payload.op === "changed" || retracting || (payload.op === "review" && payload.decision === "needs_change") || (payload.op === "start" && currentRecord.purpose !== "wiring_review")) {
+        const prepared = await session.action("prepare_wiring", actionContext, undefined, responseMode, undefined, currentRecord.id);
+        if (!prepared?.wiring_edit_ready || !unchanged()) throw new Error(tr("請先停止並核對 Pi 工作，再修改接線或確認紀錄。", "Stop and reconcile Pi work before changing wiring or confirmations."));
+        currentRecord = prepared;
+      }
+      if (payload.op === "changed") {
+        nextGuide = invalidateReviewedComponent(originalState.design!, originalState.guide, payload.component_id);
+      } else if (payload.op === "review" && payload.wire_id) {
+        nextGuide = payload.decision === "confirmed"
+          ? confirmReviewedWire(originalState.design!, originalState.guide, payload.wire_id)
+          : unconfirmReviewedWire(originalState.design!, originalState.guide, payload.wire_id);
+      }
+      if (nextGuide !== originalState.guide) {
+        if (!onReviewGuideChange) throw new Error(tr("此畫面無法更新人工確認，請回到作品助手。", "Return to the project assistant to update human confirmations."));
+        nextContext = contextWithReviewGuide(actionContext, originalState.design!, nextGuide);
+      }
+      if (!unchanged()) return false;
+      const submit = () => session.action("wiring_review", nextContext, undefined, responseMode, payload, currentRecord!.id);
+      const next = await (payload.op === "capture" ? countdown.run(submit) : submit());
+      if (!next || !unchanged()) return false;
+      if (nextGuide !== originalState.guide) onReviewGuideChange?.(nextGuide, originalState);
+      chat.followNext();
+      return next;
+    } catch (cause) {
+      setReviewError(cause instanceof Error ? cause.message : tr("接線核對未完成，請重試。", "The wiring review did not complete. Retry."));
+      return false;
+    } finally { reviewFlight.current = false; setReviewWorking(false); }
+  }
+  async function reviewWire(wireId: string, decision: WiringHumanDecision) {
+    if (!record?.wiring_review) return;
+    await wiringReviewAction(boundWiringAction(record.wiring_review, { op: "review", wire_id: wireId, decision }));
+  }
+  async function startTestHelpPhotos() {
+    const request = invitationLatest.current;
+    if (!invitationMounted.current || !request.current || !request.invitation || request.invitation.id !== invitation?.id
+      || request.invitation.canAct === false || request.busy || counting || invitationFlight.current) return false;
+    invitationFlight.current = true; setInvitationWorking(true);
+    try {
+      const next = request.onTestHelpAction ? await request.onTestHelpAction(request.invitation, "start")
+        : request.reusableReview ? null : await request.start({ op: "start", component_id: request.invitation.componentId });
+      if (request.onTestHelpAction && !next) return false;
+      const review = next && typeof next === "object" ? next.wiring_review : request.reusableReview;
+      const latest = invitationLatest.current;
+      if (!review || review.component_id !== request.invitation.componentId || !invitationMounted.current
+        || !latest.current || latest.invitation?.id !== request.invitation.id
+        || latest.state.design !== request.state.design || latest.state.guide !== request.state.guide || latest.state.code !== request.state.code) return false;
+      if (!chatGuidance) setReviewReveal({ token: request.invitation.id, reviewId: review.id, componentId: review.component_id });
+      latest.onTestHelpHandled?.(request.invitation.id);
+      return true;
+    } catch (cause) {
+      if (invitationMounted.current && invitationLatest.current.invitation?.id === request.invitation.id)
+        setReviewError(cause instanceof Error ? cause.message : "connection_lost");
+      return false;
+    } finally { invitationFlight.current = false; if (invitationMounted.current) setInvitationWorking(false); }
+  }
+  async function dismissTestHelp() {
+    const latest = invitationLatest.current;
+    const currentInvitation = latest.invitation;
+    if (!invitationMounted.current || !latest.current || !currentInvitation || currentInvitation.canDismiss === false || currentInvitation.id !== invitation?.id || invitationFlight.current) return;
+    invitationFlight.current = true; setInvitationWorking(true);
+    try {
+      if (latest.onTestHelpAction && !await latest.onTestHelpAction(currentInvitation, "later")) return;
+      if (invitationMounted.current && invitationLatest.current.current && invitationLatest.current.invitation?.id === currentInvitation.id)
+        invitationLatest.current.onTestHelpHandled?.(currentInvitation.id);
+    } catch (cause) {
+      if (invitationMounted.current && invitationLatest.current.invitation?.id === currentInvitation.id)
+        setReviewError(cause instanceof Error ? cause.message : "connection_lost");
+    } finally { invitationFlight.current = false; if (invitationMounted.current) setInvitationWorking(false); }
+  }
   async function startNewCheck() {
     if (!canStart || session.pending || record?.model_busy || counting) return;
     chat.followNext();
@@ -294,16 +429,36 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
       backend_restarted: ["後端已重新啟動。請先核對 Pi 工作狀態並停止舊案件，再以目前作品開始新案件。", "The backend restarted. Check the Pi job state, stop this old session, then start a new one with the current project."],
       restart_requires_new_session: ["重啟後的案件僅供檢視。請停止舊案件，再開始新的 AI 除錯。", "A session from before the restart is read only. Stop it, then start a new AI debug session."],
       restart_requires_stop: ["請先核對 Pi 工作並停止重啟前的案件，再開始新的 AI 除錯。", "Check Pi jobs and stop the session from before the restart before starting a new one."],
+      stale_wiring_review: ["照片輪次已更新，請查看目前這一輪再操作。", "The photo round changed. Review the current round before continuing."],
+      stale_wiring_review_photo: ["這張照片已被更新，請查看目前的照片再選用。", "This photo was replaced. Review the current photo before selecting it."],
+      wiring_review_photos_not_accepted: ["請先逐張選用 Pi 兩側與零件接頭照片，再開始分析。", "Select both Pi-side photos and the module-header photo before analysing."],
+      wiring_review_photos_incomplete: ["請先拍攝 Pi 兩側及零件接頭，再分析這組照片。", "Capture both Pi sides and the module header before analysing."],
+      wiring_review_photos_expired: ["這組照片已不適用，請為目前接線重新拍照。", "These photos are no longer current. Capture the present wiring."],
+      wiring_review_photo_required: ["這個視角尚無可用照片，請先拍攝。", "Capture this view before selecting a region."],
+      wiring_review_crop_too_small: ["框選範圍太小，請包含接頭、插接底部與線色。", "Expand the crop to include the housing, insertion point and wire color."],
+      human_review_required: ["補查尚未改善證據，請親自沿線核對兩端，再記錄結果。", "Photo checks have not improved the evidence. Trace both ends yourself and record your decision."],
+      pi_busy_for_wiring: ["Pi 工作尚未確認停止，請先在執行管理完成停止，再調整接線。", "Pi work has not been confirmed stopped. Stop it in execution management before changing wiring."],
+      wiring_review_result_required: ["請先分析這輪照片，再逐條記錄人工核對。", "Analyse this photo round before recording wire reviews."],
     };
     return messages[value] ? tr(...messages[value]) : value.startsWith("HTTP ") ? tr("除錯服務暫時無法回應，請稍後再試。", "The debug service is unavailable. Try again shortly.") : statusText(value);
   };
 
   const recordsActions = <><button ref={recordsTrigger} type="button" className="workflow-secondary" aria-expanded={recordsOpen} aria-controls="ai-debug-records" title={tr("照片使用與檢查紀錄", "Photo use and inspection records")} onClick={() => setRecordsOpen(value => !value)}>{tr("檢查紀錄", "Check records")}</button><button type="button" className="workflow-secondary" aria-controls="debug-manual-tools" onClick={() => {setRecordsOpen(false);onManual();}}>{tr("手動測試工具", "Manual test tools")}</button></>;
   const captureLabel = !webcamReady && cameraStatusInView ? tr('影像尚未就緒，請到即時畫面確認連線', 'Camera not ready. Check the connection in Live view')
-    : wiringMode ? tr("拍攝這一步 · 10 秒倒數", "Capture this step · 10-second countdown")
-    : !active ? tr("拍照並開始除錯 · 10 秒倒數", "Capture and start debugging · 10-second countdown")
-      : tr("拍目前畫面 · 10 秒倒數", "Capture current view · 10-second countdown");
+    : wiringMode ? tr("拍攝這一步", "Capture this step")
+    : !active ? tr("拍照並開始除錯", "Capture and start debugging")
+      : tr("拍目前畫面", "Capture current view");
   const showCompactCapture = wiringMode || !active || (record?.status === "awaiting_capture" && awaitingReply && !record.model_busy);
+  const photoReviewInFocus = invitationCurrent || Boolean(reviewExpanded && record?.wiring_review && record.purpose === 'wiring_review'
+    && record.status === 'awaiting_capture' && current && !record.error && !record.model_busy);
+  const invitationActions = invitationCurrent ? <div className="ai-debug-actions test-help-invitation" role="group" aria-label={tr("接線照片檢查邀請", "Wiring photo review invitation")}>
+    <button type="button" className="guide-primary-action" disabled={invitation?.canAct === false || invitationWorking || reviewWorking || session.pending || Boolean(record?.model_busy) || counting}
+      onClick={() => void startTestHelpPhotos()}>{reusableReview ? tr("繼續照片核對", "Continue photo review") : tr("拍照檢查", "Check wiring with photos")}</button>
+    <button type="button" disabled={invitation?.canDismiss === false || invitationWorking} onClick={() => void dismissTestHelp()}>{tr("稍後", "Later")}</button>
+    {reviewError ? <small className="pi-error" role="alert">{readableError(reviewError)}</small> : null}
+  </div> : null;
+  if (actionsOnly && chatGuidance) return invitationActions && testHelpActionTarget
+    ? createPortal(invitationActions, testHelpActionTarget) : null;
   return <section ref={panelRef} className={`ai-debug-panel${wiringMode ? " is-wiring-review" : ""}${actionsOnly ? " is-actions-only" : ""}`} aria-label={wiringMode ? tr("與 AI 一起接線", "Wire with AI") : tr("與 AI 一起除錯", "Debug with AI")}
     onKeyDown={event => {
       if (actionsOnly && toolsOpen && event.key === "Escape" && !event.defaultPrevented) {
@@ -312,20 +467,21 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     }}>
     {actionsOnly ? <>
       <div className="assistant-debug-toolbar">
-        {headerControls}
         <div className="assistant-debug-primary">
-          {showCompactCapture ? <button className="assistant-capture" type="button" title={captureLabel} aria-label={captureLabel}
+          {showCompactCapture && !reviewExpanded ? <button className="assistant-capture" type="button" title={captureLabel} aria-label={captureLabel}
             disabled={recordsOpen || counting || (wiringMode ? !canCaptureWiring : !active ? !canStart : !canAct)}
             onClick={() => wiringMode ? void captureStep() : !active ? void send() : act("capture")}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 5 6 8H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2l-2-3Z"/><circle cx="12" cy="13" r="4"/></svg>
-            <span>{tr("拍照", "Photo")}</span><small>10s</small>
+            <span>{tr("拍目前畫面", "Capture current view")}</span>
           </button> : null}
+          {state.design && onReviewGuideChange ? <div className="assistant-wiring-entry-slot" ref={setReviewToolbar} /> : null}
           <button ref={toolsTrigger} className="assistant-debug-tools-toggle" type="button" title={tr("工具與設定", "Tools & settings")} aria-label={tr("工具與設定", "Tools & settings")} aria-expanded={toolsOpen} aria-controls="assistant-debug-settings" onClick={() => setToolsOpen(value => !value)}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
           </button>
         </div>
       </div>
       <div id="assistant-debug-settings" className="assistant-debug-settings" hidden={!toolsOpen}>
+        {headerControls ? <div className="assistant-debug-secondary"><span>{tr('對話情境', 'Conversation context')}</span>{headerControls}</div> : null}
         <label><span>{tr("照片分析", "Photo analysis")}</span><select aria-label={tr("照片分析方式", "Photo analysis style")} value={responseMode} disabled={Boolean(counting || record?.model_busy || session.pending)} onChange={event => setResponseMode(event.target.value as DebugResponseMode)}><option value="fast">{tr("快速引導", "Quick guidance")}</option><option value="thorough">{tr("深入分析", "Detailed analysis")}</option></select></label>
         <div className="assistant-debug-secondary">{recordsActions}</div>
       </div>
@@ -344,6 +500,25 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     {!state.design ? <p className="guide-caution">{tr("先建立作品，系統才能對照目前接線、程式與測試結果。", "Create a project so the system can compare its wiring, code, and tests.")}</p> : null}
     <div className="ai-debug-chat" ref={chat.chatRef} role={actionsOnly ? "region" : "log"} aria-label={actionsOnly ? tr("除錯操作與證據", "Debug actions and evidence") : tr("AI 除錯對話", "AI debugging conversation")} aria-live="polite" aria-relevant="additions" onScroll={chat.onScroll}>
     <div className="ai-debug-chat-content" ref={chat.contentRef}>
+      {invitationActions && (testHelpActionTarget ? createPortal(invitationActions, testHelpActionTarget) : !actionsOnly ? invitationActions : null)}
+      {state.design && onReviewGuideChange ? <WiringReviewEntry key={state.design.id} review={sameProject ? record?.wiring_review : null}
+        toolbarTarget={actionsOnly ? reviewToolbar : null} disabled={recordsOpen}
+        onExpandedChange={setReviewExpanded}
+        revealRequest={reviewReveal}
+        resumable={active && current && record?.phase !== "backend_restarted"}
+        recommendation={wiringRecommendation} componentLabel={recommendedModule ? tr(recommendedModule.name["zh-TW"], recommendedModule.name.en) : undefined}>
+        {componentId => <WiringReviewCard review={sameProject ? record?.wiring_review : null}
+        components={(state.design?.component_ids ?? []).map(id => {
+          const module = makerCatalog.modules.find(item => item.id === id);
+          return { id, label: module ? tr(module.name["zh-TW"], module.name.en) : id };
+        })} componentId={componentId ?? state.debug?.selectedComponentId ?? state.debug?.componentId ?? targetWire?.componentId}
+        busy={reviewWorking || session.pending || Boolean(record?.model_busy) || counting}
+        captureReady={webcamReady && !eyeActive} stale={Boolean(record && (!active || !current)) || record?.phase === "backend_restarted"}
+        error={reviewError || session.error ? readableError(reviewError || session.error) : undefined} onAction={wiringReviewAction} onReview={reviewWire}
+        onRetest={id => onRetest(id)} onInspectWire={wireId => {
+          const wire = state.design?.wiring.find(item => item.id === wireId);
+          if (wire) onWiring(wire.componentId, wire.componentPin);
+        }} />}</WiringReviewEntry> : null}
       {!actionsOnly && !record && messages.length === 0 ? <div className="ai-debug-welcome"><span className="ai-debug-avatar">AI</span><h4>{wiringMode ? tr("這一步需要幫忙嗎？", "Need help with this step?") : tr("哪裡沒有照預期運作？", "What isn't working as expected?")}</h4><p>{wiringMode ? tr("直接問接法，或按「拍攝這一步」讓 AI 對照實際接線。Pi 尚未開機也可以先討論。", "Ask about the wiring, or capture this step for AI to inspect it. You can talk before powering on the Pi.") : tr("直接告訴我。我會看目前的鏡頭畫面，對照 Pi 與作品資料，接著一步一步排查。", "Tell me what's happening. I'll inspect the camera image and your project's Pi data, then guide you step by step.")}</p>{missingWiring ? <p className="workflow-muted">{tr("可以先讓 AI 看畫面並引導排查；硬體測試前再完成接線確認。", "AI can inspect the image first; confirm wiring before hardware tests.")}</p> : null}</div> : null}
       {!actionsOnly && messages.map(message => <article key={message.id} className={`ai-debug-message is-${message.role}`} data-message-id={message.id}>
         <div className="ai-debug-message-meta"><strong>{message.role === "user" ? tr("你", "You") : "Tinkro AI"}</strong><time>{epochTime(message.created_at, tr("zh-TW", "en"))}</time>{message.role === "assistant" && message.elapsed_ms != null ? <span>{(message.elapsed_ms / 1000).toFixed(1)} s</span> : null}</div>
@@ -357,7 +532,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
           snapshot={diagrams.find(item => item.id === reference.snapshot_id)} currentDesign={state.design} onDiagram={onDiagram} />)}
         {message.role === "assistant" && message.model ? <small className="ai-debug-message-model">{message.model}</small> : null}
       </article>)}
-    {record ? <>
+    {record && !photoReviewInFocus ? <>
       <div className="ai-debug-current">
         <div className="ai-debug-current-title"><span className="workflow-eyebrow">{tr("目前這一步", "Current step")}</span><strong>{record.phase === "backend_restarted" ? tr("重啟後的舊紀錄", "Record after restart") : record.model_busy ? tr("雲端 AI 分析中", "Cloud AI is analyzing") : awaitingReply ? tr("等待你回覆", "Waiting for your reply") : statusName[record.status] ?? record.status}</strong></div>
         {!instructionAlreadyShown && !record.model_busy ? <p>{currentInstruction}</p> : null}
@@ -376,7 +551,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
         {record.status === "awaiting_visual" ? <div className="ai-debug-actions">{!operationCard ? <button type="button" onClick={() => onRetest("mrd-tf240-8p-cs", [...(record.test_results ?? [])].reverse().find(run => run.component_id === "mrd-tf240-8p-cs" && !run.invalidated)?.id)}>{tr("前往螢幕目視確認", "Review the physical screen")}</button> : null}<button type="button" disabled={!canAct} onClick={() => act("continue")}>{tr("完成確認後繼續", "Continue after confirmation")}</button></div> : null}
         {record.status === "awaiting_repair" ? <div className="ai-debug-actions">{!operationCard ? <button type="button" disabled={!record.diagnosis?.case_id || repairCaseId !== record.diagnosis.case_id || record.phase !== "repair_ready"} onClick={onReviewRepair}>{tr("查看診斷與修復提案", "Review diagnosis and repair")}</button> : null}{record.phase === "repair_ready" && !(repairCandidateReady && repairCaseId === record.diagnosis?.case_id) && !approvedRepairCode && (record.budget?.model_calls ?? 0) < (record.budget?.max_model_calls ?? 6) ? <button type="button" disabled={!canAct} onClick={() => act("analyse")}>{tr("請 AI 分析程式邏輯", "Ask AI to review code logic")}</button> : null}{approvedRepairCode ? <button type="button" className="guide-primary-action" disabled={!canResumeRepair} onClick={() => act("continue")}>{tr("修復已確認，接回試跑", "Repair confirmed, resume trial")}</button> : null}</div> : null}
         {record.status === "awaiting_trial_visual" ? <div className="ai-debug-actions">{!operationCard ? <button type="button" onClick={() => onTrial(record.trial_result?.id)}>{tr("前往 60 秒試跑結果", "Review the 60-second trial")}</button> : null}<button type="button" disabled={!canAct} onClick={() => act("continue")}>{tr("完成目視確認後繼續", "Continue after visual confirmation")}</button></div> : null}
-        {record.purpose === "wiring_review" && active ? <button type="button" disabled={!canMessage || !webcamReady || counting} onClick={() => void startDebug()}>{tr("開始功能除錯", "Start functional debugging")}</button> : null}
+        {record.purpose === "wiring_review" && active && !reviewExpanded ? <button type="button" disabled={!canMessage || !webcamReady || counting} onClick={() => void startDebug()}>{tr("開始功能除錯", "Start functional debugging")}</button> : null}
         {record.status === "paused" && !["context_changed", "camera_changed", "backend_restarted"].includes(record.phase) && !(record.phase === "wiring_required" && missingWiring) && current && webcamReady ? <button type="button" disabled={session.pending || counting} onClick={() => act("continue")}>{tr("重新檢查後繼續", "Recheck and continue")}</button> : null}
       </div>
     </> : null}

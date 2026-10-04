@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { guideFor, type ActiveGuideTarget } from "../lib/componentWiringGuides";
 import { startProjectGuide, restartProjectGuide, confirmProjectWire, previousProjectWire, reviewProjectWire, resumeProjectGuide, editProjectComponent, wireSignature, type ProjectDesign, type ProjectGuideState, type ProjectWire } from "../lib/maker";
 import { useMakerText } from "../lib/useMaker";
@@ -11,6 +11,7 @@ import { ComponentRowLocator } from "./ComponentRowLocator";
 import { componentHeaderGuideText, componentModelName } from "../lib/componentHeaderGuide";
 import { piHeaderGuideText } from "../lib/piHeaderGuide";
 import type { Pin } from "../lib/types";
+import type { ComponentTestHelpEvidence } from "../lib/componentTestHelp";
 
 interface Props {
   design: ProjectDesign; session: ProjectGuideState; visible: boolean; disabled: boolean;
@@ -19,14 +20,17 @@ interface Props {
   onTargetChange: (target: ActiveGuideTarget | null) => void;
   onVisibleChange: (visible: boolean) => void;
   onDeploy: () => void;
-  onDebug?: (componentId?: string, runId?: string, symptom?: string) => void;
+  onDebug?: (componentId?: string, runId?: string, symptom?: string, evidence?: ComponentTestHelpEvidence) => void | Promise<boolean>;
   onBeforeEdit?: (componentId?: string) => Promise<boolean>;
   /** Owner commits the fresh guide and cleared AI state together. */
   onRestart?: (session: ProjectGuideState) => Promise<boolean>;
   embedded?: boolean;
   floating?: boolean;
+  visibilityControl?: ReactNode;
+  /** Photo navigation browses the same guide cursor, including completed modules. */
+  onInspectComponent?: (componentId: string) => void;
 }
-export function ProjectGuidePanel({ design, session, visible, disabled, pinsById, onChange, onTargetChange, onVisibleChange, onDeploy, onDebug, onBeforeEdit, onRestart, embedded, floating = false }: Props) {
+export function ProjectGuidePanel({ design, session, visible, disabled, pinsById, onChange, onTargetChange, onVisibleChange, onDeploy, onDebug, onBeforeEdit, onRestart, embedded, floating = false, visibilityControl, onInspectComponent }: Props) {
   const tr = useMakerText();
   const { t, tx } = useI18n();
   const tests = useComponentTests(design, session);
@@ -119,16 +123,19 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
   const testInstructions = showTestCard ? <ComponentTestCard design={design} session={session} tests={tests} view={floating ? "dock" : "instructions"} onDebug={floating ? onDebug : undefined}
     onViewWiring={() => onChange(reviewProjectWire(design, session, cid))} /> : null;
   return <CompactGuide contextKey={`${design.id}:${design.revision}:${cid}:${session.phase}:${session.index}:${session.run ?? 0}`} phase={reviewing ? "review" : session.phase}
-    headerActions={<button type="button" className="guide-restart-action"
+    headerActions={<><button type="button" className={`guide-restart-action${floating ? " guide-icon-action" : ""}`}
+      aria-label={tr("重新開始接線引導", "Restart wiring guide")}
           title={tr("清除本輪接線與 AI 協作對話，回到第一步；保留作品、程式與歷史測試紀錄", "Clear this wiring run and AI conversation, then return to the first step; keep the project, code and historical test records")}
       disabled={tests.pending || editing} onClick={() => void edit(true)}>
-      <span aria-hidden="true">↻</span>{tr("重新開始", "Restart")}
-    </button>}
+      {floating ? <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3.5 8a6.5 6.5 0 1 1 .6 5M3.5 3.5V8H8" />
+      </svg> : <><span aria-hidden="true">↻</span>{tr("重新開始", "Restart")}</>}
+    </button>{visibilityControl}</>}
     embedded={embedded} floating={floating} visible={visible} title={componentGuide?.name ?? tx(guide.name)} progress={<>
       <div className="guide-progress-label"><span>{tr("作品人工紀錄", "Project manual records")}</span><strong>{count}<span> / {design.wiring.length}</span></strong></div>
       <progress max={design.wiring.length} value={count} aria-label={tr("作品人工接線進度", "Project manual wiring progress")} />
       <div className="guide-module-track">{design.component_ids.map((id, i) => <button type="button" key={id} disabled={tests.pending} aria-current={i === session.componentIndex ? "step" : undefined}
-        onClick={() => onChange(selectTestModule(design, session, i))}>
+        onClick={() => onInspectComponent && session.phase !== "prepare" ? onInspectComponent(id) : onChange(selectTestModule(design, session, i))}>
         <span className="guide-module-dot" aria-hidden="true">{i + 1}</span>{componentModelName(id, t) ?? id.toUpperCase()}
       </button>)}</div>
     </>}
@@ -141,7 +148,7 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     </> : session.phase === "prepare" && !complete ? <button type="button" className="guide-primary-action" onClick={start}>{tr("開始接線 →", "Start wiring →")}</button>
       : active ? <>
         <button type="button" className="guide-back-action" title={tr("回到前一條接線指示，保留已確認紀錄", "Return to the previous wire; keep confirmations")} disabled={session.index === 0 || tests.pending} onClick={previous}>{tr("上一步", "Back")}</button>
-        <button type="button" className="guide-primary-action" onClick={confirm}>{confirmed(step) ? tr("下一步 →", "Next →") : tr("我已接好，下一步 →", "Connected · Next →")}</button>
+        <button type="button" className="guide-primary-action" onClick={confirm}>{confirmed(step) ? tr("下一步 →", "Next →") : floating ? tr("接好了，下一步 →", "Connected · Next →") : tr("我已接好，下一步 →", "Connected · Next →")}</button>
       </> : <>
         <button type="button" className="guide-back-action" title={tr("回到接線步驟，保留已確認與測試紀錄", "Return to the wiring step; keep confirmations and test records")} disabled={tests.pending} onClick={previous}>{tr("上一步", "Back")}</button>
         {session.componentIndex < design.component_ids.length - 1
@@ -177,13 +184,13 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
       <p>{tr("先關閉硬體電源，再按「開始接線」。", "Turn off hardware power, then press Start wiring.")}</p>
     </div> : null}
     {active ? <>
-      <section className={`guide-connection-card ${step.connectionKind}`} aria-label={tr("本步接線", "Current connection")}>
-        <div className="guide-step-label"><span>{tr("這一步要接", "CONNECT THIS WIRE")}</span><strong>{session.index + 1}<span> / {steps.length}</span></strong></div>
+      <section key={`${cid}:${step.id}:${session.run ?? 0}`} className={`guide-connection-card ${step.connectionKind}${floating ? " guide-current-step" : ""}`} aria-label={tr("本步接線", "Current connection")}>
+        <div className="guide-step-label"><span>{floating ? <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="4" cy="10" r="2" /><path d="M6 10h8" /><circle cx="16" cy="10" r="2" /></svg> : null}{floating ? tr("接這條線", "CONNECT NOW") : tr("這一步要接", "CONNECT THIS WIRE")}</span><strong aria-label={tr(`第 ${session.index + 1}／${steps.length} 條接線`, `Wire ${session.index + 1} of ${steps.length}`)}>{session.index + 1}<span> / {steps.length}</span></strong></div>
         <div className="guide-pin-pair">
           <div className="guide-endpoint"><span>{componentGuide?.name ?? cid.toUpperCase()}</span><strong>{step.componentPin}</strong>
-            <small>{componentGuide ? tr(`零件端第 ${componentGuide.number} 腳`, `Module pin ${componentGuide.number}`) : tr("零件端", "Module pin")}</small></div>
+            <small>{componentGuide ? floating ? tr(`第 ${componentGuide.number} 腳`, `Pin ${componentGuide.number}`) : tr(`零件端第 ${componentGuide.number} 腳`, `Module pin ${componentGuide.number}`) : tr("零件端", "Module pin")}</small></div>
           <span className="guide-pin-link" aria-hidden="true">{step.connectionKind === "divider" ? "⇢" : "→"}</span>
-          <div className="guide-endpoint"><span>Raspberry Pi 5 · {tr("實體腳位", "Physical pin")}</span>
+          <div className="guide-endpoint"><span title={tr("Raspberry Pi 5 · 實體腳位", "Raspberry Pi 5 · Physical pin")}>{floating ? "Pi 5" : <>Raspberry Pi 5 · {tr("實體腳位", "Physical pin")}</>}</span>
             <strong>{piGuide ? `Pin ${piGuide.physical}` : boardPhysical}</strong>
             <small>{piGuide ? `${piGuide.signal} · ${piGuide.rowLabel}` : boardSignals.join(" · ")}</small></div>
         </div>

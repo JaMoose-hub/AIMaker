@@ -12,6 +12,7 @@ import { WiringGuidePanel } from "./components/WiringGuidePanel";
 import { RuntimeToolbar } from "./components/RuntimeToolbar";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import { DeviceConnectionGroups } from "./components/DeviceConnectionGroups";
+import { HeaderPanelProvider } from "./lib/headerPanels";
 import { StatusBar } from "./components/StatusBar";
 import { VideoView, type LegendInfo } from "./components/VideoView";
 import {
@@ -47,7 +48,7 @@ import { DesignStudio } from "./components/DesignStudio";
 import { BlueprintPage } from "./components/BlueprintPage";
 import { UnifiedAssistant, DemoWorkspace } from "./components/UnifiedAssistant";
 import { AssistantWorkspace } from "./components/AssistantWorkspace";
-import { useAssistant } from "./lib/assistant";
+import { useAssistant, type AssistantMessage, type AssistantWiringFlowResult } from "./lib/assistant";
 import { MakerModelMenu } from "./components/MakerModelMenu";
 import { useMakerAI } from "./lib/useMakerAI";
 import { useDebugSession } from "./lib/debugSessions";
@@ -61,18 +62,27 @@ import { DiagramInspectionView } from "./components/DiagramInspectionView";
 import { GpioPhotoWorkspace } from "./components/GpioPhotoWorkspace";
 import { GpioCaptureAction } from "./components/GpioCaptureAction";
 import { useGpioPhotoCapture } from "./lib/useGpioPhotoCapture";
-import { photoGuideWire, photoRecordCurrent, type GpioPhotoRecord, type GpioView } from "./lib/gpioPhotoWorkspace";
+import { photoGuidanceTarget, photoRecordMismatch, type GpioPhotoRecord, type GpioView } from "./lib/gpioPhotoWorkspace";
 import type { MobileCapture, MobileContext, MobileSession } from "./lib/mobile";
 import { useLiveCamera } from "./lib/useLiveCamera";
 import { createDiagramInspection, inspectDiagramInMaker, type DiagramInspection } from "./lib/debugEvidence";
-import { confirmConcept, currentWire, enterDebug, reviewProjectWire, type MakerStage, type ProjectGuideState } from "./lib/maker";
+import { confirmConcept, currentWire, enterDebug, makerRequest, reviewProjectWire, wireSignature, type MakerStage, type ProjectGuideState } from "./lib/maker";
+import type { DebugSession } from "./lib/debugSessions";
 import { prepareProjectWiringEdit } from "./lib/wiringEdit";
+import { componentTestHelpInvitation, componentTestHelpRequest, currentTestHelpInvitation, testHelpSourceIdentity, type ComponentTestHelpEvidence, type TestHelpInvitation } from "./lib/componentTestHelp";
+import { componentTestKey } from "./lib/componentTests";
+import { componentTestStore } from "./lib/componentTestStore";
+import type { DebugContext } from "./lib/debug";
+import type { WiringReviewAction } from "./lib/wiringReview";
+import { confirmReviewedWire, unconfirmReviewedWire, invalidateReviewedComponent, contextWithReviewGuide } from "./lib/wiringReviewGuide";
+import { guideFromWiringReceipt } from './lib/wiringReceipt';
 import { useMaker, useMakerText } from "./lib/useMaker";
 import "./maker.css";
 
 const REST_RETRY_MS = 3000;
 const FULLSCREEN_REQUEST_TIMEOUT_MS = 1000;
 const GUIDE_VISIBILITY_STORAGE_KEY = "boardvision.wiring-guide-visible.v1";
+const NO_TEST_HELP_STORE = { subscribe: (_listener: () => void) => () => {}, getSnapshot: () => null };
 
 function initialGuideVisibility(): boolean {
   if (typeof window === "undefined") return false;
@@ -84,7 +94,7 @@ function initialGuideVisibility(): boolean {
 }
 
 export default function App() {
-  const { t, tx, setLocale, applyDefaultLocale } = useI18n();
+  const { t, tx, setLocale, applyDefaultLocale, locale } = useI18n();
   const { state: maker, setState: setMaker, saved: makerSaved } = useMaker();
   const makerAI = useMakerAI(maker, setMaker);
   const tr = useMakerText();
@@ -107,6 +117,12 @@ export default function App() {
   const guidePinId = guideTarget?.boardPinId ?? null;
   const [guideVisible, setGuideVisible] = useState(initialGuideVisibility);
   const guideToggleRef = useRef<HTMLButtonElement>(null);
+  const guideToggleFocusPending = useRef(false);
+  useEffect(() => {
+    if (!guideToggleFocusPending.current) return;
+    guideToggleRef.current?.focus({ preventScroll: true });
+    guideToggleFocusPending.current = false;
+  }, [guideVisible]);
   const [calibrateOpen, setCalibrateOpen] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [diagramCaptureOverride, setDiagramCaptureOverride] = useState<string | null>(null);
@@ -133,6 +149,54 @@ export default function App() {
   const assistantIntent = maker.debug?.intent ?? (makerStage === "deploy" ? "debug" : "wiring");
   const aiDebug = useDebugSession(maker.design?.id ?? null, makerEnabled && Boolean(maker.design));
   const assistant = useAssistant(maker, setMaker, aiDebug.conversation, aiDebug.record, makerAI.aiOptions.selectedModel?.id);
+  const wiringFlowFlight = useRef(false);
+  const [testHelpOffer, setTestHelpOffer] = useState<{ conversationId: string; invitation: TestHelpInvitation; sourceIdentity: string; code: string } | null>(null);
+  const [testHelpMessageTarget, setTestHelpMessageTarget] = useState<{ invitationId: string; element: HTMLDivElement } | null>(null);
+  const [testHelpActionId, setTestHelpActionId] = useState<string | null>(null);
+  // Share the existing test store only while an invitation is pending; no second polling pipeline.
+  const helpTestStore = testHelpOffer && maker.design?.id === testHelpOffer.invitation.projectId
+    ? componentTestStore(maker.design.id) : NO_TEST_HELP_STORE;
+  const helpTestSnapshot = useSyncExternalStore(helpTestStore.subscribe, helpTestStore.getSnapshot, helpTestStore.getSnapshot);
+  const testHelpScope = useRef({ maker, conversationId: assistant.mobileContext.conversation_id, epoch: assistant.project?.context_epoch ?? 0 });
+  testHelpScope.current = { maker, conversationId: assistant.mobileContext.conversation_id, epoch: assistant.project?.context_epoch ?? 0 };
+  const sharedWiringPrompt = [...(assistant.project?.messages ?? [])].reverse().find(message => message.role === 'assistant'
+    && message.wiring_flow?.current && !message.archived && message.epoch === assistant.project?.context_epoch);
+  // A phone may have started this same flow. Restore its trusted server link without starting another check.
+  useEffect(() => {
+    const sid = sharedWiringPrompt?.session_id, flow = sharedWiringPrompt?.wiring_flow;
+    if (!sid || !flow || assistant.demoOpen || aiDebug.pending || aiDebug.record?.id === sid || !maker.design) return;
+    const snapshot = testHelpScope.current, controller = new AbortController();
+    void makerRequest<DebugSession>(`debug/sessions/${encodeURIComponent(sid)}`, undefined, controller.signal).then(next => {
+      const latest = testHelpScope.current;
+      if (!controller.signal.aborted && latest.conversationId === snapshot.conversationId && latest.epoch === snapshot.epoch
+        && latest.maker.design === snapshot.maker.design && latest.maker.code === snapshot.maker.code
+        && latest.maker.guide === snapshot.maker.guide && next.wiring_review?.id === flow.review_id
+        && next.wiring_review.round === flow.round) aiDebug.adoptReview(next);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [sharedWiringPrompt?.session_id, sharedWiringPrompt?.wiring_flow?.flow_id, assistant.project?.context_epoch,
+    assistant.demoOpen, aiDebug.record?.id, aiDebug.pending, maker.design, maker.code, maker.guide]);
+  useEffect(() => {
+    if (assistant.wiringReceiptPending && !assistant.pending && !aiDebug.pending) void recoverWiringDecision(false);
+  }, [assistant.wiringReceiptRequestId, assistant.wiringReceiptPending, assistant.pending, aiDebug.pending]);
+  const sharedTestHelp = assistant.project?.messages.find(message => message.id === testHelpOffer?.invitation.messageId)?.test_help_offer;
+  const testHelpOfferCurrent = Boolean(testHelpOffer && testHelpOffer.conversationId === assistant.mobileContext.conversation_id
+    && sharedTestHelp?.offer_id === testHelpOffer.invitation.id
+    && (sharedTestHelp.state === "pending" || testHelpActionId === testHelpOffer.invitation.id && ["started", "dismissed"].includes(sharedTestHelp.state))
+    && currentTestHelpInvitation(testHelpOffer.invitation, maker.design, maker.guide, assistant.project?.context_epoch ?? 0)
+    && testHelpOffer.code === maker.code && maker.design && helpTestSnapshot && testHelpOffer.sourceIdentity
+      === testHelpSourceIdentity(helpTestSnapshot, maker.design, maker.guide, testHelpOffer.invitation.componentId));
+  const testHelpInvitation = testHelpOfferCurrent && !helpTestSnapshot?.pending && !assistant.demoOpen
+    && (sharedTestHelp?.can_act || sharedTestHelp?.can_dismiss || testHelpOffer?.invitation.mode === "setup" || testHelpActionId === testHelpOffer?.invitation.id)
+    && makerStage !== "design" && !displayModeActive ? testHelpOffer && {
+      ...testHelpOffer.invitation, canAct: sharedTestHelp?.can_act, canDismiss: sharedTestHelp?.can_dismiss,
+    } : undefined;
+  useEffect(() => {
+    if (testHelpOffer && !testHelpOfferCurrent && !helpTestSnapshot?.pending) {
+      setTestHelpOffer(previous => previous?.invitation.id === testHelpOffer.invitation.id ? null : previous);
+      setTestHelpActionId(previous => previous === testHelpOffer.invitation.id ? null : previous);
+    }
+  }, [testHelpOffer, testHelpOfferCurrent, helpTestSnapshot?.pending]);
   const [aiOpen, setAiOpen] = useState(true);
   const [aiOpenRequest, setAiOpenRequest] = useState(0);
   const [mobileTriggerHost, setMobileTriggerHost] = useState<HTMLDivElement | null>(null);
@@ -172,7 +236,7 @@ export default function App() {
   const phoneReady = config?.camera_source === 'phone' && liveCamera.status?.kind === 'phone' && liveCamera.status.ready && !liveCamera.status.error;
   const project = makerEnabled && !maker.standalone ? maker.design : null;
   const activeGpioPhoto = gpioPhotos.find(p => `${p.source}:${p.capture.capture_id}` === selectedPhoto) ?? null;
-  const historicalPhoto = !!activeGpioPhoto && !photoRecordCurrent(activeGpioPhoto, project, maker.guide.run ?? 0);
+  const photoMismatch = activeGpioPhoto ? photoRecordMismatch(activeGpioPhoto, project, maker.guide.run ?? 0) : null;
   const cameraAvailable = !calibrateOpen && !debugCaptureSession && !aiDebug.record?.model_busy && !eyeActive && !liveCamera.pending && !cameraPickerOpen;
   const canShowPhoto = useRef(false);
   const keepGpioPhoto = useCallback((record: GpioPhotoRecord, show: boolean) => {
@@ -226,9 +290,115 @@ export default function App() {
     setGuideVisible(true);
     setMaker(s => ({ ...enterDebug(s, componentId, runId, symptom), stage: s.stage === "deploy" ? "deploy" : "guide" }));
   };
-  const inspectWiring = (cid:string, pin?:string) => {
+  async function askComponentTestAI(componentId?: string, runId?: string, symptom?: string, evidence?: ComponentTestHelpEvidence) {
+    // A failed preflight may have neither a run ID nor a classified reason.
+    // An explicit help request still replaces the previous issue's binding.
+    const helpComponent = evidence?.componentId ?? componentId;
+    const helpRun = evidence ? evidence.run?.id : runId;
+    const helpSymptom = evidence ? evidence.reason ?? symptom ?? "test_failed" : symptom;
+    openDebug(helpComponent, helpRun, helpSymptom);
+    if (!evidence || !maker.design) return true;
+    if (assistant.busy) {
+      assistant.reportError(tr("對話正在處理其他訊息，請稍後再按「請 AI 幫忙」。", "The conversation is handling another message. Retry Ask AI for help shortly."));
+      return false;
+    }
+    try {
+      const snapshot = enterDebug(maker, helpComponent, helpRun, helpSymptom);
+      const request = componentTestHelpRequest(maker.design, evidence, tr("zh-TW", "en"));
+      const sourceStore = componentTestStore(maker.design.id);
+      const sourceIdentity = testHelpSourceIdentity(sourceStore.getSnapshot(), maker.design, snapshot.guide, evidence.componentId);
+      const conversationId = assistant.mobileContext.conversation_id;
+      const invitation = componentTestHelpInvitation(maker.design, evidence, tr("zh-TW", "en"), {
+        id: crypto.randomUUID(), guideKey: componentTestKey(maker.design, snapshot.guide, evidence.componentId),
+        guideRun: snapshot.guide.run ?? 0, contextEpoch: assistant.project?.context_epoch ?? 0,
+      });
+      const accepted = await assistant.offerTestHelp(snapshot, invitation, request.context);
+      const latest = testHelpScope.current;
+      const latestDesign = latest.maker.design;
+      if (accepted && latestDesign && latest.conversationId === conversationId && latestDesign === snapshot.design
+        && latest.maker.code === snapshot.code && currentTestHelpInvitation(invitation, latest.maker.design, latest.maker.guide, latest.epoch)
+        && !sourceStore.getSnapshot().pending
+        && sourceIdentity === testHelpSourceIdentity(sourceStore.getSnapshot(), latestDesign, latest.maker.guide, evidence.componentId)) {
+        setTestHelpOffer({ conversationId, invitation: { ...invitation, messageId: accepted }, sourceIdentity, code: snapshot.code });
+      }
+      return Boolean(accepted);
+    } catch (cause) { assistant.reportError(cause); return false; }
+  }
+  async function handleSharedTestHelp(invitation: TestHelpInvitation, op: "start" | "later") {
+    if (!testHelpOfferCurrent || testHelpOffer?.invitation.id !== invitation.id || testHelpActionId) return false;
+    setTestHelpActionId(invitation.id);
+    try {
+      const result = await assistant.testHelpAction(invitation, op);
+      const latest = testHelpScope.current;
+      if (!result || !currentTestHelpInvitation(invitation, latest.maker.design, latest.maker.guide, latest.epoch)
+        || latest.maker.code !== testHelpOffer.code || latest.conversationId !== testHelpOffer.conversationId)
+        throw new Error(tr("目前邀請已更新，請查看最新提醒後再試。", "The invitation changed. Review the latest reminder and retry."));
+      if (op === "later") return true;
+      const next = result.debug_session;
+      if (!next || next.wiring_review?.component_id !== invitation.componentId || !aiDebug.adoptReview(next))
+        throw new Error(tr("尚未取得目前的照片核對，請再試一次。", "The current photo review is not ready. Retry."));
+      return next;
+    } catch (cause) {
+      setTestHelpActionId(previous => previous === invitation.id ? null : previous);
+      throw cause;
+    }
+  }
+  async function handleWiringFlowAction(message: AssistantMessage, action: WiringReviewAction): Promise<boolean> {
+    const flow = message.wiring_flow;
+    const original = maker;
+    const session = aiDebug.record;
+    if (wiringFlowFlight.current || assistant.wiringReceiptPending || aiDebug.pending || assistant.busy || !original.design || !session
+      || session.model_busy || !flow?.current || !flow.can_act || session.wiring_review?.id !== flow.review_id
+      || session.wiring_review.revision !== flow.revision || session.wiring_review.round !== flow.round) return false;
+    const unchanged = () => testHelpScope.current.maker.design === original.design
+      && testHelpScope.current.maker.code === original.code && testHelpScope.current.maker.guide === original.guide;
+    wiringFlowFlight.current = true;
+    try {
+      let guide = original.guide;
+      let context: DebugContext = {
+        project: original.design, code: original.code, locale, entry: original.debug ?? {},
+        guide_confirmations: guide.confirmed, guide_run: guide.run ?? 0,
+        test_keys: Object.fromEntries(original.design.component_ids.map(cid => [cid, componentTestKey(original.design!, guide, cid)])),
+        wiring_target: session.wiring_target ?? null,
+      };
+      const retracting = action.op === 'review' && action.decision !== 'confirmed'
+        && Boolean(action.wire_id && guide.confirmed[action.wire_id]);
+      if (action.op === 'changed' || retracting || (action.op === 'review' && action.decision === 'needs_change')) {
+        const prepared = await aiDebug.action('prepare_wiring', context, undefined, session.response_mode, undefined, session.id);
+        if (!prepared?.wiring_edit_ready || !unchanged()) throw new Error(tr('目前尚不能調整接線，請先確認 Pi 工作已停止。', 'Check that Pi work has stopped before changing wiring.'));
+      }
+      if (action.op === 'changed') guide = invalidateReviewedComponent(original.design, guide, action.component_id);
+      else if (action.op === 'review' && action.wire_id) guide = action.decision === 'confirmed'
+        ? confirmReviewedWire(original.design, guide, action.wire_id) : unconfirmReviewedWire(original.design, guide, action.wire_id);
+      context = contextWithReviewGuide(context, original.design, guide);
+      if (!unchanged()) return false;
+      const result = await assistant.wiringFlowAction(message, action, context);
+      if (!result || !unchanged()) return false;
+      if (result.outbox) return applyWiringDecision(result);
+      if (!aiDebug.adoptReview(result.debug_session)) throw new Error(tr('照片核對已更新，請查看最新聊天訊息。', 'The photo review changed. Check the latest chat message.'));
+      return true;
+    } catch (cause) { if (unchanged()) assistant.reportError(cause); return false; }
+    finally { wiringFlowFlight.current = false; }
+  }
+  function applyWiringDecision(result: AssistantWiringFlowResult): boolean {
+    const latest = testHelpScope.current;
+    if (!result.outbox) return false;
+    const guide = guideFromWiringReceipt(latest.maker, result.outbox, result.guide_receipt, result.debug_session, latest.conversationId, latest.epoch);
+    if (!guide || !aiDebug.adoptReview(result.debug_session)) return false;
+    setMaker(current => {
+      const recovered = guideFromWiringReceipt(current, result.outbox!, result.guide_receipt, result.debug_session, latest.conversationId, latest.epoch);
+      return recovered ? { ...current, guide: recovered } : current;
+    });
+    assistant.acknowledgeWiringFlow(result.outbox.request_id);
+    return true;
+  }
+  async function recoverWiringDecision(retryMissing = true): Promise<boolean> {
+    const result = await assistant.recoverWiringFlow(retryMissing);
+    return Boolean(result && applyWiringDecision(result));
+  }
+  const inspectWiring = (cid:string, pin?:string, revealGuide = true) => {
     setEvidenceDiagram(null);
-    setGuideVisible(true);
+    if (revealGuide) setGuideVisible(true);
     setMaker(s => s.design ? ({...s,stage:"guide",guide:reviewProjectWire(s.design,s.guide,cid,pin,s.debug?.panelOpen?"debug":"guide"),
       debug:{...s.debug,panelOpen:false,wireId:s.design.wiring.find(w=>w.componentId===cid&&(!pin||w.componentPin===pin))?.id}}) : s);
   };
@@ -279,9 +449,10 @@ export default function App() {
   );
 
   const handleGuideVisibilityChange = useCallback((visible: boolean) => {
-    if (!visible && document.getElementById('maker-floating-guide')?.contains(document.activeElement)) {
-      guideToggleRef.current?.focus({ preventScroll: true });
-    }
+    // The control moves between the panel header and its collapsed entry.
+    // Restore focus after the destination control has mounted.
+    guideToggleFocusPending.current = document.activeElement === guideToggleRef.current
+      || (!visible && Boolean(document.getElementById('maker-floating-guide')?.contains(document.activeElement)));
     setGuideVisible(visible);
     try {
       window.localStorage.setItem(GUIDE_VISIBILITY_STORAGE_KEY, String(visible));
@@ -636,9 +807,17 @@ export default function App() {
     onCase={caseId=>setMaker(s=>({...s,debug:{...s.debug,caseId}}))}
     onCode={(code,expected)=>setMaker(s=>s.code===expected?({...s,code}):s)} onWiring={inspectWiring} onDeploy={()=>navigateMaker("deploy")}
     onSelect={selectedComponentId=>setMaker(s=>({...s,debug:{...s.debug,selectedComponentId}}))}
-    assistant={({context,codeHash,repairCaseId,repairAppliedHash,repairCandidateReady,onRetest,onTrial,onReviewRepair,onManual,operationCard,headerControls})=><AiDebugPanel actionsOnly state={maker} context={context} currentCodeHash={codeHash}
+    assistant={({context,codeHash,repairCaseId,repairAppliedHash,repairCandidateReady,onRetest,onTrial,onReviewRepair,onManual,operationCard,headerControls})=><AiDebugPanel actionsOnly chatGuidance state={maker} context={context} currentCodeHash={codeHash}
       variant={assistantIntent} wiringTarget={context.wiring_target} onOpenDebug={()=>openDebug()}
       operationCard={operationCard} headerControls={headerControls}
+      testHelpInvitation={testHelpInvitation} onTestHelpAction={handleSharedTestHelp} onTestHelpHandled={id => {
+        setTestHelpOffer(current => current?.invitation.id === id ? null : current);
+        setTestHelpActionId(current => current === id ? null : current);
+      }}
+      testHelpActionTarget={testHelpMessageTarget?.invitationId === testHelpInvitation?.id ? testHelpMessageTarget?.element : null}
+      onReviewGuideChange={(guide, expected) => setMaker(current =>
+        current.design === expected.design && current.code === expected.code && current.guide === expected.guide
+          ? { ...current, guide } : current)}
       repairCaseId={repairCaseId} repairAppliedHash={repairAppliedHash} repairCandidateReady={repairCandidateReady} session={aiDebug}
       webcamReady={debugWebcamReady} cameraStatusInView={makerStage === 'guide' && !assistant.demoOpen}
       eyeActive={eyeActive} cameraSource={config?.camera_source ?? null} cameraRuntimeRevision={config?.runtime_revision ?? null} onReturnWebcam={glasses.stop}
@@ -681,17 +860,41 @@ export default function App() {
 
   const floatingGuide = makerEnabled && !maker.standalone && !displayModeActive && Boolean(project || emptyProjectGuide);
   const guideVisibilityControl = <button ref={guideToggleRef} type="button"
-    className={`guide-visibility-toggle${guideVisible ? " active" : ""}`}
+    className={`guide-visibility-toggle${guideVisible ? " active" : ""}${floatingGuide && guideVisible ? " guide-icon-action" : ""}`}
     aria-expanded={guideVisible} aria-controls={floatingGuide ? 'maker-floating-guide' : undefined}
+    aria-label={guideVisible ? tr("收合接線引導", "Hide wiring guide") : tr("展開接線引導", "Show wiring guide")}
+    title={guideVisible ? tr("收合接線引導", "Hide wiring guide") : tr("展開接線引導", "Show wiring guide")}
     disabled={!config || !profile} onClick={() => handleGuideVisibilityChange(!guideVisible)}>
     <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h3M10 5h6M10 10h6M10 15h6" />
+      <path d={floatingGuide && guideVisible ? "m5 7.5 5 5 5-5" : "M7 3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h3M10 5h6M10 10h6M10 15h6"} />
     </svg>
-    {project || emptyProjectGuide ? guideVisible ? tr("收合接線引導", "Hide wiring guide") : tr("展開接線引導", "Show wiring guide") : t(guideVisible ? "photoGuide.hide" : "photoGuide.show")}
-    {floatingGuide ? <span className="floating-guide-chevron" aria-hidden="true">{guideVisible ? '⌄' : '⌃'}</span> : null}
+    {floatingGuide && guideVisible ? null : project || emptyProjectGuide ? guideVisible ? tr("收合接線引導", "Hide wiring guide") : tr("展開接線引導", "Show wiring guide") : t(guideVisible ? "photoGuide.hide" : "photoGuide.show")}
+    {floatingGuide && !guideVisible ? <span className="floating-guide-chevron" aria-hidden="true">⌃</span> : null}
   </button>;
 
+  // One shared selector; each view hosts it in its existing header/dock.
+  const imageViewControls = makerStage === "guide" && makerEnabled && !displayModeActive ? <ImageViewControls
+    view={photoMainActive ? 'photo' : showWiringDiagram ? 'diagram' : 'live'}
+    disabled={calibrateOpen || liveCamera.pending || photoOperationBusy}
+    photoDisabled={!canChangeImage}
+    diagramAvailable={Boolean(project && (projectWire || diagramInspection))}
+    onChange={view => {
+      if (view === 'diagram') {
+        setImageView(lastLiveView.current);
+        if (projectWire) setEvidenceDiagram(null);
+        setDiagramCaptureOverride(diagramCaptureKey);
+        setMaker(s => ({ ...s, guide: { ...s.guide, mode: '2d' } }));
+      } else changeImageView(view === 'photo' ? 'photo' : lastLiveView.current);
+    }} /> : null;
+
+  const completedStages = {
+    design: Boolean(project),
+    guide: Boolean(project?.wiring.length && project.wiring.every(wire => maker.guide.confirmed[wire.id]?.signature === wireSignature(wire))),
+    deploy: false,
+  };
+
   return (
+    <HeaderPanelProvider>
     <div className={`app tinkro-theme${makerEnabled ? ` pi-deploy-layout maker-layout maker-stage-${makerStage}` : ""}${fullWidthWiring ? " maker-wiring-full-width" : ""}${displayModeActive ? ` display-mode-active ${displayMode}` : ""}`}>
       <main className="main">
         {makerEnabled ? <WorkspaceHeader brand={brand}
@@ -699,8 +902,11 @@ export default function App() {
             {tr("儲存失敗，請勿關閉頁面", "Storage failed; keep this page open")}
           </small>}
           navigation={<nav className="maker-nav" aria-label={tr("作品工作流程", "Maker workflow")}>
-              {(["design", "guide", "deploy"] as const).map((stage, i) => <button key={stage} className={makerStage === stage ? "active" : ""}
-                aria-current={makerStage === stage ? "step" : undefined} onClick={() => navigateMaker(stage)}><span>{String(i + 1).padStart(2, "0")}</span>{stage === "design" ? tr("設計與藍圖", "Design & blueprint") : stage === "guide" ? tr("接線引導＋AI 除錯", "Wiring + AI debug") : tr("部署與執行", "Deploy & run")}</button>)}
+              {(["design", "guide", "deploy"] as const).map(stage => <button key={stage} type="button" className={makerStage === stage ? "active" : ""}
+                aria-current={makerStage === stage ? "step" : undefined} onClick={() => navigateMaker(stage)}>
+                {makerStage !== stage && completedStages[stage] ? <svg className="maker-stage-complete" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m4 10 4 4 8-8" /></svg> : null}
+                {stage === "design" ? tr("設計與藍圖", "Design & blueprint") : stage === "guide" ? tr("接線與除錯", "Wiring & debug") : tr("部署與執行", "Deploy & run")}
+              </button>)}
           </nav>}>
           {displayModeActive ? <MakerModelMenu state={maker} setState={setMaker} assistant={makerAI} /> : null}
           {!displayModeActive ? <DeviceConnectionGroups
@@ -717,7 +923,9 @@ export default function App() {
         </header>}
         <AssistantWorkspace active={makerEnabled && !displayModeActive} aiOpen={aiOpen} onAiOpen={setAiOpen}
           openRequest={aiOpenRequest} latestReply={assistant.record?.messages.filter(message => message.role === "assistant").at(-1)?.id ?? ""}
-          assistant={<UnifiedAssistant state={maker} setState={setMaker} controller={assistant} legacy={makerAI} debugTools={assistantPanel} onNewProject={startNewProject}
+          assistant={<UnifiedAssistant state={maker} setState={setMaker} controller={assistant} legacy={makerAI} debugTools={assistantPanel} onNewProject={startNewProject} testHelpFocus={testHelpInvitation?.id} testHelpText={testHelpInvitation?.text}
+            wiringReview={aiDebug.record?.wiring_review} onWiringFlowAction={handleWiringFlowAction} onWiringReceiptRetry={recoverWiringDecision}
+            testHelpMessageId={testHelpInvitation?.messageId} onTestHelpActionTargetChange={setTestHelpMessageTarget}
             mobileWorkspace={{ trigger: !displayModeActive ? mobileTriggerHost : null,
               controls: makerStage === "guide" && !assistant.demoOpen && !displayModeActive ? mobileControlsHost : null,
               preview: null, showing: phoneMainActive,
@@ -746,29 +954,20 @@ export default function App() {
           stacked={makerEnabled && !maker.standalone && !displayModeActive}
           resizable={makerEnabled && Boolean(project) && guideVisible && !displayModeActive && !floatingGuide}>
           <VideoView
+            viewNavigation={imageViewControls}
             viewControl={videoControls => <>{!floatingGuide ? <div className="assistant-guide-tools">{guideVisibilityControl}</div> : null}
-              {makerStage === "guide" && makerEnabled && !displayModeActive ? <ImageViewControls
-                view={photoMainActive ? 'photo' : showWiringDiagram ? 'diagram' : 'live'}
-                disabled={calibrateOpen || liveCamera.pending || photoOperationBusy}
-                photoDisabled={!canChangeImage}
-                diagramAvailable={Boolean(project && (projectWire || diagramInspection))}
-                onChange={view => {
-                  if (view === 'diagram') {
-                    setImageView(lastLiveView.current);
-                    if (projectWire) setEvidenceDiagram(null);
-                    setDiagramCaptureOverride(diagramCaptureKey);
-                    setMaker(s => ({ ...s, guide: { ...s.guide, mode: '2d' } }));
-                  } else changeImageView(view === 'photo' ? 'photo' : lastLiveView.current);
-                }} /> : null}
               {makerEnabled ? cameraSettingsHost ? createPortal(renderCameraTools(videoControls), cameraSettingsHost) : null : renderCameraTools(videoControls)}
               </>}
             alternateView={photoMainActive ? <GpioPhotoWorkspace key={selectedPhoto || 'empty'} record={activeGpioPhoto}
-              historical={historicalPhoto} wire={activeGpioPhoto ? photoGuideWire(activeGpioPhoto.capture, projectWire) : undefined}
+              viewControls={imageViewControls}
+              historical={!!photoMismatch} historicalReason={photoMismatch} target={photoGuidanceTarget(project, maker.guide)}
               records={gpioPhotos} onRecord={record => setSelectedPhoto(`${record.source}:${record.capture.capture_id}`)}
               captureAction={gpioCaptureAction} busy={photoOperationBusy}
+              showReturn={!makerEnabled || displayModeActive}
               onReturn={() => changeImageView(lastLiveView.current)} /> : project && showWiringDiagram ? diagramInspection ? <DiagramInspectionView key={diagramInspection.requestId}
+              viewControls={imageViewControls}
               inspection={diagramInspection} currentDesign={project} capturePending={Boolean(debugCaptureSession)} onReturn={() => setEvidenceDiagram(null)} />
-              : projectWire ? <StepDiagramView design={project} wire={projectWire} capturePending={Boolean(debugCaptureSession)} /> : null : null}
+              : projectWire ? <StepDiagramView viewControls={imageViewControls} design={project} wire={projectWire} capturePending={Boolean(debugCaptureSession)} /> : null : null}
             displayMode={displayMode}
             glassesStatus={glasses.status}
             onGlassesDisplayFps={setGlassesDisplayFps}
@@ -800,7 +999,7 @@ export default function App() {
             debugEvidence={debugCaptureSession?.evidence?.at(-1)}
             debugFramingFeedback={debugCaptureSession?.framing_feedback}
           />
-          {floatingGuide ? <div className="floating-guide-dock">{guideVisibilityControl}</div> : null}
+          {floatingGuide && !guideVisible ? <div className="floating-guide-dock">{guideVisibilityControl}</div> : null}
           {project && makerStage === "guide" ? <WiringWorkspace guideOnly design={project} guide={maker.guide} visible={guideVisible && !displayModeActive}
             panelId={floatingGuide ? 'maker-floating-guide' : undefined}
             assistantOpen={maker.debug?.panelOpen ?? false}
@@ -808,18 +1007,20 @@ export default function App() {
             onClose={()=>handleGuideVisibilityChange(false)} assistant={null} busy={Boolean(aiDebug.record?.model_busy)}
             replyId={(aiDebug.conversation?.messages ?? aiDebug.record?.messages)?.filter(message=>message.role==="assistant").at(-1)?.id}>
             <ProjectGuidePanel design={project} session={maker.guide} visible embedded floating={floatingGuide} disabled={backendDown}
+            visibilityControl={floatingGuide && guideVisible ? guideVisibilityControl : undefined}
+            onInspectComponent={photoMainActive ? cid => inspectWiring(cid) : undefined}
             pinsById={pinsById}
             onChange={guide => setMaker(s => ({ ...s, guide }))}
             onBeforeEdit={prepareWiringEdit}
             onRestart={restartWiringConversation}
-            onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={openDebug} onDeploy={() => navigateMaker("deploy")} />
+            onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={askComponentTestAI} onDeploy={() => navigateMaker("deploy")} />
           </WiringWorkspace> : null}
           {emptyProjectGuide ? <section id={floatingGuide ? 'maker-floating-guide' : undefined} className="photo-guide component-guide compact-guide maker-guide-empty"
             hidden={!guideVisible} aria-labelledby="empty-project-guide-title">
             <header className="guide-panel-header"><div>
               <span className="guide-panel-eyebrow">{tr("02 · 接線引導", "02 · Wiring guide")}</span>
               <h2 id="empty-project-guide-title">{tr("尚未確認作品", "No confirmed project yet")}</h2>
-            </div></header>
+            </div>{floatingGuide && guideVisible ? guideVisibilityControl : null}</header>
             <div className="guide-panel-body">
               <p>{tr("請先到 01 建立並確認作品，再依照作品接線。相機仍可使用。", "Create and confirm a project in 01 before following its wiring guide. The camera is still available.")}</p>
               <button type="button" className="guide-primary-action" onClick={() => navigateMaker("design")}>
@@ -885,5 +1086,6 @@ export default function App() {
       </aside> : null}
       <CameraPicker open={cameraPickerOpen} onClose={handleCloseCameraPicker} />
     </div>
+    </HeaderPanelProvider>
   );
 }

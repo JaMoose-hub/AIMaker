@@ -528,7 +528,16 @@ class MobileService:
             capture = self.capture(body["capture_id"], sid) if body.get("capture_id") else None
             if capture and capture["context_id"] != body["context_id"]:
                 raise HTTPException(409, "mobile_capture_context_changed")
-            payload = {"request_id": body["request_id"], "text": body.get("text", ""),
+            text = body.get("text", "")
+            if not text.strip():
+                if not ids and not capture:
+                    raise HTTPException(422, "mobile_message_requires_text_or_media")
+                # Phone chat accepts photos without typing. Normalize on the
+                # server so saved failed outboxes can retry unchanged.
+                text = ("Please analyze the attached images or video and describe the visible components and wiring."
+                        if context["design"]["locale"] == "en" else
+                        "請分析附上的照片或影片，說明看見的零件與目前接線狀況。")
+            payload = {"request_id": body["request_id"], "text": text,
                        "stage": context["stage"], "target": context["target"], "design": context["design"],
                        "context": {**context["context"], "mobile_context_id": context["context_id"]},
                        "round": context["round"], "asset_ids": ids, "inherit_media": body.get("inherit_media", True), "source": "mobile"}
@@ -537,6 +546,395 @@ class MobileService:
                     payload[key] = body[key]
             cid = session["conversation_id"]
         return self.state.assistant.send(cid, SendRequest.model_validate(payload))
+
+    def test_help_workspace(self, cid, offer, sid=None, context_id=None):
+        """Frozen published facts only; no client-selected runtime session or camera frame."""
+        with self.lock:
+            latest = deepcopy(self.latest)
+            if not latest or latest["conversation_id"] != cid:
+                return None
+            if sid is not None:
+                phone = self.require(sid)
+                if (phone["conversation_id"] != cid or phone["context_id"] != latest["context_id"]
+                        or context_id != phone["context_id"]):
+                    return None
+            project = latest.get("design", {}).get("current") or {}
+            context = latest.get("context", {}).get("debug_context", {})
+            code_hash = hashlib.sha256(context.get("code", "").encode()).hexdigest()
+            if (latest.get("context_epoch", 0) != offer["context_epoch"] or project.get("id") != offer["project_id"]
+                    or project.get("revision") != offer["project_revision"] or offer["component_id"] not in project.get("component_ids", [])
+                    or latest.get("round", 0) != offer["guide_run"]
+                    or context.get("test_keys", {}).get(offer["component_id"]) != offer["guide_key"]
+                    or not offer.get("code_hash") or offer["code_hash"] != code_hash):
+                return None
+            return latest
+
+    def test_help_start_available(self):
+        owner = getattr(self.state, "debug_sessions", None)
+        if owner is None or self.state.config.camera.source not in {"device", "phone"}:
+            return False
+        eye = getattr(self.state, "glasses_stream", None)
+        if eye and eye.snapshot().get("active"):
+            return False
+        if self.state.runtime_manager.snapshot().board_id != "raspberry-pi-5":
+            return False
+        with owner.lock:
+            for session in owner.sessions.values():
+                if owner.replaceable_photo_history(session):
+                    continue
+                if (session.get("status") not in {"complete", "stopped", "error"}
+                        and session.get("binding", {}).get("target_id") == self.state.component_tests.target
+                        and (session.get("purpose") != "wiring_review" or not self._review_collection_available(session))):
+                    return False
+        return True
+
+    def _test_help_session_matches(self, session, offer, workspace, *, require_review=True):
+        owner = self.state.debug_sessions
+        context = session.get("context") or {}
+        project = workspace["design"]["current"]
+        debug_context = workspace.get("context", {}).get("debug_context", {})
+        review = session.get("wiring_review")
+        return bool(session.get("purpose") == "wiring_review"
+            and session.get("status") != "error" and session.get("phase") != "backend_restarted"
+            and not owner.conversations.get(session.get("conversation_id"), {}).get("archived")
+            and self._review_collection_available(session)
+            and (not require_review or (review and review["component_id"] == offer["component_id"]
+                                       and review.get("status") not in {"stale", "error"}))
+            and not any(project.get(key) != context.get("project", {}).get(key)
+                        for key in ("id", "revision", "catalog_version", "profile_versions", "wiring"))
+            and debug_context.get("code") == context.get("code")
+            and workspace.get("round", 0) == context.get("guide_run", 0)
+            and debug_context.get("test_keys", {}) == context.get("test_keys", {})
+            and debug_context.get("guide_confirmations", {}) == context.get("guide_confirmations", {})
+            and session.get("binding", {}).get("target_id") == self.state.component_tests.target)
+
+    def test_help_reusable(self, cid, offer, workspace, record=None):
+        if not workspace:
+            return None
+        owner = getattr(self.state, "debug_sessions", None)
+        if owner is None:
+            return None
+        assistant = self.state.assistant
+        if record is None:
+            with assistant.lock:
+                record = deepcopy(assistant._load(cid))
+        epoch = record.get("context_epoch", 0)
+        linked = {item.get("session_id") for item in record.get("messages", [])
+                  if item.get("epoch", 0) == epoch and not item.get("archived")}
+        linked.update(item.get("debug_session_id") for item in record.get("jobs", []) if item.get("epoch", 0) == epoch)
+        linked.add(offer.get("debug_session_id"))
+        cleared = set(record.get("cleared_debug_sessions", []))
+        linked -= cleared
+        with owner.lock:
+            candidates = []
+            for session in owner.sessions.values():
+                # Only the current conversation's server links may reuse history.
+                if session["id"] in cleared or (session.get("conversation_id") != cid and session["id"] not in linked):
+                    continue
+                if not self._test_help_session_matches(session, offer, workspace):
+                    continue
+                candidates.append(session)
+            return deepcopy(max(candidates, key=lambda item: item["created_at"])) if candidates else None
+
+    def test_help_action(self, cid, body, *, sid=None, context_id=None):
+        """One explicit button action, shared by the desktop and its paired phone."""
+        from app.assistant import TestHelpAction
+        from app.designs import MODULES
+        action = TestHelpAction.model_validate(body)
+        assistant = self.state.assistant
+        owner = self.state.debug_sessions
+        with assistant.lock:
+            record = assistant._load(cid)
+            message = next((m for m in record["messages"] if m["id"] == action.message_id), None)
+            offer = message.get("test_help_offer") if message else None
+            if not offer or offer["offer_id"] != action.offer_id:
+                raise HTTPException(409, "test_help_stale")
+            with self.lock:
+                workspace = self.test_help_workspace(cid, offer, sid, context_id)
+                if not workspace:
+                    raise HTTPException(409, "test_help_context_changed")
+                public = assistant.test_help_projection(record, message)
+                if not public["can_dismiss"]:
+                    assistant._save(record)
+                    raise HTTPException(409, "test_help_stale")
+                if action.op == "later":
+                    offer.update(state="dismissed", handled_at=time.time())
+                    assistant._save(record)
+                    result = {"offer": assistant.test_help_projection(record, message)}
+                else:
+                    if not public["can_act"] or offer["mode"] != "wiring":
+                        raise HTTPException(409, "test_help_busy")
+                    with owner.lock:
+                        reusable = self.test_help_reusable(cid, offer, workspace, record)
+                        context = workspace["context"]["debug_context"]
+                        project = workspace["design"]["current"]
+                        wires = [wire for wire in project["wiring"] if wire["componentId"] == offer["component_id"]]
+                        current_context = dict(project=deepcopy(project), code=context["code"],
+                            test_keys=deepcopy(context["test_keys"]), guide_run=offer["guide_run"],
+                            guide_confirmations=deepcopy(context.get("guide_confirmations", {})),
+                            locale=workspace["design"].get("locale", "zh-TW"), entry=deepcopy(context.get("entry", {})),
+                            wiring_target=dict(component_id=offer["component_id"], wire_id=wires[0]["id"]))
+                        if not reusable:
+                            existing_ids = set(owner.sessions)
+                            locale = current_context["locale"]
+                            names = MODULES.get(offer["component_id"], {}).get("name", {})
+                            name = names.get(locale, offer["component_id"])
+                            action_text = f"Photograph {name} wiring for review." if locale == "en" else f"拍照檢查 {name} 接線。"
+                            created = owner.create(current_context, action_text, workspace["design"].get("model"),
+                                workspace["design"].get("effort"), request_id="test-help:" + offer["offer_id"],
+                                purpose="wiring_review", initial_action="collect")
+                            session = owner.sessions[created["id"]]
+                            if (not self.test_help_workspace(cid, offer, sid, context_id)
+                                    or offer.get("source_signature") != assistant._test_help_source(offer)):
+                                raise HTTPException(409, "test_help_stale")
+                            # Never stop or convert an existing functional-debug case implicitly.
+                            if not self._test_help_session_matches(session, offer, workspace, require_review=False):
+                                raise HTTPException(409, "test_help_busy")
+                            if created["id"] in existing_ids:
+                                # create can return any active case with the same binding;
+                                # it does not establish this conversation's authority to reuse it.
+                                reusable = self.test_help_reusable(cid, offer, workspace, record)
+                                if not reusable or reusable["id"] != created["id"]:
+                                    raise HTTPException(409, "test_help_busy")
+                            else:
+                                owner.action(created["id"], "wiring_review", "test-help-start:" + offer["offer_id"],
+                                             context=current_context, wiring_review=dict(op="start", component_id=offer["component_id"]))
+                                reusable = deepcopy(owner.sessions[created["id"]])
+                        # Pairing, workspace, test source and exact offer are checked again before adoption.
+                        if (not self.test_help_workspace(cid, offer, sid, context_id)
+                                or offer.get("source_signature") != assistant._test_help_source(offer)
+                                or record["context_epoch"] != offer["context_epoch"]):
+                            raise HTTPException(409, "test_help_stale")
+                        offer.update(state="started", handled_at=time.time(), debug_session_id=reusable["id"])
+                        message["session_id"] = reusable["id"]
+                        owner.guided_wiring_review.enable_dialogue(reusable["id"], cid,
+                            record["context_epoch"], offer["guide_run"])
+                        assistant._save(record)
+                        result = dict(offer=assistant.test_help_projection(record, message),
+                                      debug_session_id=reusable["id"], debug_session=owner.get(reusable["id"]),
+                                      conversation=assistant.read(cid))
+        if sid is not None:
+            result.pop("debug_session_id", None)
+            result.pop("debug_session", None)
+            result.update(self.wiring_review(sid))
+            result["conversation"] = self.conversation(sid)
+        return result
+
+    def conversation(self, sid, before=None, limit=50):
+        with self.lock:
+            phone = deepcopy(self.require(sid))
+            current = bool(self.latest and self.latest["context_id"] == phone["context_id"]
+                           and self.latest["conversation_id"] == phone["conversation_id"])
+        record = self.state.assistant.read(phone["conversation_id"], before, limit)
+        for message in record["messages"]:
+            flow = message.get("wiring_flow")
+            if not flow:
+                continue
+            flow["actions"] = [op for op in flow.get("actions", []) if op in {"capture", "crop"}] if current else []
+            flow["can_act"] = bool(flow["actions"])
+            if flow.get("capture_id"):
+                flow["image_url"] = f'/api/mobile/wiring-review/evidence/{flow["capture_id"]}'
+        return record
+
+    def wiring_review_invitation(self, sid, body):
+        with self.lock:
+            phone = deepcopy(self.require(sid))
+        body = dict(body)
+        context_id = body.pop("context_id")
+        return self.test_help_action(phone["conversation_id"], body, sid=sid, context_id=context_id)
+
+    def _wiring_review_session(self, sid):
+        """Resolve the paired workspace's linked review; callers cannot select a debug ID."""
+        with self.lock:
+            phone = deepcopy(self.require(sid))
+            if (not self.latest or self.latest["context_id"] != phone["context_id"]
+                    or self.latest["conversation_id"] != phone["conversation_id"]):
+                return None, None
+            mobile_context = self.context(phone["context_id"])
+        owner = getattr(self.state, "debug_sessions", None)
+        project = mobile_context.get("design", {}).get("current")
+        if owner is None or not project:
+            return None, None
+        # Assistant and debug histories have separate conversation IDs. The
+        # already imported session references are their existing server link.
+        assistant = self.state.assistant
+        if hasattr(assistant, "_load"):
+            with assistant.lock:
+                record = deepcopy(assistant._load(phone["conversation_id"]))
+        else:
+            record = assistant.read(phone["conversation_id"], limit=100)
+        epoch = record.get("context_epoch", 0)
+        linked = {m.get("session_id") for m in record.get("messages", [])
+                  if m.get("epoch", 0) == epoch and not m.get("archived")}
+        linked.update(j.get("debug_session_id") for j in record.get("jobs", []) if j.get("epoch", 0) == epoch)
+        linked -= set(record.get("cleared_debug_sessions", []))
+        debug_context = mobile_context.get("context", {}).get("debug_context", {})
+        with owner.lock:
+            matches = []
+            for session in owner.sessions.values():
+                if session.get("conversation_id") != phone["conversation_id"] and session["id"] not in linked:
+                    continue
+                context = session.get("context")
+                review = session.get("wiring_review")
+                if not context or not review or session.get("status") in {"stopped", "complete"}:
+                    continue
+                current = context.get("project", {})
+                if any(project.get(k) != current.get(k) for k in ("id", "revision", "catalog_version", "profile_versions", "wiring")):
+                    continue
+                if (debug_context.get("code") != context.get("code")
+                        or mobile_context.get("round", 0) != context.get("guide_run", 0)
+                        or debug_context.get("guide_confirmations", {}) != context.get("guide_confirmations", {})
+                        or debug_context.get("test_keys", {}) != context.get("test_keys", {})
+                        or session["binding"].get("target_id") != self.state.component_tests.target):
+                    continue
+                if owner.conversations.get(session["conversation_id"], {}).get("archived"):
+                    continue
+                matches.append(session)
+            if not matches:
+                return None, None
+            current = max(matches, key=lambda item: item["created_at"])
+            return current["id"], (phone["session_id"], phone["context_id"], phone["conversation_id"])
+
+    def _review_pairing_current(self, identity):
+        sid, context_id, conversation_id = identity
+        session = self.sessions.get(sid)
+        return bool(session and session["expires"] >= self.clock() and session["context_id"] == context_id
+                    and session["conversation_id"] == conversation_id and self.latest
+                    and self.latest["context_id"] == context_id and self.latest["conversation_id"] == conversation_id)
+
+    def _review_collection_available(self, session):
+        review = session.get("wiring_review") or {}
+        try:
+            camera_current = self.state.debug_sessions._camera() == session.get("camera")
+        except ValueError:
+            camera_current = False
+        return bool(camera_current and session.get("context")
+                    and session.get("status") not in {"paused", "stopped", "complete"}
+                    and session.get("phase") not in {"observing_photo", "observing_tft", "repair_analysing", "replying", "wiring_review_analysing"}
+                    and not session.get("chat_pending") and not session.get("capture_pending")
+                    and not review.get("pending") and review.get("status") not in {"stale", "analysing"})
+
+    def wiring_review(self, sid):
+        debug_id, identity = self._wiring_review_session(sid)
+        if not debug_id:
+            return dict(review=None, can_act=False)
+        owner = self.state.debug_sessions
+        with owner.lock:
+            session = owner.sessions[debug_id]
+            review = deepcopy(session["wiring_review"])
+            for key in ("pending", "last_opinion", "last_input_key", "input_key", "last_progress_key", "role_input_keys"):
+                review.pop(key, None)
+            can_act = bool(self._review_pairing_current(identity) and self._review_collection_available(session))
+            from app.designs import MODULES
+            names = MODULES.get(review["component_id"], {}).get("name", {})
+            component_label = names.get(session["context"].get("locale", "zh-TW"), review["component_id"])
+            for slot in review["slots"].values():
+                if slot:
+                    slot["image_url"] = f'/api/mobile/wiring-review/evidence/{slot["capture_id"]}'
+            return dict(review=review, component_label=component_label, can_act=can_act)
+
+    def wiring_review_action(self, sid, body, asset_id=None, dialogue=None, *, _dialogue_work=False):
+        from app.guided_wiring_review import WiringReviewAction
+        action = WiringReviewAction.model_validate(body)
+        if action.op not in {"capture", "accept_photo", "crop", "analyse"}:
+            raise HTTPException(403, "mobile_wiring_review_action_forbidden")
+        debug_id, identity = self._wiring_review_session(sid)
+        if not debug_id:
+            raise HTTPException(409, "mobile_wiring_review_context_changed")
+        owner = self.state.debug_sessions
+        if dialogue:
+            if action.op not in {"capture", "crop"}:
+                raise HTTPException(403, "mobile_wiring_review_action_forbidden")
+            assistant = self.state.assistant
+            with assistant.lock:
+                record = assistant._load(identity[2])
+                assistant._sync_wiring_dialogues(record)
+                message = next((m for m in record["messages"] if m["id"] == dialogue["message_id"]), None)
+                metadata = message.get("wiring_flow") if message else None
+                if (not metadata or message.get("role") != "assistant" or message.get("archived")
+                        or message.get("epoch", 0) != record["context_epoch"]
+                        or message.get("session_id") != debug_id or metadata["flow_id"] != dialogue["flow_id"]
+                        or not self._review_pairing_current(identity)):
+                    raise HTTPException(409, "stale_wiring_dialogue")
+                context = deepcopy(owner.sessions[debug_id].get("context"))
+                owner.guided_wiring_review.dialogue_action(debug_id, deepcopy(metadata), action,
+                    dialogue["request_id"], context=context,
+                    work=lambda: self.wiring_review_action(sid, body, asset_id, _dialogue_work=True))
+                assistant._sync_wiring_dialogues(record)
+                assistant._save(record)
+                result = self.wiring_review(sid)
+                result["conversation"] = self.conversation(sid)
+                return result
+        with owner.lock:
+            session = owner.sessions[debug_id]
+            if session.get("wiring_dialogue") and not _dialogue_work:
+                raise HTTPException(409, "wiring_dialogue_reference_required")
+            if not self._review_pairing_current(identity):
+                raise HTTPException(409, "mobile_wiring_review_context_changed")
+            if not self._review_collection_available(session):
+                raise HTTPException(409, "mobile_wiring_review_busy_or_source_changed")
+            context = deepcopy(session["context"])
+            owner.guided_wiring_review._check(session, action)
+        try:
+            if action.op == "capture":
+                if not asset_id:
+                    raise HTTPException(422, "mobile_wiring_review_asset_required")
+                self.assets.authorize(asset_id, identity[2])
+                asset = self.assets.analysis_asset(asset_id)
+                if asset["type"] != "image" or asset["session_id"] != sid:
+                    raise HTTPException(403, "mobile_wiring_review_asset_mismatch")
+                raw = self.assets.path(asset_id).read_bytes()
+                if not self._review_pairing_current(identity):
+                    raise ValueError("stale_wiring_review")
+                owner.guided_wiring_review.import_photo(debug_id, action, raw,
+                    provenance=dict(asset_id=asset_id, mobile_session_id=sid, conversation_id=identity[2],
+                                    size=[asset["width"], asset["height"]], sha256=asset["sha256"],
+                                    mime=asset["mime"],
+                                    original_size=[asset.get("original_width"), asset.get("original_height")],
+                                    analysis_limited=asset.get("analysis_limited", False)),
+                    still_current=lambda: self._review_pairing_current(identity))
+            else:
+                if asset_id is not None:
+                    raise HTTPException(422, "mobile_wiring_review_unexpected_asset")
+                owner.action(debug_id, "wiring_review", uuid4().hex, context=context, wiring_review=action.model_dump())
+        except (ValueError, KeyError) as error:
+            raise HTTPException(409, str(error)) from error
+        return self.wiring_review(sid)
+
+    def wiring_review_evidence(self, sid, capture_id):
+        with self.lock:
+            phone = deepcopy(self.require(sid))
+        assistant = self.state.assistant
+        owner = self.state.debug_sessions
+        from contextlib import nullcontext
+        with assistant.lock if hasattr(assistant, "lock") else nullcontext():
+            record = assistant._load(phone["conversation_id"]) if hasattr(assistant, "_load") else assistant.read(phone["conversation_id"])
+            with owner.lock:
+                for session in owner.sessions.values():
+                    flow = session.get("wiring_dialogue")
+                    if (not flow or flow.get("conversation_id") != phone["conversation_id"]
+                            or flow.get("epoch") != record["context_epoch"]
+                            or session["id"] in record.get("cleared_debug_sessions", [])):
+                        continue
+                    if any(event.get("wiring_flow", {}).get("capture_id") == capture_id for event in flow["events"]):
+                        entry = next((e for e in session["evidence"] if e["id"] == capture_id), None)
+                        asset_id = (entry or {}).get("provenance", {}).get("asset_id")
+                        if asset_id:
+                            self.assets.authorize(asset_id, phone["conversation_id"])
+                        return owner.evidence_view(session["id"], capture_id)
+        debug_id, identity = self._wiring_review_session(sid)
+        if not debug_id:
+            raise HTTPException(409, "mobile_wiring_review_context_changed")
+        owner = self.state.debug_sessions
+        with owner.lock:
+            review = owner.sessions[debug_id].get("wiring_review", {})
+            slot = next((item for item in review.get("slots", {}).values()
+                         if item and item["capture_id"] == capture_id and item.get("available")), None)
+            if not slot or review.get("status") == "stale" or not self._review_pairing_current(identity):
+                raise HTTPException(404, "mobile_wiring_review_photo_not_found")
+            if slot.get("provenance", {}).get("asset_id"):
+                self.assets.authorize(slot["provenance"]["asset_id"], identity[2])
+            return owner.evidence_view(debug_id, capture_id)
 
     async def start_stream(self, sid, bitrate_kbps=8000):
         self.require(sid)

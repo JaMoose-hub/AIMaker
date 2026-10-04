@@ -40,25 +40,48 @@ test('the shared floating toggle exposes its controlled panel and changes visibi
     assert.equal(button.props['aria-controls'], 'maker-floating-guide');
     assert.equal(button.props.disabled, false);
     assert.match(renderToStaticMarkup(button), visible ? /收合接線引導/ : /展開接線引導/);
+    const markup = renderToStaticMarkup(button);
+    if (visible) {
+      assert.match(markup, /guide-icon-action/);
+      assert.match(markup, /<svg aria-hidden="true"/);
+      assert.equal(markup.replace(/<[^>]*>/g, ''), '', 'expanded header control is icon only');
+    } else assert.match(markup.replace(/<[^>]*>/g, ''), /展開接線引導/);
     button.props.onClick(); assert.deepEqual(calls, [!visible]);
   }
   const disabled = factory(React, {}, false, true, null, {}, () => {}, {}, false, zh => zh, key => key);
   assert.equal(disabled.props.disabled, true);
 });
 
-test('closing returns focus from the guide without stealing focus from the camera or chat', () => {
+test('relocating the toggle restores keyboard focus after mount without stealing focus from camera or chat', () => {
   const handler = variable('handleGuideVisibilityChange').arguments[0].getText(app);
-  const factory = new Function('document', 'guideToggleRef', 'setGuideVisible', 'window', 'GUIDE_VISIBILITY_STORAGE_KEY',
+  const factory = new Function('document', 'guideToggleRef', 'guideToggleFocusPending', 'setGuideVisible', 'window', 'GUIDE_VISIBILITY_STORAGE_KEY',
     `${compile(`const change = ${handler};`)};return change;`);
-  for (const inside of [true, false]) for (const visible of [true, false]) {
+  let focusEffect;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(app) === 'useEffect'
+      && node.arguments[0].getText(app).includes('guideToggleFocusPending')) focusEffect = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(app);
+  assert.equal(focusEffect.arguments[1].getText(app), '[guideVisible]');
+  const afterMount = new Function('guideToggleRef', 'guideToggleFocusPending',
+    `${compile(`const effect = ${focusEffect.arguments[0].getText(app)};`)};effect();`);
+  for (const origin of ['guide', 'toggle', 'elsewhere']) for (const visible of [true, false]) {
     const calls = [], stored = [], focused = [];
-    const document = {activeElement:{}, getElementById:id => {
-      assert.equal(id, 'maker-floating-guide'); return {contains:() => inside};
+    const toggle = {current:{focus:options => focused.push(options)}}, pending = {current:false};
+    const document = {activeElement:origin === 'toggle' ? toggle.current : {}, getElementById:id => {
+      assert.equal(id, 'maker-floating-guide'); return {contains:() => origin === 'guide'};
     }};
-    factory(document, {current:{focus:options => focused.push(options)}}, v => calls.push(v),
+    factory(document, toggle, pending, v => calls.push(v),
       {localStorage:{setItem:(...args) => stored.push(args)}}, 'guide-visible')(visible);
     assert.deepEqual(calls, [visible]); assert.deepEqual(stored, [['guide-visible', String(visible)]]);
-    assert.deepEqual(focused, inside && !visible ? [{preventScroll:true}] : []);
+    assert.deepEqual(focused, [], 'the old toggle is about to unmount');
+    toggle.current = {focus:options => focused.push(options)};
+    afterMount(toggle, pending);
+    assert.deepEqual(focused, origin === 'toggle' || (origin === 'guide' && !visible) ? [{preventScroll:true}] : []);
+    assert.equal(pending.current, false);
+    afterMount(toggle, pending);
+    assert.ok(focused.length <= 1, 'subsequent renders do not refocus');
   }
 });
 
@@ -78,14 +101,18 @@ test('the hidden guide retains children and a stable accessible panel id', () =>
   }
 });
 
-test('floating panels are translucent absolute overlays; the camera and guide are not conditionally mounted', () => {
+test('compact guide and toggle sit below the image in normal flow without remounting it', () => {
   const css = read('../src/floatingGuide.css'), source = read('../src/App.tsx');
-  assert.match(css, /\.floating-guide-dock\s*\{[^}]*position: absolute; left: 14px; bottom: 14px/s);
-  assert.match(css, /> :is\(\.wiring-workspace,\.maker-guide-empty\)\s*\{[^}]*position: absolute;[^}]*background: color-mix[^}]*backdrop-filter: blur/s);
+  assert.match(css, /\.floating-guide-dock\s*\{[^}]*position: static; flex: none/s);
+  assert.match(css, /> :is\(\.wiring-workspace,\.maker-guide-empty\)\s*\{[^}]*position: static;[^}]*width: 100%;[^}]*background: color-mix/s);
+  assert.doesNotMatch(css, /position: absolute;[^}]*z-index: 2[78]|inset: auto auto 56px|bottom: 14px/);
   assert.match(source, /resizable=\{[^}]*!floatingGuide\}/);
   assert.equal((source.match(/<VideoView\b/g) ?? []).length, 1);
   assert.match(source, /panelId=\{floatingGuide \? 'maker-floating-guide' : undefined\}/);
   assert.doesNotMatch(source, /guideVisible\s*&&\s*<WiringWorkspace/);
+  assert.match(source, /floatingGuide && !guideVisible \? <div className="floating-guide-dock">/);
+  assert.match(source, /visibilityControl=\{floatingGuide && guideVisible \? guideVisibilityControl : undefined\}/);
+  assert.match(css, /\.guide-panel-header-embedded\s*\{ flex-wrap: wrap; \}/);
 });
 
 function viewportHarness() {

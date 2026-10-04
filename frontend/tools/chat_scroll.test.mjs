@@ -10,8 +10,9 @@ function harness(){
     useLayoutEffect(fn,deps){const i=ei++;if(effects[i]?.deps.every((v,n)=>Object.is(v,deps[n])))return;effects[i]?.cleanup?.();effects[i]={deps,fn};}};
   const module={};
   new Function('require','exports','ResizeObserver',code)(()=>react,module,class{constructor(fn){resize=fn;}observe(){}disconnect(){disconnected=true;}});
-  const target={getBoundingClientRect:()=>({top:100+top-node.scrollTop})};
-  const node={scrollTop:0,scrollHeight:2000,clientHeight:300,clientTop:0,getBoundingClientRect:()=>({top:100}),querySelectorAll:()=>[target]};
+  const target={dataset:{messageId:'latest'},getBoundingClientRect:()=>({top:100+top-node.scrollTop})};
+  const earlier={dataset:{messageId:'invitation'},getBoundingClientRect:()=>({top:100+500-node.scrollTop})};
+  const node={scrollTop:0,scrollHeight:2000,clientHeight:300,clientTop:0,getBoundingClientRect:()=>({top:100}),querySelectorAll:()=>[earlier,target]};
   function render(){ri=si=ei=0;const result=module.useChatScroll(key,visible);result.chatRef.current=node;result.contentRef.current={};for(const effect of effects){if(effect.fn){const fn=effect.fn;delete effect.fn;effect.cleanup=fn();}}return result;}
   return{node,render,setMessage(id,y){key=id;top=y;},setVisible(value){visible=value;},resize:()=>resize?.(),dispose:()=>effects.forEach(e=>e.cleanup?.()),disconnected:()=>disconnected};
 }
@@ -36,4 +37,12 @@ test('late image/operation resize keeps the message anchored, but never steals a
 });
 test('unrelated status polls do not force the conversation to the bottom',()=>{
   const h=harness();h.render();h.node.scrollHeight=2500;h.render();assert.equal(h.node.scrollTop,792);
+});
+
+test('reopening a deduplicated invitation focuses that message through resizes until the next reply',()=>{
+  const h=harness();let hook=h.render();
+  assert.equal(hook.showMessage('missing'),false);assert.equal(h.node.scrollTop,792);
+  assert.equal(hook.showMessage('invitation'),true);assert.equal(h.node.scrollTop,492);
+  h.resize();assert.equal(h.node.scrollTop,492);
+  h.setMessage('reply2',1100);hook=h.render();assert.equal(h.node.scrollTop,1092);
 });

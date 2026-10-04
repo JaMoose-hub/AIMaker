@@ -36,41 +36,52 @@
 .app.tinkro-theme:not(.display-mode-active) .assistant-workspace .assistant-collapse:focus-visible {
   background: transparent; border-color: transparent;
 }
-/* A luminous glass core, rather than another outlined toolbar button. The
-   animated halo only changes opacity; the hit area and layout stay still. */
+/* Low-gloss midnight glass with slow ambient light. Only decorative opacity
+   and transforms animate; the 46px hit area and surrounding layout stay still. */
 .assistant-collapse::before {
-  content: ""; position: absolute; inset: -6px; border-radius: 50%; z-index: -1;
-  background: radial-gradient(circle, rgb(61 211 212 / 28%), rgb(72 128 255 / 12%) 45%, transparent 70%);
-  opacity: .65; pointer-events: none; animation: assistant-orb-breathe 5.6s ease-in-out infinite;
+  content: ""; position: absolute; inset: -9px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, rgb(68 172 205 / 50%) 12%, rgb(63 120 187 / 32%) 42%, transparent 72%);
+  opacity: .6; pointer-events: none; animation: assistant-orb-breathe 4.6s ease-in-out infinite;
+}
+.assistant-collapse::after {
+  content: ""; position: absolute; inset: 4px; border-radius: 50%; z-index: 1;
+  background: conic-gradient(from 150deg, transparent 62%, rgb(85 167 207 / 24%) 75%, rgb(167 237 246 / 90%) 86%, rgb(102 187 228 / 45%) 91%, transparent 98%);
+  mask-image: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  opacity: .7; pointer-events: none; transition: opacity 240ms ease;
+  animation: assistant-orb-orbit 12s linear infinite;
 }
 .assistant-orb {
   position: relative; display: block; width: 36px; height: 36px; border-radius: 50%; isolation: isolate;
-  border: 1px solid rgb(150 235 245 / 65%); overflow: hidden;
-  background: radial-gradient(ellipse at 28% 18%, rgb(232 255 255 / 90%), rgb(139 244 242 / 24%) 25%, transparent 48%),
-    radial-gradient(ellipse at 74% 84%, #315ac4, transparent 62%), linear-gradient(145deg, #168e91, #195876 55%, #10203e);
-  box-shadow: inset 1px 1px 2px rgb(225 255 255 / 60%), inset -3px -4px 8px rgb(2 15 49 / 55%), 0 3px 10px rgb(0 12 32 / 35%), 0 0 12px rgb(48 190 209 / 18%);
-  transition: transform 220ms ease, box-shadow 220ms ease; pointer-events: none;
+  border: 1px solid rgb(124 182 209 / 48%); overflow: hidden;
+  background: radial-gradient(ellipse at 28% 18%, rgb(181 225 239 / 24%), rgb(92 164 186 / 10%) 30%, transparent 55%),
+    radial-gradient(ellipse at 74% 84%, rgb(49 81 142 / 50%), transparent 65%), linear-gradient(145deg, #203f51, #142c42 55%, #0d192e);
+  box-shadow: inset 1px 1px 2px rgb(188 228 240 / 22%), inset -3px -4px 8px rgb(3 12 27 / 52%), 0 3px 10px rgb(0 12 32 / 30%), 0 0 14px rgb(64 149 196 / 22%);
+  transition: transform 280ms ease, box-shadow 320ms ease, border-color 320ms ease; pointer-events: none;
 }
 .assistant-orb::before {
   content: ""; position: absolute; top: 3px; left: 7px; width: 19px; height: 8px; border-radius: 50%;
-  background: linear-gradient(rgb(240 255 255 / 52%), transparent); transform: rotate(-28deg); pointer-events: none;
+  background: linear-gradient(rgb(195 230 243 / 20%), transparent); transform: rotate(-28deg); pointer-events: none;
 }
 .assistant-orb-energy {
   position: absolute; inset: 3px 1px; border-radius: inherit;
-  background: conic-gradient(from 35deg, transparent 8%, #8bf9e8 28%, transparent 48%, #79abff 72%, transparent 92%);
-  mask-image: radial-gradient(farthest-side, transparent 56%, #000 72%, transparent 96%);
-  opacity: .7; transform: rotate(-30deg) scaleY(.68);
-  transition: transform 650ms ease, opacity 220ms ease; pointer-events: none;
+  background: conic-gradient(from 35deg, transparent 8%, rgb(119 204 218 / 75%) 28%, transparent 48%, rgb(116 157 215 / 65%) 72%, transparent 92%);
+  mask-image: radial-gradient(farthest-side, transparent 61%, #000 77%, transparent 96%);
+  opacity: .72; transform: rotate(-30deg) scaleY(.72);
+  transition: opacity 320ms ease; pointer-events: none; animation: assistant-orb-drift 10s linear infinite;
 }
-.assistant-orb-core { position: absolute; width: 21px; height: 21px; inset: 0; margin: auto; color: #e1fffc; filter: drop-shadow(0 0 3px rgb(127 245 239 / 70%)); transition: opacity 180ms ease, transform 220ms ease; }
+.assistant-orb-core { position: absolute; width: 19px; height: 19px; inset: 0; margin: auto; color: #c5e3ee; filter: drop-shadow(0 0 3px rgb(123 192 213 / 38%)); transition: opacity 220ms ease, transform 280ms ease; }
 .assistant-orb-chevron { position: absolute; width: 18px; height: 18px; inset: 0; margin: auto; color: #efffff; opacity: 0; transition: opacity 180ms ease, transform 240ms ease; }
-.assistant-collapse:is(:hover, :focus-visible) .assistant-orb { transform: scale(1.07); box-shadow: inset 1px 1px 3px rgb(225 255 255 / 70%), inset -3px -4px 8px rgb(2 15 49 / 45%), 0 3px 12px rgb(0 12 32 / 30%), 0 0 18px rgb(48 190 209 / 40%); }
-.assistant-collapse:is(:hover, :focus-visible) .assistant-orb-energy { transform: rotate(65deg) scaleY(.68); opacity: 1; }
+.assistant-collapse:is(:hover, :focus-visible) .assistant-orb { transform: translateY(-1px) scale(1.025); border-color: rgb(151 209 229 / 72%); box-shadow: inset 1px 1px 3px rgb(201 233 245 / 30%), inset -3px -4px 8px rgb(2 15 40 / 45%), 0 3px 12px rgb(0 12 32 / 30%), 0 0 22px rgb(75 159 205 / 38%); }
+.assistant-collapse:is(:hover, :focus-visible) .assistant-orb-energy { opacity: .8; }
+.assistant-collapse:is(:hover, :focus-visible)::after { opacity: 1; }
 .assistant-collapse:is(:hover, :focus-visible) .assistant-orb-core { opacity: 0; transform: scale(.75); }
 .assistant-collapse:is(:hover, :focus-visible) .assistant-orb-chevron { opacity: 1; }
-.assistant-collapse:active .assistant-orb { transform: scale(.94); }
-:root[data-theme="light"] .assistant-orb { border-color: rgb(36 140 164 / 65%); box-shadow: inset 1px 1px 2px rgb(225 255 255 / 65%), inset -3px -4px 8px rgb(2 15 49 / 40%), 0 3px 9px rgb(25 90 136 / 24%); }
-@keyframes assistant-orb-breathe { 0%, 100% { opacity: .45; } 50% { opacity: .9; } }
+.assistant-collapse:active .assistant-orb { transform: scale(.97); }
+:root[data-theme="light"] .assistant-orb { border-color: rgb(55 114 146 / 65%); box-shadow: inset 1px 1px 2px rgb(188 228 240 / 28%), inset -3px -4px 8px rgb(2 15 40 / 40%), 0 3px 9px rgb(25 70 115 / 18%), 0 0 14px rgb(67 145 190 / 18%); }
+:root[data-theme="light"] .assistant-collapse::before { background: radial-gradient(circle, rgb(57 135 181 / 36%) 12%, rgb(68 127 191 / 22%) 42%, transparent 72%); }
+@keyframes assistant-orb-breathe { 0%, 100% { opacity: .38; transform: scale(.9); } 50% { opacity: .95; transform: scale(1.13); } }
+@keyframes assistant-orb-drift { from { transform: rotate(-30deg) scaleY(.72); } to { transform: rotate(330deg) scaleY(.72); } }
+@keyframes assistant-orb-orbit { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 .assistant-orb-label { display: none; }
 .assistant-orb-unread { position: absolute; right: 3px; top: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--brand-teal); box-shadow: 0 0 0 3px var(--surface-card); }
 .ai-collapsed .assistant-chat-content { display: none; }
@@ -78,13 +89,16 @@
 .app.tinkro-theme:not(.display-mode-active) .assistant-workspace.ai-collapsed .assistant-collapse { position: relative; top: auto; right: auto; margin-top: 6px; }
 .ai-collapsed .assistant-orb-chevron { transform: rotate(180deg); }
 .ai-collapsed .assistant-orb-label { display: block; position: absolute; top: calc(100% + 6px); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--ink-secondary); }
-.assistant-resizer { cursor: col-resize; touch-action: none; margin: 0 2px; border-radius: 6px; }
+.assistant-resizer { cursor: col-resize; touch-action: none; margin: 0 2px; border-radius: 6px; display: grid; place-items: center; }
+.assistant-resizer::before { content: ""; width: 3px; height: 48px; border-radius: 3px; background: var(--ink-muted); }
 .assistant-resizer:hover, .assistant-resizer:focus-visible { background: var(--surface-blue); }
+.assistant-resizer:is(:hover, :focus-visible)::before { background: var(--brand-link); }
 .assistant-workspace :focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
 .assistant-mobile-tabs { display: none; }
 .unified-assistant { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; color: var(--ink-primary); }
 .unified-assistant-heading { display: flex; align-items: center; justify-content: space-between; padding-right: 52px !important; min-height: 36px; flex: none; gap: 6px; }
 .unified-assistant-heading > div { min-width: 0; }
+.unified-assistant-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .assistant-more { flex: none; }
 .unified-assistant-heading > div { display: flex; flex-direction: column; gap: 3px; }
 .unified-assistant small { color: var(--ink-secondary); font-size: 11px; }
@@ -116,23 +130,29 @@
 .assistant-confirm, .assistant-job-error { padding: 8px; border: 1px solid var(--line-warn); border-radius: 6px; font-size: 12px; overflow-wrap: anywhere; }
 .assistant-job-error { margin-bottom: 8px; color: var(--status-warn); }
 .unified-composer { flex: none; display: grid; gap: 6px; }
-.assistant-input-actions { display: flex; align-items: center; gap: 3px; flex: none; padding: 3px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface-card); box-shadow: 0 2px 6px rgb(0 0 0 / 8%); }
+.assistant-input-actions { display: flex; align-items: center; gap: 6px; flex: none; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .assistant-input-actions .maker-model-menu { position: static; flex: none; min-width: 0; }
-.assistant-input-actions .maker-model-menu > summary { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; box-sizing: border-box; border: 1px solid transparent; border-radius: 50%; color: var(--ink-secondary); background: transparent; transition: background-color 120ms, color 120ms; }
-.assistant-input-actions .maker-model-menu > summary:hover,
-.assistant-input-actions .maker-model-menu[open] > summary { color: var(--brand-link); border-color: var(--brand-link); background: var(--surface-blue); }
+.assistant-workspace .unified-composer .assistant-input-actions .maker-model-menu > summary,
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send {
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0; box-sizing: border-box;
+  border: 1px solid var(--line-strong); border-radius: 10px; color: var(--ink-secondary); background: transparent; box-shadow: none;
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+.assistant-workspace .unified-composer .assistant-input-actions .maker-model-menu > summary:hover,
+.assistant-workspace .unified-composer .assistant-input-actions .maker-model-menu[open] > summary,
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:not(:disabled):hover {
+  color: var(--brand-link); border-color: var(--brand-link); background: var(--surface-blue);
+}
+.assistant-workspace .unified-composer .assistant-input-actions :is(summary, .assistant-send):focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+.assistant-input-actions :is(summary, .assistant-send) > svg { stroke-width: 1.6; }
 .assistant-input-actions .maker-model-popover { top: auto; bottom: calc(100% + 8px); left: 0; right: auto; width: 100%; box-sizing: border-box; max-height: min(60dvh, 520px); padding: 12px; }
 .assistant-input-actions .maker-ai-selects { grid-template-columns: minmax(0, 1fr); }
 .assistant-input-actions .maker-ai-selects :is(label, select) { min-width: 0; max-width: 100%; }
 .assistant-workspace .unified-composer .assistant-input-actions > .assistant-send {
-  display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid rgb(166 240 241 / 65%); border-radius: 50%;
-  background: linear-gradient(140deg,#91ede0,#6bc8e9 62%,#a0b2ff); color: #112c46;
-  box-shadow: inset 0 1px 1px rgb(255 255 255 / 65%), 0 2px 7px rgb(33 150 183 / 22%);
-  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+  color: var(--brand-link); border-color: color-mix(in srgb, var(--brand-link) 40%, var(--line-strong));
 }
-.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:not(:disabled):hover { transform: translateY(-1px); background: linear-gradient(140deg,#b2f8e9,#8bddf2 62%,#b6c4ff); box-shadow: 0 0 14px rgb(80 193 226 / 35%); }
-.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:not(:disabled):active { transform: scale(.94); }
-.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:disabled { opacity: 1; color: var(--ink-secondary); background: var(--surface-blue); border-color: var(--line-default); box-shadow: none; }
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:not(:disabled):active { background: var(--surface-blue); }
+.assistant-workspace .unified-composer .assistant-input-actions > .assistant-send:disabled { opacity: 1; color: var(--ink-muted); background: transparent; border-color: var(--line-default); box-shadow: none; }
 .assistant-send-pending { display: flex; align-items: center; gap: 3px; }
 .assistant-send-pending i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; animation: assistant-send-wait 1.2s ease-in-out infinite; }
 .assistant-send-pending i:nth-child(2) { animation-delay: .15s; }
@@ -207,6 +227,7 @@
 .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage .video-control-toolbar {
   position: static; display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; width: 100%; max-width: none; gap: 6px;
 }
+.app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage .video-control-toolbar:empty { display: none; }
 .assistant-guide-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-right: auto; }
 .app:not(.display-mode-active) .is-unified .assistant-guide-tools .guide-visibility-toggle {
   position: static; transform: none; width: auto; order: 0; margin: 0;
@@ -303,9 +324,13 @@
 .unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker { flex: 1 1 auto; display: flex; flex-wrap: nowrap; gap: 2px; margin: 0; padding: 3px; border-radius: 9px; background: var(--surface-subtle); width: max-content; max-width: max-content; }
 .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker > button { min-height: 30px; padding: 4px 8px; margin: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink-secondary); font-size: 11px; white-space: nowrap; }
 .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker > button[aria-pressed="true"] { background: var(--surface-blue); color: var(--brand-link); border-color: var(--line-strong); box-shadow: 0 1px 3px rgb(0 0 0 / 10%); }
-.unified-debug-tools .assistant-debug-primary { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; margin: 0; padding: 5px 8px; font-size: 11px; border-radius: 8px; }
+.unified-debug-tools .assistant-debug-primary { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-left: auto; max-width: 100%; }
+.unified-debug-tools .assistant-wiring-entry-slot { display: flex; }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > button,
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-wiring-entry-slot > button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; margin: 0; padding: 5px 8px; font-size: 11px; border-radius: 8px; }
 .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-capture { color: var(--brand-link); background: var(--surface-blue); border-color: var(--line-strong); white-space: nowrap; }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-wiring-entry-slot > .wr-entry-trigger { color: var(--ink-secondary); background: transparent; border-color: var(--line-default); }
+.app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-wiring-entry-slot > .wr-entry-trigger:is(:hover, [aria-expanded="true"]) { color: var(--brand-link); background: var(--surface-blue); border-color: var(--line-strong); }
 .assistant-capture > small { font-size: 10px; font-variant-numeric: tabular-nums; }
 .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-debug-tools-toggle { width: 32px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-secondary); }
 .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-debug-tools-toggle[aria-expanded="true"] { border-color: var(--line-strong); color: var(--brand-link); background: var(--surface-blue); }
@@ -315,14 +340,26 @@
 .assistant-debug-secondary { display: flex; gap: 6px; flex-wrap: wrap; }
 .assistant-debug-secondary > button { flex: 1; }
 .unified-debug-tools .assistant-debug-stop { align-self: flex-start; margin-top: 6px; }
-.unified-debug-tools .is-actions-only .ai-debug-chat:not(:has(.ai-debug-current)) { display: none; }
-.app:not(.display-mode-active) .is-unified .deploy-workspace { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.unified-debug-tools .is-actions-only .ai-debug-chat:not(:has(.ai-debug-current, .wiring-review-entry[data-expanded="true"], .wiring-review-entry[data-recommended="true"])) { display: none; }
+/* Use the actual work-pane width (including AI pane resizing), not viewport
+   width, to decide whether code and output fit alongside one another. */
+.app:not(.display-mode-active) .is-unified .deploy-workspace { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: stretch; gap: 10px; min-height: 0; }
 .app:not(.display-mode-active) .is-unified .deploy-code-card textarea { height: var(--editor-height, 200px); min-height: 160px; flex: none; }
 .app:not(.display-mode-active) .is-unified :is(.deploy-code-card, .deploy-output) { padding: 12px; gap: 8px; }
 .app:not(.display-mode-active) .is-unified .deploy-output-context { margin: 0; }
 .app:not(.display-mode-active) .is-unified .pi-console { flex: 1 1 160px; }
 .app:not(.display-mode-active) .is-unified .deploy-output-card { min-height: 270px; }
 .app:not(.display-mode-active) .is-unified .pi-console { min-height: 160px; max-height: 40vh; }
+/* Fill unused deployment space while letting narrow/short panes scroll.
+   The height preference becomes the editor's minimum, not a fixed ceiling. */
+.app:not(.display-mode-active) .is-unified .maker-deploy-main { display: flex; flex-direction: column; }
+.app:not(.display-mode-active) .is-unified .maker-deploy-main > .pi-deploy-panel { flex: 1 0 auto; }
+.app:not(.display-mode-active) .is-unified .maker-deploy-main .deploy-project-heading { flex: none; }
+.app:not(.display-mode-active) .is-unified .maker-deploy-main .deploy-workspace { flex: 1 0 auto; }
+.app:not(.display-mode-active) .is-unified .maker-deploy-main .deploy-code-card textarea {
+  flex: 1 1 var(--editor-height, 200px); min-height: max(160px, var(--editor-height, 200px));
+}
+.app:not(.display-mode-active) .is-unified .maker-deploy-main .pi-console { flex: 1 1 160px; max-height: none; }
 .assistant-code-height { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .assistant-code-height input { flex: 1; max-width: 240px; }
 .assistant-project-workspace > .maker-design-stage > .maker-preview { min-height: 0; flex: 1; overflow: auto; }
@@ -383,6 +420,7 @@
   .assistant-input-actions > button { min-width: 44px; min-height: 44px; }
   .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-toolbar .guide-ai-mode-picker > button,
   .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > button,
+  .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-wiring-entry-slot > button,
   .assistant-suggestions > summary, .assistant-workspace .assistant-suggestion-list > button { min-height: 44px; }
   .app.tinkro-theme:not(.display-mode-active) .unified-debug-tools .assistant-debug-primary > .assistant-debug-tools-toggle { width: 44px; }
 }
@@ -407,5 +445,83 @@
 @media (prefers-reduced-motion: reduce) {
   .assistant-workspace.is-unified { transition: none; }
   .assistant-send-pending i { animation: none; }
-  .assistant-collapse::before { animation: none; opacity: .65; }
+  .assistant-collapse::before { animation: none; opacity: .6; transform: none; }
+  .assistant-collapse::after { animation: none; transition: none; opacity: .55; }
+  .assistant-orb-energy { animation: none; }
+  .assistant-collapse:is(:hover, :focus-visible, :active) .assistant-orb { transform: none; }
 }
+.ai-debug-actions.test-help-invitation > button {
+  min-height: 44px;
+  padding: 8px 12px;
+  white-space: normal;
+}
+.assistant-message-actions:not(:empty) {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--chat-ai-ink) 18%, transparent);
+}
+.assistant-message-actions .test-help-invitation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.app.tinkro-theme:not(.display-mode-active) .assistant-message-actions .test-help-invitation > button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--chat-ai-ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.app.tinkro-theme:not(.display-mode-active) .assistant-message-actions .test-help-invitation > button.guide-primary-action {
+  background: var(--primary-bg);
+  border-color: var(--primary-bg);
+  color: var(--primary-ink);
+  box-shadow: none;
+}
+.assistant-message-actions .test-help-invitation > button:disabled { opacity: .55; cursor: default; }
+.assistant-message-actions .test-help-invitation > button:focus-visible { outline: 2px solid var(--brand-link); outline-offset: 3px; }
+.assistant-message-actions .test-help-invitation > [role="alert"] { flex-basis: 100%; }
+
+/* Wiring guidance shares ordinary messages and the existing chat scroll. */
+.unified-assistant .ai-debug-message .wiring-chat-message { margin-top: 10px; min-width: 0; color: inherit; }
+.unified-assistant .ai-debug-message .wiring-chat-message p { margin: 8px 0; line-height: 1.55; }
+.unified-assistant .ai-debug-message .wiring-chat-message details { margin-top: 10px; }
+.unified-assistant .ai-debug-message .wiring-chat-message summary { cursor: pointer; font-size: 12px; font-weight: 600; padding: 4px 0; }
+.unified-assistant .ai-debug-message .wiring-chat-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.app.tinkro-theme:not(.display-mode-active) .unified-assistant .ai-debug-message .wiring-chat-actions > button {
+  min-height: 44px; max-width: 100%; padding: 8px 12px; border: 1px solid currentColor; border-radius: 8px;
+  background: transparent; color: inherit; font: inherit; font-size: 12px; line-height: 1.4; white-space: normal; cursor: pointer;
+}
+.unified-assistant .ai-debug-message .wiring-chat-actions > button:disabled { cursor: not-allowed; opacity: .5; }
+.unified-assistant .ai-debug-message .wiring-chat-actions > button:focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+.unified-assistant .ai-debug-message .wiring-chat-photo { display: block; width: min(300px, 100%); margin-top: 8px; }
+.unified-assistant .ai-debug-message .wiring-chat-photo img { display: block; width: 100%; height: 180px; object-fit: contain; object-position: left; border-radius: 6px; }
+.unified-assistant .ai-debug-message .wiring-chat-framing-image { display: block; width: 220px; max-width: 100%; margin: 8px 0; }
+.unified-assistant .ai-debug-message .wiring-chat-note { display: block; margin: 8px 0; }
+.unified-assistant .ai-debug-message .wiring-chat-wire dl { margin: 10px 0; display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; font-size: 12px; }
+.unified-assistant .ai-debug-message .wiring-chat-wire dt { font-weight: 600; }
+.unified-assistant .ai-debug-message .wiring-chat-wire dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.unified-assistant .ai-debug-message .wiring-chat-wire ul { margin: 0; padding-left: 16px; }
+.unified-assistant .ai-debug-message .wiring-chat-wire li + li { margin-top: 6px; }
+.unified-assistant .ai-debug-message .wiring-chat-wire li small { display: block; margin-top: 3px; }
+.unified-assistant .ai-debug-message .wiring-chat-basis { font-weight: 600; }
+.unified-assistant .ai-debug-message .wiring-chat-photo-option { margin-top: 12px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+.unified-assistant .ai-debug-message .wiring-chat-photo-option > strong { font-size: 12px; }
+.unified-assistant .ai-debug-message .wiring-chat-error { color: var(--danger, #ef9b9b); }
+.unified-assistant .ai-debug-message .wiring-chat-crop { margin-top: 8px; }
+.unified-assistant .ai-debug-message .wiring-chat-crop-stage { position: relative; width: 100%; margin-top: 8px; touch-action: none; user-select: none; }
+.unified-assistant .ai-debug-message .wiring-chat-crop-stage img { display: block; width: 100%; max-height: 320px; object-fit: contain; }
+.unified-assistant .ai-debug-message .wiring-chat-crop-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.unified-assistant .ai-debug-message .wiring-chat-crop fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; border: 0; padding: 0; min-width: 0; }
+.unified-assistant .ai-debug-message .wiring-chat-crop legend { font-size: 12px; margin-bottom: 4px; }
+.unified-assistant .ai-debug-message .wiring-chat-crop label { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.unified-assistant .ai-debug-message .wiring-chat-crop input { width: 58px; padding: 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-card); color: var(--ink-primary); }
+.assistant-analysis-send-status { display: flex; gap: .25rem .75rem; flex-wrap: wrap; color: var(--text-muted); }
+.assistant-analysis-time { display: block; font-variant-numeric: tabular-nums; color: var(--text-muted); }

@@ -6,6 +6,7 @@ export const WIRING_LABEL_HEIGHT = 52;
 export type WiringLabel = NonNullable<ReturnType<typeof placeWiringLabel>>;
 export interface LabelAnchor { target: DisplayPoint | null; bounds: LabelRect | null }
 type LabelLine = { from: DisplayPoint; to: DisplayPoint };
+export interface WiringLabelOptions { maxWidth?: number; topInset?: number; obstacles?: readonly LabelRect[] }
 
 export function pointBounds(points: readonly DisplayPoint[]): LabelRect | null {
   const valid = points.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
@@ -47,10 +48,10 @@ export function linkIntersectsLabel(from: DisplayPoint, to: DisplayPoint, rect: 
  */
 export function placeWiringLabel(target: DisplayPoint, peer: DisplayPoint | null, board: LabelRect | null,
   obstacles: readonly LabelRect[], width: number, height: number,
-  avoidLines: readonly LabelLine[] = [], avoidLeaderBoxes: readonly LabelRect[] = []) {
-  const w = Math.min(WIRING_LABEL_WIDTH, width - 16), h = WIRING_LABEL_HEIGHT;
+  avoidLines: readonly LabelLine[] = [], avoidLeaderBoxes: readonly LabelRect[] = [], options: WiringLabelOptions = {}) {
+  const w = Math.min(options.maxWidth ?? WIRING_LABEL_WIDTH, width - 16), h = WIRING_LABEL_HEIGHT;
   if (w < 180 || height < 156) return null;
-  const limits = { left: 8, right: width - w - 8, top: 112, bottom: height - h - 8 };
+  const limits = { left: 8, right: width - w - 8, top: options.topInset ?? 112, bottom: height - h - 8 };
   const anchor = board ?? { x: target.x - 12, y: target.y - 12, width: 24, height: 24 };
   const sides = {
     right: [anchor.x + anchor.width + 12, target.y - h / 2],
@@ -65,7 +66,7 @@ export function placeWiringLabel(target: DisplayPoint, peer: DisplayPoint | null
   for (let y = limits.top; y <= limits.bottom; y += h + 12) {
     candidates.push([limits.left, y], [limits.right, y]);
   }
-  const blocks = [board, ...obstacles].filter((r): r is LabelRect => r !== null);
+  const blocks = [board, ...obstacles, ...(options.obstacles ?? [])].filter((r): r is LabelRect => r !== null);
   for (const [x, y] of candidates) {
     const box = { x: Math.max(limits.left, Math.min(limits.right, x)), y: Math.max(limits.top, Math.min(limits.bottom, y)), width: w, height: h };
     if (blocks.some(r => overlaps(box, expand(r, 10)))) continue;
@@ -85,14 +86,14 @@ export function placeWiringLabel(target: DisplayPoint, peer: DisplayPoint | null
 
 /** One joint layout for both overlays. Reserve the actual peer label/leader,
  * not a guess at where another component might independently put its label. */
-export function placeWiringLabelPair(board: LabelAnchor, component: LabelAnchor, width: number, height: number) {
+export function placeWiringLabelPair(board: LabelAnchor, component: LabelAnchor, width: number, height: number, options: WiringLabelOptions = {}) {
   function attempt(first: LabelAnchor, second: LabelAnchor) {
     const firstLabel = first.target ? placeWiringLabel(first.target, second.target, first.bounds,
-      second.bounds ? [second.bounds] : [], width, height) : null;
+      second.bounds ? [second.bounds] : [], width, height, [], [], options) : null;
     const blocks = [first.bounds, firstLabel].filter((r): r is LabelRect => r !== null);
     const lines = firstLabel ? [{ from: { x: firstLabel.startX, y: firstLabel.startY }, to: { x: firstLabel.endX, y: firstLabel.endY } }] : [];
     const secondLabel = second.target ? placeWiringLabel(second.target, first.target, second.bounds,
-      blocks, width, height, lines, firstLabel ? [firstLabel] : []) : null;
+      blocks, width, height, lines, firstLabel ? [firstLabel] : [], options) : null;
     return [firstLabel, secondLabel] as const;
   }
   const [boardLabel, componentLabel] = attempt(board, component);

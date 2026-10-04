@@ -1,0 +1,10 @@
+/* Only fixture layout and the outside harness use these rules. Component colors
+   come exclusively from its real stylesheet and the application's theme. */
+body { overflow: auto; }
+.fixture-page { display: block; height: auto; min-height: 100vh; padding: 0; }
+.fixture-main { width: min(920px, 100%); margin: 0 auto; padding: 20px; box-sizing: border-box; }
+.fixture-main > h1 { font-size: 23px; }
+.fixture-main > button { padding: 8px; }
+.fixture-main > details pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-card); padding: 12px; }
+.fixture-warning { padding: 12px; border: 1px solid var(--line-warn); background: var(--surface-warning); color: var(--status-warn); }
+@media(max-width:480px){.fixture-main { padding: 8px; } .fixture-main > h1 { font-size: 19px; }}

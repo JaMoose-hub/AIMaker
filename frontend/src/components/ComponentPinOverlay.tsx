@@ -199,12 +199,6 @@ export function ComponentPinOverlay({
             style={{ "--component-pin": color, "--mk": color } as CSSProperties}
           >
             <title>{pin.id}</title>
-            {active && (
-              <>
-                <circle className="component-guidance-halo outer" r="17" />
-                <circle className="component-guidance-halo inner" r="11" />
-              </>
-            )}
             <circle
               className={usesPi5Style ? "component-pin-dot pin-dot" : "component-pin-dot"}
               r={markerRadius}

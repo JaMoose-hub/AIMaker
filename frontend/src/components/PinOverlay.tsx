@@ -481,22 +481,6 @@ export function PinOverlay({
                   />
                 )}
                 <g className={markerClass} style={{ animationDelay: `${dp.index * STAGGER_MS}ms` }}>
-                  {isGuidanceTarget && (
-                    <>
-                      <ellipse
-                        className="guidance-halo guidance-halo-outer"
-                        rx={markerPerspective.rx + 10}
-                        ry={markerPerspective.ry + 10}
-                        transform={markerRotation}
-                      />
-                      <ellipse
-                        className="guidance-halo guidance-halo-inner"
-                        rx={markerPerspective.rx + 6}
-                        ry={markerPerspective.ry + 6}
-                        transform={markerRotation}
-                      />
-                    </>
-                  )}
                   <ellipse
                     className="pin-dot"
                     rx={markerPerspective.rx}

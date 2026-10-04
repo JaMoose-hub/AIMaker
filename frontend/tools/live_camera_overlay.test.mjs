@@ -6,6 +6,19 @@ import postcss from 'postcss';
 import {renderWiringVideo} from './glasses_wiring_fixture.mjs';
 
 const sourceControl=React.createElement('div',{className:'image-source-host'},'Phone stream');
+test('embedded navigation shares the live dock without replacing the stream or source portal',async()=>{
+  const viewNavigation=React.createElement('div',{className:'image-view-controls'},'Live · Diagram · Photo');
+  for(const cameraSource of ['device','phone']) {
+    const {html}=await renderWiringVideo({viewNavigation,sourceControl,cameraSource});
+    assert.match(html,/class="video-shell has-view-navigation/);
+    assert.match(html,/class="live-camera-toolbar"><div class="image-view-controls"/);
+    assert.equal((html.match(/image-source-host/g)||[]).length,1);
+    assert.equal((html.match(/class="video-img/g)||[]).length,1);
+    assert.equal((html.match(/Live · Diagram · Photo/g)||[]).length,1);
+  }
+  const {html}=await renderWiringVideo({viewNavigation,sourceControl,displayMode:'smart-glasses-demo'});
+  assert.doesNotMatch(html,/Live · Diagram · Photo|live-camera-toolbar/,'HUD remains untouched');
+});
 test('source control is inside the live shell, not the toolbar or a new stream viewer',async()=>{
   const {html}=await renderWiringVideo({sourceControl});
   const dock=html.indexOf('live-camera-dock');

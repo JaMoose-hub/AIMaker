@@ -93,6 +93,7 @@ export interface BrowserRtcState {
     stats: BrowserRtcStats;
     frame?: BrowserLandscapeFrame;
     publishing?: boolean;
+    generation?: number;
     waitingForLandscape?: boolean;
     sourceChanged?: boolean;
 }
@@ -404,7 +405,7 @@ export class BrowserPublisher {
                 await tune(sender);
                 if (serial !== this.serial) return;
             }
-            this.emit({ ...this.state, status: peer.connectionState === 'connected' ? '串流中' : '等待影像連線…', publishing: true });
+            this.emit({ ...this.state, status: peer.connectionState === 'connected' ? '串流中' : '等待影像連線…', publishing: true, generation: started.generation });
             this.sampleStats(serial, peer, started.generation, abort.signal);
         }
         catch (cause) {

@@ -9,7 +9,8 @@ import * as jsx from 'react/jsx-runtime';
 function load(file, modules={}) {
   const js=ts.transpileModule(readFileSync(new URL(file,import.meta.url),'utf8'),{
     compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-  const exports={}; new Function('require','exports',js)(name=>modules[name],exports);return exports;
+  const exports={}; new Function('require','exports',js)(name=> name==='../lib/headerPanels'
+    ? {useHeaderPanel:(_panel,initial=false)=>modules.react.useState(initial)} : modules[name],exports);return exports;
 }
 const photo=load('../src/lib/photoWiring.ts');
 const browserRtc=load('../src/lib/mobileBrowserRtc.ts');
@@ -668,7 +669,7 @@ test('grouped phone button keeps a full accessible name and a compact status ind
     assert.equal(trigger.props['data-connected'],paired);
     assert.equal(trigger.props['aria-controls'],'mobile-companion-panel');
     const html=renderToStaticMarkup(trigger);
-    assert.ok(html.includes(`<span>${paired?'Connected':'Connect'}</span>`));
+    assert.ok(html.includes(`<span class="mobile-connection-label">${paired?'Connected':'Connect'}</span>`));
     assert.match(html,/mobile-connection-dot" aria-hidden="true"/);
     assert.doesNotMatch(html,/Pi|runtime|execution/);
   }

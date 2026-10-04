@@ -1,0 +1,31 @@
+/* Shared message content: no separate panel, composer, or scrolling region. */
+.wiring-chat-framing { margin-top: 10px; font-size: 12px; }
+.wiring-chat-framing > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.wiring-chat-framing > p { margin: 8px 0; line-height: 1.55; }
+.wiring-chat-framing-image { display: block; width: 220px; max-width: 100%; margin: 8px 0; }
+.mobile-web-app .wiring-chat-framing-image { width: 220px; height: auto; max-width: 100%; }
+.wiring-chat-framing > small { display: block; line-height: 1.5; }
+
+.wiring-chat-decision.is-confirmed { --decision-fill: #145e53; --decision-hover: #1a7466; --decision-line: #65d7c2; }
+.wiring-chat-decision.is-needs-change { --decision-fill: #843e45; --decision-hover: #9f4952; --decision-line: #efa4aa; }
+.wiring-chat-decision.is-unsure { --decision-fill: #73501e; --decision-hover: #896024; --decision-line: #edc37d; }
+.wiring-chat-actions > button.wiring-chat-decision,
+.app.tinkro-theme:not(.display-mode-active) .unified-assistant .ai-debug-message .wiring-chat-actions > button.wiring-chat-decision {
+  background: var(--decision-fill); border-color: var(--decision-line); color: #fff; font-weight: 600;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+.wiring-chat-actions > button.wiring-chat-decision:hover:not(:disabled),
+.app.tinkro-theme:not(.display-mode-active) .unified-assistant .ai-debug-message .wiring-chat-actions > button.wiring-chat-decision:hover:not(:disabled) {
+  background: var(--decision-hover);
+}
+.wiring-chat-actions > button.wiring-chat-decision:focus-visible,
+.app.tinkro-theme:not(.display-mode-active) .unified-assistant .ai-debug-message .wiring-chat-actions > button.wiring-chat-decision:focus-visible {
+  outline: 2px solid var(--decision-line); outline-offset: 3px;
+}
+.wiring-chat-actions > button.wiring-chat-decision:disabled,
+.app.tinkro-theme:not(.display-mode-active) .unified-assistant .ai-debug-message .wiring-chat-actions > button.wiring-chat-decision:disabled {
+  opacity: .65; cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wiring-chat-actions > button.wiring-chat-decision { transition: none; }
+}

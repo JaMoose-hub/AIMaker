@@ -82,6 +82,76 @@ def test_multipart_retry_and_asset_file_authorization(app, setup):
     assert not list(service.root.glob("*.upload"))
 
 
+@pytest.mark.parametrize("locale,count", [("en", 1), ("zh-TW", 3)])
+def test_photo_only_message_accepts_uploaded_images_without_a_typed_prompt(app, setup, locale, count):
+    service, phone, _ = setup
+    published = context()
+    published["design"]["locale"] = locale
+    service.publish_context(published)
+    pair = service.create_pairing(phone["conversation_id"], "http://192.168.1.5:8100")
+    phone = service.pair(pair["code"], "Test phone")
+    with TestClient(app, client=("192.168.1.10", 5000), raise_server_exceptions=False) as client:
+        ids = []
+        for index in range(count):
+            response = client.post("/api/mobile/assets", headers=auth(phone),
+                data={"upload_id": f"photo-only-{index}"}, files={"file": (f"photo-{index}.jpg", jpeg(), "image/jpeg")})
+            assert response.status_code == 200
+            ids.append(response.json()["id"])
+        response = client.post("/api/mobile/messages", headers=auth(phone),
+            json=dict(request_id="photo-only", asset_ids=ids, context_id=phone["context_id"], inherit_media=False))
+        assert response.status_code == 202
+    sent = service.state.assistant.sent[0][1]
+    assert sent["asset_ids"] == ids and sent["source"] == "mobile"
+    assert sent["text"].startswith("請分析" if locale == "zh-TW" else "Please analyze")
+
+
+def test_blank_message_without_explicit_media_is_a_client_error(app, setup):
+    service, phone, _ = setup
+    with TestClient(app, client=("192.168.1.10", 5000), raise_server_exceptions=False) as client:
+        response = client.post("/api/mobile/messages", headers=auth(phone),
+            json=dict(request_id="blank", text="  ", context_id=phone["context_id"]))
+        assert response.status_code == 422
+    assert service.state.assistant.sent == []
+
+
+def test_photo_only_retry_shares_one_saved_reply_and_all_images_with_desktop(app, setup, tmp_path):
+    from app.assistant import AssistantService
+    from app.api.assistant import router as assistant_router
+    from test_assistant import FakeDesigns, settled
+
+    service, phone, _ = setup
+    service.state.design_service = FakeDesigns()
+    service.state.design_service.bridge.reply = {"answer": "The three saved photos are visible."}
+    service.state.mobile_service = service
+    assistant = AssistantService(service.state, tmp_path / "history")
+    assistant.create(phone["conversation_id"])
+    service.state.assistant = app.state.assistant = assistant
+    app.include_router(assistant_router)
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        ids = []
+        for index in range(3):
+            response = client.post("/api/mobile/assets", headers=auth(phone),
+                data={"upload_id": f"retry-photo-{index}"}, files={"file": (f"photo-{index}.jpg", jpeg(), "image/jpeg")})
+            assert response.status_code == 200
+            ids.append(response.json()["id"])
+        payload = dict(request_id="same-photo-request", text="  ", asset_ids=ids,
+            context_id=phone["context_id"], inherit_media=False)
+        assert client.post("/api/mobile/messages", headers=auth(phone), json=payload).status_code == 202
+        settled(assistant, phone["conversation_id"])
+        assert client.post("/api/mobile/messages", headers=auth(phone), json=payload).status_code == 202
+        mobile = client.get("/api/mobile/conversation", headers=auth(phone)).json()
+        desktop = client.get(f"/api/assistant/conversations/{phone['conversation_id']}").json()
+    assert mobile == desktop and len(mobile["jobs"]) == 1
+    assert mobile["jobs"][0]["status"] == "completed"
+    assert mobile["messages"][0]["text"].startswith("Please analyze")
+    assert [item["asset_id"] for item in mobile["messages"][0]["attachments"]] == ids
+    assert mobile["messages"][-1]["text"] == "The three saved photos are visible."
+    calls = service.state.design_service.bridge.calls
+    assert len(calls) == 1
+    assert calls[0][2]["image_paths"] == [service.assets.path(aid) for aid in ids]
+    assert all(path.exists() for path in calls[0][2]["image_paths"])
+
+
 def test_stream_requires_generation_and_matching_phone_session(app, setup):
     _, phone, _ = setup
     with TestClient(app, client=("192.168.1.10", 5000)) as client:

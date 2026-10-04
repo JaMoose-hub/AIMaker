@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { usePiConnection } from "../lib/PiConnection";
 import { executionPending, programOwner, stopPiProgram } from "../lib/piApi";
 import { useMakerText } from "../lib/useMaker";
+import { useHeaderPanel } from "../lib/headerPanels";
 
 export function PiConnectionControl() {
   const pi = usePiConnection(), tr = useMakerText();
@@ -10,7 +11,7 @@ export function PiConnectionControl() {
   const jobs = status?.execution?.jobs ?? [];
   const pending = jobs.filter(executionPending);
   const question = pending.find(j => j.state === "awaiting_confirmation");
-  const [menuOpen, setMenuOpen] = useState(Boolean(question));
+  const [menuOpen, setMenuOpen] = useHeaderPanel("pi", Boolean(question));
   const controlRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const [stopConsent, setStopConsent] = useState<string | null>(null);
@@ -30,7 +31,10 @@ export function PiConnectionControl() {
     : status?.program === "stopping" ? tr("停止中", "Stopping")
     : runtimeActive ? tr("執行中", "Running")
     : pending.length ? tr("排隊中", "Queued") : tr("已連線", "Connected");
-  useEffect(() => { if (question) setMenuOpen(true); }, [question?.id]);
+  const deviceLabel = `${tr("Pi 連線與執行管理", "Pi connection and execution")} · ${connectionLabel}`
+    + (pending.length ? ` · ${pending.length} ${tr("待處理工作", "pending jobs")}` : "");
+  useEffect(() => { if (question) setMenuOpen(true); }, [question?.id, setMenuOpen]);
+  useEffect(() => { if (!menuOpen) setStopConsent(null); }, [menuOpen]);
   useEffect(() => {
     if (!menuOpen) return;
     const outside = (event: Event) => {
@@ -51,7 +55,7 @@ export function PiConnectionControl() {
       document.removeEventListener("focusin", outside);
       document.removeEventListener("keydown", escape);
     };
-  }, [menuOpen]);
+  }, [menuOpen, setMenuOpen]);
   const stopHint = !connected || status?.program === "unknown"
     ? tr("先連線並核對 Pi 狀態。", "Connect and verify the Pi state first.")
     : !status?.execution ? tr("請重啟 Tinkro 後端後再操作。", "Restart the Tinkro backend first.")
@@ -82,10 +86,16 @@ export function PiConnectionControl() {
   };
   return <div ref={controlRef} className="pi-global-control pi-device-control" aria-label={tr("Pi 連線與執行管理", "Pi connection and execution")}>
     <div className="pi-global-row">
-      <details className="pi-execution-menu pi-device-menu" open={menuOpen} onToggle={event => setMenuOpen(event.currentTarget.open)}>
+      <details className="pi-execution-menu pi-device-menu" open={menuOpen}>
         <summary className={`pi-device-trigger${connected ? " connected" : ""}${question || pi.error || pi.networkError ? " is-warning" : ""}`}
-          aria-label={`${tr("Pi 連線與執行管理", "Pi connection and execution")} · ${connectionLabel}`}
-          aria-expanded={menuOpen} aria-controls={menuId} aria-haspopup="dialog">
+          aria-label={deviceLabel} title={deviceLabel}
+          aria-expanded={menuOpen} aria-controls={menuId} aria-haspopup="dialog"
+          onClick={event => { event.preventDefault(); setMenuOpen(!menuOpen); }}>
+          <svg className="pi-device-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+            <rect x="4" y="4" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.4" />
+            <rect x="7" y="7" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.2" />
+            <path d="M7 1.5V4m6-2.5V4M7 16v2.5m6-2.5v2.5M1.5 7H4m-2.5 6H4M16 7h2.5M16 13h2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
           <i className="pi-device-dot" aria-hidden="true" />
           <span className="pi-device-state" aria-live="polite">Pi · {connectionLabel}</span>
           {pending.length ? <span className="pi-device-count" title={tr("待處理工作", "Pending jobs")}>{pending.length}</span> : null}
@@ -132,8 +142,9 @@ export function PiConnectionControl() {
         </div>
       </details>
       {runtimeActive ? <button type="button" className="pi-header-stop" disabled={!canStop} title={stopHint ?? tr("停止目前作品", "Stop the current project")}
+        aria-label={tr("停止目前作品", "Stop the current project")}
         onClick={() => { setMenuOpen(true); setStopConsent(owner); }}>
-        <span aria-hidden="true">■</span> {tr("停止", "Stop")}
+        <span aria-hidden="true">■</span><span className="pi-header-stop-label">{tr("停止", "Stop")}</span>
       </button> : null}
     </div>
   </div>;

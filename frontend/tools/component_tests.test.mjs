@@ -53,7 +53,7 @@ test('guide keeps physical screen instructions left and run-bound confirmation c
   assert.match(actions,/<button disabled="">確認顯示結果/);
 });
 
-test('compact test phases give one short action and hide telemetry in closed details',async()=>{
+test('compact test phases expose distance samples and keep raw telemetry in closed details',async()=>{
   const phases = [
     ['hc-sr04','awaiting_near','15 cm'], ['hc-sr04','awaiting_far','30 cm'],
     ['hc-sr04','sampling_near','5 秒'], ['hc-sr04','sampling_far','5 秒'],
@@ -69,6 +69,8 @@ test('compact test phases give one short action and hide telemetry in closed det
     const [visible,details]=html.split('<details class="test-diagnostics">');
     assert.ok(details,'telemetry disclosure is closed by default');
     assert.doesNotMatch(visible,/test-facts|test-reading|最後回報時間|Last report time|1234|2468|4567|7890/);
+    if(cid==='hc-sr04') assert.match(visible,/test-distance-samples/);
+    else assert.doesNotMatch(visible,/test-distance-summary/);
     assert.match(details,/test-facts/);
     assert.match(details,/15.2 cm/);
     assert.ok(visible.includes(locale==='en'?'Function test':'功能測試'));
@@ -174,7 +176,7 @@ test('troubleshooting sits beside the result without duplicating or hiding contr
       const html=await renderTestCard({design,session,tests,view,onDebug(){throw Error('Rendering must not start debugging');}});
       assert.equal((html.match(/class="component-test-debug-action"/g)??[]).length,1);
       if(view==='controls')assert.doesNotMatch(html,/component-test-result-row/);
-      else assert.match(html,/<header>[\s\S]*<div class="component-test-result-row"><strong[^>]*>[\s\S]*?<\/strong><button[^>]*class="component-test-debug-action"[^>]*>前往除錯<\/button><\/div><\/header>/);
+      else assert.match(html,/<header>[\s\S]*<div class="component-test-result-row"><strong[^>]*>[\s\S]*?<\/strong><button[^>]*class="component-test-debug-action"[^>]*>請 AI 幫忙<\/button><\/div><\/header>/);
     }
     assert.deepEqual(tests,before,'layout does not mutate test history');
   }

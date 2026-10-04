@@ -11,6 +11,7 @@ const api={};new Function('exports',compile('../src/lib/piApi.ts'))(api);
 let connection,english=false;
 const module={};new Function('require','exports','React',compile('../src/components/PiConnectionControl.tsx'))(name=>{
   if(name==='react')return React;
+  if(name==='../lib/headerPanels')return {useHeaderPanel:(_panel,initial=false)=>React.useState(initial)};
   if(name==='../lib/PiConnection')return {usePiConnection:()=>connection};
   if(name==='../lib/piApi')return api;
   if(name==='../lib/useMaker')return {useMakerText:()=> (zh,en)=>english?en:zh};
@@ -87,4 +88,12 @@ test('Pi wrapper loses duplicate label and border, while narrow controls stay ta
   assert.match(css,/\.maker-device-group\.is-pi>\.maker-device-label \{ display:none;/);
   assert.match(css,/@media\(max-width:960px\)[^]*?\.pi-device-control \.pi-header-stop \{ height:44px; min-height:44px;/);
   assert.match(css,/\.pi-device-menu>\.pi-device-trigger::-webkit-details-marker \{ display:none;/);
+});
+
+test('Pi icon retains state and pending count in its tooltip and accessible name',()=>{
+  const entry=summary(render({...idle,execution:{jobs:[job]}}));
+  assert.match(entry,/aria-label="Pi 連線與執行管理 · 排隊中 · 1 待處理工作"/);
+  assert.match(entry,/title="Pi 連線與執行管理 · 排隊中 · 1 待處理工作"/);
+  assert.match(entry,/class="pi-device-icon"[^>]*aria-hidden="true"/);
+  assert.match(render(running),/class="pi-header-stop"[^>]*aria-label="停止目前作品"/);
 });

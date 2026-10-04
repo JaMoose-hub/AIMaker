@@ -129,6 +129,7 @@ export interface LegendInfo {
 interface VideoViewProps {
   /** Render existing video controls inside the shared camera-tools menu. */
   viewControl?: ReactNode | ((cameraControls: ReactNode) => ReactNode);
+  viewNavigation?: ReactNode;
   alternateView?: ReactNode;
   sourceControl?: ReactNode;
   sourceError?: string;
@@ -166,6 +167,7 @@ interface VideoViewProps {
 
 export function VideoView({
   viewControl = null,
+  viewNavigation = null,
   alternateView = null,
   sourceControl = null,
   sourceError = '',
@@ -566,7 +568,7 @@ export function VideoView({
     <div
       ref={containerRef}
       hidden={Boolean(alternateView) && !displayOnlyMode}
-      className={`video-shell${realtimeActive ? " realtime-tracking" : ""}${showBoardSearchHint ? " searching" : ""}${displayOnlyMode ? " display-mode-active" : ""}${opticalHudMode ? " optical-hud" : ""}`}
+      className={`video-shell${viewNavigation && !displayOnlyMode ? " has-view-navigation" : ""}${realtimeActive ? " realtime-tracking" : ""}${showBoardSearchHint ? " searching" : ""}${displayOnlyMode ? " display-mode-active" : ""}${opticalHudMode ? " optical-hud" : ""}`}
     >
       <img
         key={glassesMode ? `eye-${glassesStatus?.runtime_revision}` : `${sourceKey}:${config?.runtime_revision}`}
@@ -578,7 +580,7 @@ export function VideoView({
         onError={handleVideoError}
         onLoad={handleVideoLoad}
       />
-      {!displayOnlyMode ? <LiveCameraOverlay controls={sourceControl} changing={sourceChanging}
+      {!displayOnlyMode ? <LiveCameraOverlay navigation={viewNavigation} controls={sourceControl} changing={sourceChanging}
         unavailable={sourceUnavailable || imageState.phoneWaiting} offline={!glassesMode && (backendDown || (!sourceBlocked && offline))} phone={config?.camera_source === 'phone'}
         error={sourceError} onRetry={imageState.phoneWaiting && !sourceUnavailable ? undefined : onRetrySource} /> : null}
       {displayOnlyMode && imageState.phoneWaiting ? <div className="video-hint" role="status"><span className="hint-pill">{t("camera.realtimeWaiting")}</span></div> : null}
@@ -641,9 +643,10 @@ export function VideoView({
             guidePeerPinId={guideSensorPinId}
             guideLabel={wiringLabels?.board}
           /> : null}
-          {guideTarget && (!guideVisible || poseVisualHeld || guideTarget.connectionKind === "divider") ? (
-            <div className={`wiring-hud-note${poseVisualHeld ? " held" : ""}`} role="status">
-              {t(!guideVisible ? guideTarget.manualOnly ? "wiring.manualUnlocated" : "wiring.paused" : poseVisualHeld ? guideTarget.manualOnly ? "wiring.manualUnlocated" : "wiring.trackingHold" : "wiring.dividerHud")}
+          {/* Keep electrical warnings, but don't cover the image with routine tracking notices. */}
+          {guideTarget?.connectionKind === "divider" ? (
+            <div className="wiring-hud-note" role="status">
+              {t("wiring.dividerHud")}
             </div>
           ) : null}
         </>

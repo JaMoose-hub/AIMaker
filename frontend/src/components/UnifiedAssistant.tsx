@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState, type ReactNode, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type Dispatch, type SetStateAction } from "react";
 import { useChatScroll } from "../lib/useChatScroll";
 import { useMakerText } from "../lib/useMaker";
 import { useI18n } from "../lib/i18n";
 import { currentWire, fillStarterPrompt, makerCatalog, type MakerState } from "../lib/maker";
-import { currentAssistantMedia, type AssistantController, type AssistantConversation } from "../lib/assistant";
+import { currentAssistantMedia, type AssistantController, type AssistantConversation, type AssistantMessage } from "../lib/assistant";
 import { conversationMessageNote, conversationMessages } from "../lib/assistantHistory";
 import type { useMakerAI } from "../lib/useMakerAI";
 import { ProjectConcept } from "./ProjectConcept";
 import { MakerModelMenu } from "./MakerModelMenu";
 import { MobileCompanion, MobileAttachmentCards, type MobileWorkspaceTargets } from "./MobileCompanion";
+import { WiringChatMessage, WiringReceiptStatus } from './WiringChatMessage';
+import { AssistantAnalysisTime } from './AssistantAnalysisTime';
+import type { WiringReviewAction, WiringReviewState } from '../lib/wiringReview';
 
 export function DemoChecklist({ record, controller, compact = false, aiReady = false }: { record: AssistantConversation; controller: AssistantController; compact?: boolean; aiReady?: boolean }) {
   const tr = useMakerText();
@@ -57,9 +60,16 @@ export function DemoWorkspace({ controller }: { controller: AssistantController 
   </section>;
 }
 
-export function UnifiedAssistant({ state, setState, controller, legacy, debugTools, onNewProject, mobileWorkspace }: {
+export function UnifiedAssistant({ state, setState, controller, legacy, debugTools, onNewProject, mobileWorkspace, testHelpFocus, testHelpText, testHelpMessageId, onTestHelpActionTargetChange, wiringReview, onWiringFlowAction, onWiringReceiptRetry }: {
   state: MakerState; setState: Dispatch<SetStateAction<MakerState>>; controller: AssistantController;
   legacy: ReturnType<typeof useMakerAI>; debugTools?: ReactNode; onNewProject: () => Promise<boolean>; mobileWorkspace?: MobileWorkspaceTargets;
+  testHelpFocus?: string;
+  testHelpText?: string;
+  testHelpMessageId?: string;
+  onTestHelpActionTargetChange?: (target: { invitationId: string; element: HTMLDivElement } | null) => void;
+  wiringReview?: WiringReviewState | null;
+  onWiringFlowAction?: (message: AssistantMessage, action: WiringReviewAction) => Promise<boolean>;
+  onWiringReceiptRetry?: () => Promise<boolean>;
 }) {
   const tr = useMakerText();
   const { locale, tx } = useI18n();
@@ -78,6 +88,14 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
   const record = controller.record;
   const historyKey = record ? `${record.id}:${record.context_epoch}` : "";
   const history = Boolean(historyKey) && historyScope === historyKey;
+  const messages = conversationMessages(record, history);
+  const receiptController = controller as AssistantController & {
+    wiringReceiptPending?: boolean; wiringReceiptMessageId?: string | null; wiringReceiptError?: string | null;
+  };
+  const receiptVisible = !controller.demoOpen && Boolean(receiptController.wiringReceiptMessageId)
+    && Boolean(receiptController.wiringReceiptPending || receiptController.wiringReceiptError);
+  const receipt = { pending: Boolean(receiptController.wiringReceiptPending), error: receiptController.wiringReceiptError,
+    onRetry: onWiringReceiptRetry };
   const currentRound = controller.mobileContext?.round ?? state.guide.run ?? 0;
   const referencedMedia = controller.demoOpen ? null : controller.mediaReference !== undefined ? controller.mediaReference
     : currentAssistantMedia(record, currentRound);
@@ -86,14 +104,27 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
   const aiReady = Boolean(legacy.ai?.logged_in && legacy.aiOptions.selectionValid);
   const latest = record?.messages.at(-1);
   const chat = useChatScroll(latest ? `${record?.id}:${latest.id}` : "", true);
+  const testHelpMessage = !controller.demoOpen && testHelpFocus && testHelpMessageId
+    ? record?.messages.find(message => message.id === testHelpMessageId && message.role === "assistant" && message.source === "legacy-debug"
+      && message.epoch === record?.context_epoch && message.round === currentRound && message.text === testHelpText
+      && !conversationMessageNote(message, record!)) : undefined;
+  const testHelpActionRef = useCallback((element: HTMLDivElement | null) => {
+    onTestHelpActionTargetChange?.(element && testHelpFocus ? { invitationId: testHelpFocus, element } : null);
+  }, [onTestHelpActionTargetChange, testHelpFocus]);
+  useLayoutEffect(() => {
+    if (!testHelpFocus) return;
+    chat.followNext();
+    if (!testHelpMessage || !chat.showMessage(testHelpMessage.id)) chat.showLatest();
+  }, [testHelpFocus]);
   const wire = state.design ? currentWire(state.design, state.guide) : undefined;
-  const stageName = state.stage === "design" ? tr("01 · 設計", "01 · Design") : state.stage === "guide" ? tr("02 · 接線", "02 · Wiring") : tr("03 · 程式與輸出", "03 · Code & output");
+  const stageName = state.stage === "design" ? tr("01 設計", "01 Design") : state.stage === "guide" ? tr("02 接線", "02 Wiring") : tr("03 程式與輸出", "03 Code & output");
+  const assistantTitle = `Tinkro AI - ${controller.demoOpen ? tr("示範對話 · 清單規劃", "Demo conversation · planning") : stageName}`;
   const questions = controller.demoOpen || state.stage === "design" ? [tr("這些零件各做什麼？", "What does each part do?"), tr("可以怎麼修改外型？", "How could I change the shape?"), tr("組裝前要準備什麼？", "What should I prepare before assembly?")]
     : state.stage === "guide" ? [tr("這一步怎麼接？", "How do I connect this?"), tr("Pi 腳位在哪？", "Where is the Pi pin?"), tr("怎麼檢查接線？", "How do I check the wiring?")]
       : [tr("解釋目前程式", "Explain the current code"), tr("幫我分析錯誤輸出", "Analyze the error output"), tr("執行版本和草稿一樣嗎？", "Does the running version match the draft?")];
-  async function send() { if (!aiReady || legacy.busy) return; chat.followNext(); await controller.send(); }
+  async function send() { if (controller.busy || !aiReady || legacy.busy) return; chat.followNext(); await controller.send(); }
   return <section className="unified-assistant" aria-label={tr("Tinkro AI 對話", "Tinkro AI conversation")}>
-    <header className="unified-assistant-heading"><div><strong>Tinkro AI</strong><small>{controller.demoOpen ? tr("示範對話 · 清單規劃", "Demo conversation · planning") : stageName}</small></div>
+    <header className="unified-assistant-heading"><strong className="unified-assistant-title" title={assistantTitle}>{assistantTitle}</strong>
       <MobileCompanion controller={controller} aiReady={aiReady && !legacy.busy} selection={mobileSelection} workspace={mobileWorkspace} />
       <details className="assistant-more"><summary>{tr("更多", "More")}</summary><div>
         {state.stage === "design" ? <button onClick={() => controller.setDemoOpen(true)}>{tr("體驗 AI 設計 Demo", "Try AI design demo")}</button> : null}
@@ -111,16 +142,26 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
     <div className="unified-message-list" ref={chat.chatRef} onScroll={chat.onScroll} role="log" aria-label={tr("對話紀錄", "Conversation history")} aria-live="polite">
       {record?.before !== null && record?.before !== undefined ? <button onClick={() => void controller.older()}>{tr("載入較早訊息", "Load earlier messages")}</button> : null}
       <div ref={chat.contentRef}>
-        {conversationMessages(record, history).map(message => {
+        {messages.map(message => {
           const note = conversationMessageNote(message, record!);
-          return <article key={message.id} className={`ai-debug-message is-${message.role}${note ? " is-archived" : ""}`}>
+          return <article key={message.id} data-message-id={message.id} className={`ai-debug-message is-${message.role}${note ? " is-archived" : ""}`}>
           <header><strong>{message.role === "user" ? tr("你", "You") : "Tinkro AI"}</strong><small>{message.source === "demo" ? tr("示範對話", "Sample dialogue") : message.source === "legacy-design" ? tr("舊設計對話", "Legacy design conversation") : message.created_at ? new Date(message.created_at * 1000).toLocaleTimeString(locale) : tr("匯入紀錄", "Imported record")}</small></header>
           <div className="assistant-message-text">{message.text}</div>
-          <MobileAttachmentCards message={message} onOpen={id => setMobileSelection(previous => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))} />
+          {message.id === testHelpMessage?.id && onTestHelpActionTargetChange ? <div className="assistant-message-actions" ref={testHelpActionRef} /> : null}
+          {message.wiring_flow ? <WiringChatMessage message={message} review={wiringReview} busy={controller.busy || legacy.busy || Boolean(receiptController.wiringReceiptPending)} inactive={Boolean(note)}
+            receipt={receiptVisible && message.id === receiptController.wiringReceiptMessageId ? receipt : undefined}
+            onAction={note ? undefined : onWiringFlowAction} /> : null}
+          {message.wiring_flow?.kind === 'photo' && (message.wiring_flow.image_url || message.wiring_flow.capture_id && message.session_id) ? null
+            : <MobileAttachmentCards message={message} onOpen={id => setMobileSelection(previous => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))} />}
           {note ? <small>{note === "previous_context" ? tr("先前聊天上下文", "Earlier chat context") : tr("上一輪紀錄，不作為本輪證據", "Previous round; not evidence for this round")}</small> : null}
           {message.evidence_ids?.length ? <details><summary>{tr("原始照片證據", "Original photo evidence")}</summary>{message.evidence_ids.map(eid => message.session_id ? <a key={eid} href={`/api/debug/sessions/${encodeURIComponent(message.session_id)}/evidence/${encodeURIComponent(eid)}`} target="_blank" rel="noreferrer">{tr("查看照片", "View photo")} ↗</a> : null)}</details> : null}
         </article>;
         })}
+        {receiptVisible && !messages.some(message => message.id === receiptController.wiringReceiptMessageId) ? <article className="ai-debug-message is-assistant"
+          data-wiring-receipt-message-id={receiptController.wiringReceiptMessageId}>
+          <header><strong>Tinkro AI</strong><small>{tr('剛才的接線核對', 'Your last wiring review')}</small></header>
+          <WiringReceiptStatus key={receiptController.wiringReceiptMessageId} receipt={receipt} />
+        </article> : null}
         {controller.demoOpen && record?.demo ? <DemoChecklist record={record} controller={controller} aiReady={aiReady} /> : null}
         {!controller.demoOpen ? record?.jobs.filter(job => job.result && job.result !== state.candidate).map(job => <details key={job.id} className="assistant-checklist"><summary>{tr("保留的設計成果", "Retained design result")} · v{job.result!.revision}</summary>
           <p>{tr("歷史預覽，不會自動覆寫目前作品。", "Historical preview; does not overwrite the current project.")}</p><ProjectConcept design={job.result!} />
@@ -159,7 +200,10 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
           </button>
         </div>
       </div>
-      <small>{controller.busy ? tr("AI 處理中 · 可切換工作區", "AI working · you may switch workspaces") : "Enter ↵ · Shift + Enter"}</small>
+      {controller.wiringAnalysis ? <div className="assistant-analysis-send-status">
+        <AssistantAnalysisTime startedAt={controller.wiringAnalysis.startedAt} />
+        <small>{tr('分析完成後即可送出，草稿會保留。', 'You can send when analysis finishes. Your draft is kept.')}</small>
+      </div> : <small>{controller.busy ? tr("AI 處理中 · 可切換工作區", "AI working · you may switch workspaces") : "Enter ↵ · Shift + Enter"}</small>}
       {!legacy.ai?.logged_in ? <button type="button" onClick={() => void legacy.login()}>{tr("登入 AI", "Sign in to AI")}</button> : null}
       {legacy.loginURL ? <a href={legacy.loginURL} target="_blank" rel="noreferrer">{tr("開啟登入頁", "Open sign-in")}</a> : null}
       {controller.error || legacy.error ? <p role="alert" className="maker-error">{controller.error || legacy.error}</p> : null}

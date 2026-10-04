@@ -8,6 +8,7 @@ from datetime import datetime
 import json
 import hashlib
 from pathlib import Path
+import re
 import tempfile
 import threading
 import time
@@ -16,6 +17,7 @@ import uuid
 from app.debug_support import digest, identity, sanitize, validate_project
 from app.reply_language import reply_language_instruction, system_text
 from app.designs import MODULES, component_spec_path
+from app.guided_wiring_review import GuidedWiringReview, WiringReviewAction, invalidate_review
 
 
 LIVE = {"diagnosing", "awaiting_capture", "awaiting_ready", "testing", "awaiting_visual",
@@ -31,6 +33,9 @@ PERSIST_FIELDS = {
     "camera_verdict", "error", "report", "budget", "step_rev",
     "messages", "response_mode", "model", "effort", "requested_effort", "model_elapsed_ms",
     "conversation_id", "purpose", "wiring_target", "adopted_tests", "diagram_id",
+    "wiring_review",
+    "wiring_review_components", "wiring_review_history",
+    "wiring_dialogue",
 }
 
 
@@ -89,6 +94,7 @@ class DebugSessions:
     def __init__(self, state, store=None, capture=None, *, autostart=True):
         self.state = state
         self.store = Path(store or Path(__file__).parents[1] / "runs/debug-sessions.json")
+        self.image_store = self.store.with_name(self.store.stem + "-images")
         self.capture_fn = capture
         self.lock = threading.RLock()
         self.sessions = {}
@@ -97,6 +103,7 @@ class DebugSessions:
         self.images = {}
         self.samplers = {}
         self.closed = threading.Event()
+        self.guided_wiring_review = GuidedWiringReview(self)
         if self.store.exists():
             try:
                 self.sessions = json.loads(self.store.read_text(encoding="utf-8"))
@@ -143,6 +150,10 @@ class DebugSessions:
                                instruction="後端重新啟動；請檢查並停止舊工作，再用目前作品重新開始除錯。")
             for entry in session.get("evidence", []):
                 entry["available"] = False
+                entry["current"] = False
+                overview = next((view for view in entry.get("views", []) if view.get("name") == "overview"), {})
+                entry["display_available"] = self._archived_image(session["id"], entry["id"], "overview", overview) is not None
+            invalidate_review(session, "backend_restarted")
         self._save()
         self.worker = None
         if autostart:
@@ -299,9 +310,14 @@ class DebugSessions:
                     "tft_observed", "analysis_requested", "capture_pending", "capture_override", "last_model_receipt",
                     "chat_pending", "chat_resume"):
             public.pop(key, None)
+        public.pop("wiring_review_components", None)
+        public.pop("wiring_dialogue", None)
         jobs = self.state.pi_execution.snapshot()["jobs"]
         public["jobs"] = [job for job in jobs if job["id"] in session.get("job_ids", [])]
-        public["model_busy"] = session.get("phase") in {"observing_photo", "observing_tft", "repair_analysing", "replying"}
+        public["model_busy"] = session.get("phase") in {"observing_photo", "observing_tft", "repair_analysing", "replying", "wiring_review_analysing"}
+        if public.get("wiring_review"):
+            for key in ("pending", "last_opinion", "last_input_key", "input_key", "last_progress_key", "role_input_keys"):
+                public["wiring_review"].pop(key, None)
         conversation = self.conversations[session["conversation_id"]]
         public["conversation_current"] = not conversation.get("archived", False)
         public["messages"] = deepcopy(conversation["messages"])
@@ -345,10 +361,35 @@ class DebugSessions:
             return {"active": self._public(current) if current else None,
                     "same_project": current["binding"]["project_id"] == project_id if current and project_id else None}
 
+    def replaceable_photo_history(self, session):
+        """Restored photo-only history has no work to stop or context to resume.
+
+        This is a read-only availability check. Only an explicit new collection
+        supersedes the history, and any hardware or pending work keeps the gate.
+        """
+        review = session.get("wiring_review") or {}
+        adopted = session.get("adopted_tests", [])
+        historical_adoption = isinstance(adopted, list) and all(
+            isinstance(item, dict) and item.get("source") == "existing_component_test"
+            and item.get("evidence_scope") == "current_configuration_historical_run"
+            and isinstance(item.get("run_id"), str) and bool(item["run_id"].strip())
+            for item in adopted)
+        return bool(session.get("purpose") == "wiring_review"
+                    and session.get("status") == "paused" and session.get("phase") == "backend_restarted"
+                    and session.get("context") is None
+                    and not any(session.get(key) for key in ("job_ids", "run_ids", "job_id", "run_id",
+                                                            "trial_id", "trial_run_id", "chat_pending",
+                                                            "capture_pending", "model_started_at",
+                                                            "case_id", "test_attempts"))
+                    and historical_adoption
+                    and not (session.get("budget") or {}).get("tests")
+                    and not review.get("pending") and review.get("status") != "analysing"
+                    and self._wiring_edit_ready(None))
+
     def create(self, context, symptom, model=None, effort=None, request_id=None, *, response_mode="fast",
                purpose="debug", conversation_id=None, initial_action=None):
         validate_project(context.get("project"))
-        if purpose not in {"debug", "wiring_review"} or initial_action not in {None, "message", "capture"}:
+        if purpose not in {"debug", "wiring_review"} or initial_action not in {None, "message", "capture", "collect"}:
             raise ValueError("invalid_session_purpose")
         from app.debug_diagrams import resolve_wiring_target
         wiring_target = resolve_wiring_target(context["project"], context.get("wiring_target")) if context.get("wiring_target") else None
@@ -369,6 +410,10 @@ class DebugSessions:
         binding = _binding(context, self.state.component_tests.target)
         camera = self._camera()
         with self.lock:
+            replaceable = {s["id"] for s in self.sessions.values()
+                           if purpose == "wiring_review" and initial_action == "collect"
+                           and s.get("binding", {}).get("target_id") == binding["target_id"]
+                           and self.replaceable_photo_history(s)}
             if conversation_id:
                 self._ensure_conversation(project["id"], conversation_id)
             # PiExecution's local queue can be empty after a restart while a
@@ -376,6 +421,7 @@ class DebugSessions:
             # explicit stop/reconciliation of the old read-only case first.
             if any(s.get("status") == "paused" and s.get("phase") == "backend_restarted"
                    and s.get("binding", {}).get("target_id") == binding["target_id"]
+                   and s["id"] not in replaceable
                    for s in self.sessions.values()):
                 raise ValueError("restart_requires_stop")
             previous = next((s for s in self.sessions.values() if request_id is not None
@@ -390,6 +436,8 @@ class DebugSessions:
                     return self._public(previous)
             for session in self.sessions.values():
                 if session["status"] not in LIVE | {"paused"} or session["binding"]["target_id"] != binding["target_id"]:
+                    continue
+                if session["id"] in replaceable:
                     continue
                 if (session["binding"] == binding and session["camera"] == camera
                         and not (session["status"] == "paused" and session["phase"] in {"context_changed", "camera_changed"})):
@@ -425,6 +473,10 @@ class DebugSessions:
                            budget=dict(model_calls=0, max_model_calls=MAX_MODEL_CALLS, tests={},
                                        max_tests_per_component=2, captures=0, max_captures=MAX_CAPTURES))
             self.sessions[sid] = session
+            for old_id in replaceable:
+                old = self.sessions[old_id]
+                old.update(status="stopped", phase="superseded", step_rev=old.get("step_rev", 0)+1,
+                           updated_at=now, request_id=None)
             self.images[sid] = {}
             conversation["check_ids"] = (conversation["check_ids"] + [sid])[-64:]
             self._add_message(session, dict(id=uuid.uuid4().hex, role="user", text=symptom.strip()[:2000], created_at=now))
@@ -435,9 +487,10 @@ class DebugSessions:
             session["diagram_id"] = self.create_diagram(conversation["id"], context)["id"]
             if purpose == "wiring_review":
                 capture_now = initial_action == "capture"
-                session.update(status="awaiting_capture", phase="capture_needed" if capture_now else "replying",
-                               capture_pending=capture_now, chat_pending=not capture_now,
-                               instruction="正在拍攝目前接線。" if capture_now else "AI 正在根據目前設計與對話回答。",
+                collect = initial_action == "collect"
+                session.update(status="awaiting_capture", phase="capture_needed" if capture_now else "awaiting_user" if collect else "replying",
+                               capture_pending=capture_now, chat_pending=not capture_now and not collect,
+                               instruction="正在拍攝目前接線。" if capture_now else "請選擇要核對的零件。" if collect else "AI 正在根據目前設計與對話回答。",
                                capture_task=self._capture_task(session) if capture_now else None)
             self._save()
             return self._public(session)
@@ -588,7 +641,9 @@ class DebugSessions:
                 entry["views"].append({**deepcopy(view_meta), "name": name, "mime_type": mime,
                                        "sha256": hashlib.sha256(value).hexdigest(),
                                        "url": entry["url"] + "?view=" + name})
+                self._archive_image(sid, capture_id, name, value)
                 self.images[sid][capture_id if name == "overview" else capture_id + ":" + name] = value
+            entry["display_available"] = True
             session["evidence"].append(entry)
             session["budget"]["captures"] += len(views)
             session["updated_at"] = time.time()
@@ -598,16 +653,61 @@ class DebugSessions:
     def evidence(self, sid, capture_id):
         return self.evidence_view(sid, capture_id)[0]
 
+    def _image_archive_path(self, sid, capture_id, view):
+        if (not isinstance(sid, str) or not re.fullmatch(r"[a-f0-9]{32}", sid)
+                or not isinstance(capture_id, str) or not re.fullmatch(r"[a-f0-9]{32}", capture_id)
+                or not isinstance(view, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,80}", view)):
+            raise ValueError("invalid_capture_identity")
+        path = self.image_store / sid / f"{capture_id}-{view}.bin"
+        if not path.resolve().is_relative_to(self.image_store.resolve()):
+            raise ValueError("invalid_capture_identity")
+        return path
+
+    def _archive_image(self, sid, capture_id, view, data):
+        """Save original bytes atomically; the summary holds their SHA, never a disk path."""
+        path = self._image_archive_path(sid, capture_id, view)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            if path.read_bytes() != data:
+                raise ValueError("capture_archive_conflict")
+            return
+        pending = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".capture-", delete=False) as output:
+                pending = Path(output.name)
+                output.write(data)
+            pending.replace(path)
+        finally:
+            if pending is not None:
+                pending.unlink(missing_ok=True)
+
+    def _archived_image(self, sid, capture_id, view, metadata):
+        """Archive access is for viewing only; never restores model or action eligibility."""
+        expected = metadata.get("sha256")
+        if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
+            return None
+        try:
+            path = self._image_archive_path(sid, capture_id, view)
+            if not 0 < path.stat().st_size <= MAX_CAPTURE_BYTES:
+                return None
+            data = path.read_bytes()
+        except (OSError, ValueError):
+            return None
+        return data if hashlib.sha256(data).hexdigest() == expected else None
+
     def evidence_view(self, sid, capture_id, view="overview"):
         with self.lock:
             session = self.sessions.get(sid)
-            if session is None or not any(e["id"] == capture_id and e.get("available") for e in session["evidence"]):
+            if session is None or not any(e["id"] == capture_id for e in session["evidence"]):
                 raise ValueError("capture_not_found")
             entry = next(e for e in session["evidence"] if e["id"] == capture_id)
             view_meta = next((item for item in entry.get("views", []) if item["name"] == view), None)
             if view != "overview" and view_meta is None:
                 raise ValueError("capture_view_not_found")
-            data = self.images.get(sid, {}).get(capture_id if view == "overview" else capture_id + ":" + view)
+            data = (self.images.get(sid, {}).get(capture_id if view == "overview" else capture_id + ":" + view)
+                    if entry.get("available") else None)
+            if data is None:
+                data = self._archived_image(sid, capture_id, view, view_meta or {})
             if data is None:
                 raise ValueError("capture_expired")
             return data, (view_meta or {}).get("mime_type", "image/jpeg")
@@ -643,12 +743,24 @@ class DebugSessions:
         ok, encoded = cv2.imencode(".jpg", resized, [cv2.IMWRITE_JPEG_QUALITY, 88])
         return encoded.tobytes() if ok else data
 
-    def _ask(self, sid, prompt, schema, captures, *, trusted_paths=None, generate_options=None):
+    def _ask(self, sid, prompt, schema, captures, *, trusted_paths=None, generate_options=None, expected_step=None):
         with self.lock:
             session = self.sessions[sid]
+            if expected_step is not None and session["step_rev"] != expected_step:
+                raise ValueError("session_step_changed")
             if session["budget"]["model_calls"] >= MAX_MODEL_CALLS:
                 raise ValueError("model_call_limit_reached")
-            if any(entry.get("current") is False or entry.get("camera_id") != session["camera"]["camera_id"]
+            def authorised_phone_review(entry):
+                review = session.get("wiring_review") or {}
+                slot = review.get("slots", {}).get(entry.get("role")) or {}
+                return bool(trusted_paths is not None and entry.get("source") == "phone_upload"
+                            and entry.get("wiring_review_id") == review.get("id")
+                            and entry.get("wiring_round") == review.get("round")
+                            and slot.get("available") and slot.get("capture_id") == entry["id"]
+                            and slot.get("sha256") == entry.get("sha256")
+                            and entry.get("provenance", {}).get("asset_id"))
+            if any(entry.get("current") is False or
+                   (entry.get("camera_id") != session["camera"]["camera_id"] and not authorised_phone_review(entry))
                    or entry.get("code_hash") != session["binding"]["code_hash"]
                    or entry.get("wiring_hash") != session["binding"]["wiring_hash"] for entry in captures):
                 raise ValueError("session_step_changed")
@@ -1250,8 +1362,11 @@ class DebugSessions:
                 data = result["images"][name]
                 if len(self.images[sid]) >= MAX_CAPTURES or sum(map(len, self.images[sid].values())) + len(data) > MAX_CAPTURE_BYTES:
                     raise ValueError("capture_limit_reached")
+                self._archive_image(sid, entry["id"], name, data)
                 self.images[sid][entry["id"] + ":" + name] = data
-                saved["views"].append({**deepcopy(view), "url": saved["url"] + "?view=" + name})
+                saved["views"].append({**deepcopy(view), "sha256": hashlib.sha256(data).hexdigest(),
+                                       "mime_type": "image/png" if data.startswith(b"\x89PNG") else "image/jpeg",
+                                       "url": saved["url"] + "?view=" + name})
                 current["budget"]["captures"] += 1
             current["observations"].append(observation)
             self._append_assistant_message(current, observation)
@@ -1656,7 +1771,9 @@ class DebugSessions:
                                               instruction="鏡頭來源已變更；請重新開始除錯。")
                     self._save()
                 return
-            if session.get("chat_pending"):
+            if (session.get("wiring_review") or {}).get("pending"):
+                self.guided_wiring_review.tick(sid)
+            elif session.get("chat_pending"):
                 self._tick_chat(sid, session)
             elif session["status"] == "diagnosing":
                 self._tick_diagnosis(sid, session)
@@ -1697,6 +1814,8 @@ class DebugSessions:
                     del self.images[sid]
                     for entry in session["evidence"]:
                         entry["available"] = False
+                        entry["current"] = False
+                    invalidate_review(session, "photos_expired")
                     self._save()
 
     @staticmethod
@@ -1739,6 +1858,7 @@ class DebugSessions:
             self._adopt_tests(session)
             session["diagram_id"] = self.create_diagram(session["conversation_id"], context)["id"]
             if material or camera_changed:
+                invalidate_review(session, "camera_changed" if camera_changed else "context_changed")
                 for entry in session["evidence"]:
                     entry.update(current=False, invalidated_reason="camera_changed" if camera_changed else "context_changed")
                 session.update(status="awaiting_capture", phase="awaiting_user", capture_pending=False, chat_pending=False,
@@ -1767,7 +1887,7 @@ class DebugSessions:
                 raise ValueError("restart_requires_new_session")
             if session["status"] in {"stopped", "complete"}:
                 raise ValueError("session_not_active")
-        self._stop(sid)
+        self._stop(sid, preserve_wiring_review=True)
         with self.lock:
             session = self.sessions[sid]
             ready = self._wiring_edit_ready(session)
@@ -1781,16 +1901,17 @@ class DebugSessions:
                                near_ready=False, near_sent=False, far_sent=False)
             self._save()
 
-    def action(self, sid, action, request_id, *, context=None, text=None, response_mode=None):
+    def action(self, sid, action, request_id, *, context=None, text=None, response_mode=None, wiring_review=None):
         with self.lock:
             session = self.sessions.get(sid)
             if session is None:
                 raise ValueError("session_not_found")
             if response_mode is not None and response_mode not in {"fast", "thorough"}:
                 raise ValueError("invalid_response_mode")
+            review_action = WiringReviewAction.model_validate(wiring_review) if action == "wiring_review" else None
             signature = json.dumps([action, text, response_mode, _binding(context, self.state.component_tests.target) if context else None,
                                     context.get("wiring_target") if context else None,
-                                    context.get("locale", "zh-TW") if context else None], sort_keys=True)
+                                    context.get("locale", "zh-TW") if context else None, wiring_review], sort_keys=True)
             old = session["receipts"].get(request_id)
             if old is not None:
                 if old["signature"] != signature:
@@ -1801,14 +1922,17 @@ class DebugSessions:
             if action not in {"stop", "context_changed", "prepare_wiring"}:
                 if action == "continue" and session["phase"] == "awaiting_user":
                     raise ValueError("user_reply_required")
-                if action in {"capture", "continue", "message", "start_debug"} and session["phase"] in {"observing_photo", "observing_tft", "repair_analysing", "replying"}:
+                if action in {"capture", "continue", "message", "start_debug"} and session["phase"] in {"observing_photo", "observing_tft", "repair_analysing", "replying", "wiring_review_analysing"}:
                     raise ValueError("model_call_in_progress")
                 if self._camera() != session["camera"]:
                     session.update(status="paused", phase="camera_changed", instruction="鏡頭已變更，請重新開始除錯。")
                     self._save()
                     raise ValueError("camera_changed")
                 new_binding = _binding(context, self.state.component_tests.target) if context else None
-                if new_binding != session["binding"]:
+                human_context_action = bool(review_action and review_action.op in {"review", "changed"})
+                if human_context_action:
+                    self.guided_wiring_review.refresh_human_context(session, review_action, context, new_binding)
+                if new_binding != session["binding"] and not human_context_action:
                     # A new manual check mark is progress, not a physical edit.
                     old_context = session.get("context")
                     progress = (old_context and context and self._confirmation_progress(old_context, context)
@@ -1832,7 +1956,9 @@ class DebugSessions:
                 session["response_mode"] = response_mode
             self._save()
         try:
-            if action == "stop":
+            if action == "wiring_review":
+                self.guided_wiring_review.action(sid, review_action, context=context)
+            elif action == "stop":
                 self._stop(sid)
             elif action == "context_changed":
                 if context is None:
@@ -2009,11 +2135,17 @@ class DebugSessions:
         self.state.debug_cases.analyse(case_id, context, model, effort)
         self._update(sid, phase="repair_analysing", instruction="AI 正在檢查受限程式邏輯；提案仍需由你確認套用。")
 
-    def _stop(self, sid):
+    def _stop(self, sid, *, preserve_wiring_review=False):
         with self.lock:
             session = self.sessions[sid]
             session.update(status="stopped", phase="stopped", instruction="本次 AI 協作除錯已停止。",
                            step_rev=session["step_rev"]+1, updated_at=time.time())
+            if preserve_wiring_review:
+                review = session.get("wiring_review")
+                if review and review["status"] == "analysing":
+                    review.update(status="collecting", pending=False, revision=review["revision"]+1)
+            else:
+                invalidate_review(session, "session_stopped")
             jobs = list(session["job_ids"])
             run_id = session.get("run_id")
             trial_id = session.get("trial_id")

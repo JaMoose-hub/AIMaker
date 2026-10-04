@@ -96,6 +96,19 @@ test('full-frame step diagrams show one heading, one current-module chip and the
   assert.deepEqual(design,before);
 });
 
+test('only the workspace inspector embeds view navigation; dialogs and blueprints keep their own tools',()=>{
+  const design=designFor(),wire=design.wiring[0];
+  const viewControls=React.createElement('nav',{'data-view-tabs':true},'Live · Diagram · Photo');
+  const node=module.StepDiagramView({design,wire,viewControls});
+  assert.equal(React.Children.toArray(node.props.children).find(el=>el.props?.design).props.viewControls,viewControls);
+  const html=renderToStaticMarkup(React.createElement(diagramExports.CircuitDiagram,{design,activeId:wire.id,workspace:true,viewControls}));
+  assert.match(html,/circuit-inspector image-workspace-heading/);
+  assert.equal((html.match(/data-view-tabs/g)||[]).length,1);
+  assert.ok(html.includes(wire.boardLabel));
+  const blueprint=renderToStaticMarkup(React.createElement(diagramExports.CircuitDiagram,{design,viewControls}));
+  assert.doesNotMatch(blueprint,/data-view-tabs|image-workspace-heading/);
+});
+
 test('Blueprint and compact AI previews retain their original controls and no full-frame mode',()=>{
   const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);
   const html=renderToStaticMarkup(React.createElement(diagramExports.CircuitDiagram,{design}));

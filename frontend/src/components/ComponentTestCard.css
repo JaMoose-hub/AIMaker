@@ -19,9 +19,23 @@
   font-size: 11px; line-height: 1.5;
 }
 .component-test-card[data-view="actions"] .test-more-actions { min-width: 0; }
+.component-test-card .component-test-debug-action {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-color: var(--brand-link); color: var(--brand-link); white-space: nowrap;
+}
+.component-test-card .component-test-debug-action:disabled { opacity: .55; }
 .component-test-card[data-view="actions"] .test-more-actions > summary {
   padding: 5px 0; font-size: 11px; cursor: pointer; width: fit-content;
 }
 .component-test-card[data-view="actions"] .test-more-actions > div { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
 .component-test-card[data-view="actions"] .test-more-actions button { font-size: 12px; min-height: 32px; }
 .component-test-card[data-view="actions"] .test-more-actions > summary:focus-visible { outline: 2px solid var(--brand-link); outline-offset: 3px; border-radius: 3px; }
+.component-test-card .test-distance-summary { display: grid; gap: 6px; min-width: 0; }
+.component-test-card .test-distance-summary:empty { display: none; }
+.component-test-card .test-live-distance { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; }
+.component-test-card .test-live-distance .test-reading { margin: 0; min-height: 0; font-size: 22px; line-height: 1.2; }
+.component-test-card .test-distance-samples { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.component-test-card .test-distance-sample { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-variant-numeric: tabular-nums; }
+.component-test-card .test-distance-sample strong { font-size: 15px; color: var(--text); }
+.component-test-card .test-distance-empty { font-size: 12px; color: var(--text-dim); }
+.component-test-card.is-compact-test .test-distance-summary small { font-size: 11px; }

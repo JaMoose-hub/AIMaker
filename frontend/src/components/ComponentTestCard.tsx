@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMakerText } from "../lib/useMaker";
-import { componentComplete, componentTestKey, missingDependencyMessage, testReasons } from "../lib/componentTests";
+import { componentComplete, componentTestKey, missingDependencyMessage, testReasons, ultrasonicTestReadings } from "../lib/componentTests";
 import type { useComponentTests } from "../lib/useComponentTests";
 import type { ProjectDesign, ProjectGuideState } from "../lib/maker";
+import type { ComponentTestHelpEvidence } from "../lib/componentTestHelp";
 import "./ComponentTestCard.css";
 
 export function ComponentTestCard({ design, session, tests, onViewWiring, onDebug, view = "all", runId }: {
@@ -10,7 +11,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
   view?: "all" | "controls" | "results" | "instructions" | "actions" | "dock";
   runId?: string;
   onViewWiring: () => void;
-  onDebug?: (componentId: string, runId?: string, symptom?: string) => void;
+  onDebug?: (componentId: string, runId?: string, symptom?: string, evidence?: ComponentTestHelpEvidence) => void | Promise<boolean>;
 }) {
   const tr = useMakerText();
   // The wiring guide separates readable instructions/results from hardware actions.
@@ -33,12 +34,16 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
   const foreign = active && (active.project_id !== design.id || active.component_id !== cid);
   const run = runId ? (active?.id === runId ? active : tests.status.results.find(item => item.id === runId && item.project_id === design.id && item.component_id === cid))
     : (!showControls && foreign ? null : active) ?? (failedJob ? undefined : last);
-  const stale = Boolean(run && (run.invalidated || run.guide_key !== key || (foreign && run === active)));
+  const stale = Boolean(run && (run.invalidated || run.revision !== design.revision || run.guide_key !== key || (foreign && run === active)));
   const [choice, setChoice] = useState<{runId:string; code:string; normal:boolean}>({runId:"",code:"",normal:false});
   const [copied, setCopied] = useState(false);
+  const [askingAI, setAskingAI] = useState(false);
+  const [helpError, setHelpError] = useState<string | null>(null);
+  const helpFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [openedAt] = useState(() => Date.now() / 1000);
-  if (runId && (!run || run.project_id !== design.id || run.component_id !== cid)) return <p role="status">{tr("正在取得這次測試紀錄；不會改用其他測試的確認選項。", "Loading this exact test; another run's confirmation options will not be substituted.")}</p>;
-  if (!complete && !active && !last) return null;
+  const [readingClock, setReadingClock] = useState(() => Date.now() / 1000);
   const reason = tests.error ?? failedJob?.reason ?? (stale && (!foreign || !showControls) ? "wiring_changed" : run?.reason);
   const detail = (reason === "missing_dependency" ? missingDependencyMessage(failedJob?.error ?? run?.detail ?? "", failedJob ? "preflight" : run?.failed_phase ?? run?.phase) : null)
     ?? (reason ? testReasons[reason] : null);
@@ -77,13 +82,55 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     display_code: tr("記下實體螢幕的四位數字（顯示至少 15 秒）。", "Note the four digits on the physical screen (shown for at least 15 seconds)."),
     awaiting_visual: tr("選出螢幕上的數字，確認三色。沒看到請勿猜選。", "Select the code you saw and confirm all three colors. Do not guess."),
   };
-  const liveReading = run?.latest && !tests.error && !stale && !reason && Date.now()/1000-run.latest.at < 2
-    ? run.latest.cm.toFixed(1) : null;
+  const ownRun = !run || (run.project_id === design.id && run.component_id === cid);
+  const distances = ultrasonicTestReadings(run, { now: Math.max(readingClock, Date.now() / 1000),
+    stale: stale || !ownRun, error: reason ?? (!tests.status.connected && run?.reserved ? "connection_lost" : null) });
+  // Expire a reading even when a slow status request leaves the same run mounted.
+  useEffect(() => {
+    if (!distances?.expiresAt) return;
+    const timer = setTimeout(() => setReadingClock(Date.now() / 1000), Math.max(1, (distances.expiresAt - Date.now() / 1000) * 1000));
+    return () => clearTimeout(timer);
+  }, [run?.id, distances?.expiresAt]);
+  const visibleDistances = distances && ownRun && !stale && !failedJob;
   const facts = run && (run.reserved || Object.keys(run.samples).length > 0) ? <div className="test-facts">
     {run.reserved ? <span>{tr("最後回報時間", "Last report time")}: {run.heartbeat_at ? new Date(run.heartbeat_at*1000).toLocaleString(tr("zh-TW", "en")) : tr("等待首次回報", "Waiting for first report")}</span> : null}
     {Object.entries(run.samples).map(([samplePhase, sample]) => <span key={samplePhase}>{samplePhase === "near" ? tr("近", "Near") : tr("遠", "Far")}: {sample.count} {tr("筆", "samples")} · {sample.median_cm ?? "—"} cm</span>)}</div> : null;
-  const debugAction = onDebug && (reason || outcome === "failed" || outcome === "inconclusive")
-    ? <button type="button" className="component-test-debug-action" onClick={() => onDebug(cid, run?.id, reason ?? undefined)}>{tr("前往除錯", "Troubleshoot")}</button> : null;
+  // A reason can describe an idle error, cancellation or outdated evidence.
+  // Only a failure bound to this project and wiring may offer test help.
+  const nonProblemReasons = ["cancelled", "wiring_changed", "stale_test", "catalog_changed", "profile_changed"];
+  const currentRun = Boolean(run && ownRun && run.revision === design.revision && run.guide_key === key && !run.invalidated && !stale);
+  const terminalProblem = currentRun && (run?.outcome === "failed" || run?.outcome === "inconclusive")
+    && !nonProblemReasons.includes(run?.reason ?? "") && !nonProblemReasons.includes(reason ?? "");
+  const liveProblem = currentRun && run?.reserved && active?.id === run.id
+    && !nonProblemReasons.includes(reason ?? "") && !nonProblemReasons.includes(run.reason ?? "")
+    && (Boolean(tests.error) || ["connection_lost", "remote_state_unknown", "no_progress"].includes(run.reason ?? ""));
+  const jobProblem = Boolean(failedJob && !run && failedJob.project_id === design.id && failedJob.component_id === cid
+    && failedJob.guide_key === key && !nonProblemReasons.includes(failedJob.reason ?? "")
+    && !nonProblemReasons.includes(reason ?? ""));
+  const canAskHelp = Boolean(liveProblem || (!queued && (terminalProblem || jobProblem)));
+  const helpTarget = JSON.stringify([design.id, design.revision, cid, key, runId ?? null, run?.id ?? null, failedJob?.id ?? null]);
+  // Retained click handlers must check the latest target and eligibility again.
+  const currentHelp = useRef({ target: helpTarget, canAskHelp, onDebug, busy, cid, run, reason, outcome, historical, stale,
+    error: tests.error ?? failedJob?.error });
+  currentHelp.current = { target: helpTarget, canAskHelp, onDebug, busy, cid, run, reason, outcome, historical, stale,
+    error: tests.error ?? failedJob?.error };
+  if (runId && (!run || run.project_id !== design.id || run.component_id !== cid)) return <p role="status">{tr("正在取得這次測試紀錄；不會改用其他測試的確認選項。", "Loading this exact test; another run's confirmation options will not be substituted.")}</p>;
+  if (!complete && !active && !last && !failedJob) return null;
+  async function askAI() {
+    const current = currentHelp.current;
+    if (!mounted.current || !current.onDebug || helpFlight.current || current.busy || !current.canAskHelp || current.target !== helpTarget) return;
+    helpFlight.current = true; setAskingAI(true); setHelpError(null);
+    try {
+      const accepted = await current.onDebug(current.cid, current.run?.id, current.reason ?? undefined, {
+        componentId: current.cid, run: current.run ?? null, reason: current.reason ?? null, outcome: current.outcome,
+        historical: current.historical, stale: current.stale, error: current.error,
+      });
+      if (mounted.current && currentHelp.current.target === helpTarget && accepted === false) setHelpError(helpTarget);
+    } catch { if (mounted.current && currentHelp.current.target === helpTarget) setHelpError(helpTarget); }
+    finally { helpFlight.current = false; if (mounted.current) setAskingAI(false); }
+  }
+  const debugAction = onDebug && canAskHelp
+    ? <button type="button" className="component-test-debug-action" disabled={busy || askingAI} onClick={() => void askAI()}>{tr(askingAI ? "正在送出…" : "請 AI 幫忙", askingAI ? "Sending…" : "Ask AI for help")}</button> : null;
   const historyNote = run && !run.reserved ? <small className="test-history">{historical ? tr("上次測試紀錄", "Last test record") : tr("本次測試結果", "This test result")}{!compact ? ` · ${finishedTime}` : ""}{historical ? tr("（先前保存，非目前接線證據）", " (saved history, not current wiring evidence)") : ""}</small> : null;
   const compactStale = compact && stale && !run?.reserved && !tests.error && !failedJob && !foreign;
   const wiringCount = design.wiring.filter(wire => wire.componentId === cid).length;
@@ -100,12 +147,29 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     </> : null}
     {showInstructions ? <div className="test-next-step" role="status">{compactStale ? tr("舊結果已失效，請重新測試。", "The old result is no longer valid. Run a new test.") : detail ? tr(...detail) : tests.error ? tr("狀態更新失敗，請查看診斷或重新連線。", "Status update failed. Check diagnostics or reconnect.") : run?.reserved ? (compact ? compactPhases[phase ?? ""] : undefined) ?? phases[phase ?? ""] ?? tr("等待本次測試回報", "Waiting for test progress") : historical ? tr("重新測試可確認目前接線。", "Retest to check the current wiring.") : outcome === "passed" ? tr("本次功能測試通過，可以繼續下一個零件。", "This function test passed. Continue to the next component.") : tr("核對接線與供電後，按「測試」。", "Check wiring and power ratings, then press Test.")}</div> : null}
     {showResults ? <>
-    {run?.component_id === "hc-sr04" && run.reserved && (!compact || liveReading !== null) ? <p className="test-reading">{liveReading ?? "—"} <small>cm</small></p> : null}
+    {visibleDistances ? <div className="test-distance-summary">
+      {distances.sampling ? <div className="test-live-distance" role="status">
+        <small>{tr("即時距離", "Live distance")}</small>
+        {distances.liveCm !== null ? <p className="test-reading">{distances.liveCm.toFixed(1)} <small>cm</small></p>
+          : <span className="test-distance-empty">{tr("等待有效回波…", "Waiting for a valid echo…")}</span>}
+      </div> : null}
+      {distances.samples.length > 0 ? <div className="test-distance-samples" aria-label={tr(run?.reserved ? "已完成的距離取樣" : "測試距離紀錄", run?.reserved ? "Completed distance samples" : "Test distance record")}>
+        {distances.samples.map(sample => <span className="test-distance-sample" key={sample.phase}>
+          <small>{sample.phase === "near" ? tr("近距離", "Near distance") : tr("遠距離", "Far distance")}</small>
+          {sample.medianCm !== null ? <strong>{sample.medianCm.toFixed(1)} <small>cm</small></strong>
+            : <span>{tr("無有效距離", "No valid distance")}</span>}
+          <small>{sample.count} {tr("筆有效回波", "valid echoes")}{sample.medianCm !== null ? tr(" · 中位數", " · median") : ""}</small>
+        </span>)}
+      </div> : null}
+      {!run?.reserved && run?.reason === "no_echo" && distances.samples.length === 0
+        ? <span className="test-distance-empty">{tr("有效回波不足，沒有可確認的距離結果。", "Too few valid echoes for a confirmed distance result.")}</span> : null}
+    </div> : null}
     {!compact ? facts : null}
     </> : null}
     {showControls ? <><div className="test-actions">
       {!tests.status.connected && !compactActions ? <small>{tr("請使用上方「連線 Pi」", "Use Connect Pi at the top")}</small> : null}
       {!runId && complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} title={!tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
+      {compactActions ? debugAction : null}
       {canAct && phase === "awaiting_stop_consent" ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, "stop_project")}>{tr("確認停止原作品，開始測試", "Stop original project and test")}</button> : null}
       {canAct && (phase === "awaiting_near" || phase === "awaiting_far") ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, phase === "awaiting_near" ? "near" : "far")}>{tr("準備好了，取樣 5 秒", "Ready · sample for 5 seconds")}</button> : null}
       {run?.reserved ? <button disabled={busy} onClick={() => void tests.action(run, "stop")}>{tr("停止本次測試", "Stop this test")}</button> : null}
@@ -118,12 +182,12 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
       <button disabled={choice.runId !== run.id || !choice.code || !choice.normal} onClick={() => void tests.action(run, "visual", {code:choice.code,appearance:"normal"})}>{tr("確認顯示結果", "Confirm display result")}</button>
       <div className="test-actions">{([['black','全黑','Black screen'],['white','白屏','White screen'],['abnormal','亂碼／顏色異常','Abnormal image/colors']] as const).map(([appearance,zh,en]) => <button key={appearance} onClick={() => void tests.action(run,"visual",{appearance})}>{tr(zh,en)}</button>)}</div>
     </fieldset> : null}
-    {compactActions && view !== "dock" ? <details className="test-more-actions"><summary>{tr("其他操作", "More actions")}</summary><div>{debugAction}
+    {compactActions && view !== "dock" ? <details className="test-more-actions"><summary>{tr("其他操作", "More actions")}</summary><div>
       <button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button>
     </div></details> : null}
     </> : null}
     {showResults ? <details className="test-diagnostics"><summary>{compact ? tr("測試詳情", "Test details") : tr("診斷與環境設定", "Diagnostics and setup")}</summary>
-      {view === "dock" ? <div className="test-diagnostic-actions">{debugAction}<button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button></div> : null}
+      {view === "dock" ? <div className="test-diagnostic-actions"><button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button></div> : null}
       {compactStale ? historyNote : null}
       {compact ? facts : null}
       {compact && finishedTime ? <p>{finishedTime}</p> : null}
@@ -132,6 +196,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
       <pre>{JSON.stringify(run ? {id:run.id,target:run.target_id,phase:run.phase,failed_phase:run.failed_phase,reason:run.reason,error:tests.error,detail:run.detail,exit_code:run.exit_code,latest_valid_at:run.latest_valid_at,template:run.template_version,samples:run.samples,logs:run.logs} : {error:tests.error},null,2)}</pre>
       <button onClick={() => { void navigator.clipboard.writeText(JSON.stringify({run,error:tests.error},null,2)).then(()=>setCopied(true)).catch(()=>setCopied(false)); }}>{tr(copied ? "已複製" : "複製診斷", copied ? "Copied" : "Copy diagnostics")}</button>
     </details> : null}
+    {canAskHelp && helpError === helpTarget ? <small role="alert">{tr("求助訊息尚未送出，請查看右側 AI 狀態後重試。", "Help was not sent. Check the AI status on the right and retry.")}</small> : null}
     {showInstructions ? <small className="test-safety-note">{compact ? tr("改線前斷電 · 測試僅確認功能", "Power off to rewire · Function check only") : tr("改接線前斷電，接好再上電測試。功能通過不等於所有線路與電壓均已驗證。", "Power off before rewiring. Function success is not complete electrical verification.")}</small> : null}
   </section>;
 }

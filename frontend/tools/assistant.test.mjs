@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
@@ -17,6 +18,14 @@ const historyCode = ts.transpileModule(readFileSync(new URL('../src/lib/assistan
 }).outputText;
 const history = {};
 new Function('exports', historyCode)(history);
+const wiringReceipts = {};
+new Function('exports', ts.transpileModule(readFileSync(new URL('../src/lib/wiringReceipt.ts', import.meta.url), 'utf8'), {
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
+}).outputText)(wiringReceipts);
+const analysisHelpers = {};
+new Function('exports', ts.transpileModule(readFileSync(new URL('../src/lib/assistantAnalysis.ts', import.meta.url), 'utf8'), {
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
+}).outputText)(analysisHelpers);
 function harness(request, {demo=null, guard=async()=>true, brokenStorage=false, persisted=new Map()}={}) {
   const values=[], refs=[], calls=[]; let index=0, ref=0;
   let state={...maker.initialMaker(), design:designFor(), prompt:'original draft', code:'manual code'};
@@ -30,12 +39,412 @@ function harness(request, {demo=null, guard=async()=>true, brokenStorage=false, 
   const exports={};
   const modules={react,'./maker':{...maker,makerRequest:async(path,body)=>{calls.push({path,body});return request(path,body);}},
     './i18n':{useI18n:()=>({locale:'en'})},'./makerMigration':{MAKER_STORAGE:'boardvision.maker.v1'},
-    './wiringEdit':{prepareProjectWiringEdit:guard},'./componentTests':{componentTestKey:()=> 'test-key'}};
+    './wiringEdit':{prepareProjectWiringEdit:guard},'./componentTests':{componentTestKey:()=> 'test-key'},'./wiringReceipt':wiringReceipts,
+    './assistantAnalysis':analysisHelpers};
   new Function('require','exports',code)(name=>modules[name],exports);
   const update=next=>{state=typeof next==='function'?next(state):next;};
   return {render(debugSession=null){index=0;ref=0;return exports.useAssistant(state,update,null,debugSession);},update,state:()=>state,calls,values,persisted,exports};
 }
 const deferred=()=>{let resolve,reject;const promise=new Promise((y,n)=>{resolve=y;reject=n;});return{promise,resolve,reject};};
+const offerFor=snapshot=>({id:'local-offer',projectId:snapshot.design.id,revision:snapshot.design.revision,
+  componentId:'hc-sr04',guideKey:'test-key',guideRun:snapshot.guide.run??0,contextEpoch:0,mode:'wiring',
+  text:'HC-SR04+ did not return enough readings. Check the wiring with photos?'});
+const factsFor=snapshot=>({project_id:snapshot.design.id,project_revision:snapshot.design.revision,
+  component_id:'hc-sr04',test_id:snapshot.debug.runId??null,reason:'no_echo',logs:['PRIVATE TEST LOG']});
+const receiptFor=(body,change={})=>{
+  const item=body.messages[0];
+  const import_key=createHash('sha256').update(`[${[body.source_id,item.id,item.role,item.text].map(value=>JSON.stringify(value)).join(', ')}]`).digest('hex');
+  return {...item,id:`server-${import_key.slice(0,12)}`,import_key,source:'legacy-debug',epoch:0,capability:'debug',...change};
+};
+const importReply=(body,change={})=>({...record(),messages:[receiptFor(body,change)],total:1,context_epoch:change.epoch??0});
+const wiringQuestion = (changes={}) => ({id:'photo-prompt',role:'assistant',text:'請拍 Pi 第一側。',source:'legacy-debug',
+  stage:'guide',capability:'wiring',epoch:0,round:0,created_at:1,
+  wiring_flow:{flow_id:'flow-1',review_id:'review-1',revision:3,round:1,component_id:'hc-sr04',kind:'photo_request',
+    role:'pi_side_a',current:true,can_act:true,actions:['capture']},...changes});
+const wiringAction = {op:'capture',role:'pi_side_a',review_id:'review-1',revision:3,component_id:'hc-sr04'};
+const runningAnalysis = {flow_id:'flow-1',session_id:'debug-1',review_id:'review-1',revision:3,round:1,started_at:100};
+
+test('analysis feedback locks desktop sends without creating an outbox or consuming the draft',async()=>{
+  const h=harness(()=>assert.fail('Analysis must prevent a new request'));
+  h.render().acceptExternal({...record(),wiring_analysis:runningAnalysis});
+  assert.equal(h.render().busy,true);assert.deepEqual(h.render().wiringAnalysis,{startedAt:100});
+  assert.equal(await h.render().send(),false);assert.equal(h.state().prompt,'original draft');
+  assert.equal(h.calls.length,0);assert.equal(h.persisted.has('boardvision.assistant.v1.outbox'),false);
+});
+
+test('analysis feedback releases the preserved draft only on an authoritative idle update',async()=>{
+  const h=harness(()=>({...record(),wiring_analysis:null}));
+  h.render().acceptExternal({...record(),wiring_analysis:runningAnalysis});
+  assert.equal(await h.render().send(),false);
+  h.render().acceptExternal({...record(),wiring_analysis:null});
+  assert.equal(h.render().busy,false);assert.equal(h.state().prompt,'original draft');
+  assert.equal(await h.render().send(),true);assert.equal(h.calls.length,1);
+  assert.equal(h.calls[0].body.text,'original draft');assert.equal(h.state().prompt,'');
+});
+
+test('analysis feedback ignores historical and cleared clocks while explicit idle wins over loaded messages',()=>{
+  const pending={...wiringQuestion(),round:0,wiring_flow:{...wiringQuestion().wiring_flow,kind:'analysing',started_at:100}};
+  assert.deepEqual(analysisHelpers.assistantWiringAnalysis({...record(),messages:[pending]}),{startedAt:100});
+  for(const modified of [{archived:true},{epoch:1},{round:1},{role:'user'},
+    {wiring_flow:{...pending.wiring_flow,current:false}}])
+    assert.equal(analysisHelpers.assistantWiringAnalysis({...record(),messages:[{...pending,...modified}]}),null);
+  assert.equal(analysisHelpers.assistantWiringAnalysis({...record(),wiring_analysis:null,messages:[pending]}),null);
+  assert.equal(analysisHelpers.assistantWiringAnalysis({...record('demo'),wiring_analysis:runningAnalysis}),null);
+});
+
+test('analysis feedback shows real elapsed seconds and never guesses a missing start',()=>{
+  assert.equal(analysisHelpers.analysisElapsedMs(100,165999),65999);
+  assert.equal(analysisHelpers.formatAnalysisDuration(65999),'1:05');
+  assert.equal(analysisHelpers.analysisElapsedMs(200,165999),0);
+  for(const start of [null,undefined,NaN,Infinity,0,-1])assert.equal(analysisHelpers.analysisElapsedMs(start,165999),null);
+  assert.deepEqual(analysisHelpers.assistantWiringAnalysis({...record(),wiring_analysis:{...runningAnalysis,started_at:null}}),{startedAt:null});
+});
+const wiringReply = (message=wiringQuestion()) => ({conversation:{...record(),messages:[{...message,wiring_flow:{...message.wiring_flow,current:false,can_act:false}},
+  {...wiringQuestion(),id:'next-prompt',text:'接著拍 Pi 另一側。',wiring_flow:{...message.wiring_flow,revision:5,role:'pi_side_b'}}],total:2},
+  debug_session_id:'debug-1',debug_session:{id:'debug-1',wiring_review:{id:'review-1',revision:5}}});
+function wiringHarness(request) {
+  const h=harness(request);h.render().acceptExternal({...record(),messages:[wiringQuestion()],total:1});return h;
+}
+
+test('wiring chat transport sends the exact message reference and accepts the next question without consuming a draft',async()=>{
+  const h=wiringHarness(()=>wiringReply()),controller=h.render(),message=controller.project.messages[0];
+  const result=await controller.wiringFlowAction(message,wiringAction);
+  assert.ok(result);assert.equal(h.calls.length,1);assert.equal(h.calls[0].path,'assistant/conversations/project/wiring-flow');
+  assert.equal(h.calls[0].body.message_id,'photo-prompt');assert.equal(h.calls[0].body.flow_id,'flow-1');
+  assert.deepEqual(h.calls[0].body.action,wiringAction);assert.equal(h.state().prompt,'original draft');
+  assert.equal(h.render().project.messages.at(-1).id,'next-prompt');
+});
+test('wiring chat transport rejects stale message revisions before requesting anything',async()=>{
+  const h=wiringHarness(()=>assert.fail('No stale request'));
+  const controller=h.render(),message=controller.project.messages[0];
+  assert.equal(await controller.wiringFlowAction({...message,wiring_flow:{...message.wiring_flow,revision:2}},wiringAction),false);
+  assert.equal(h.calls.length,0);
+});
+test('wiring chat transport preserves request identity on an upload or transport retry',async()=>{
+  let attempt=0;const h=wiringHarness(()=>{if(attempt++===0)throw Error('upload_failed');return wiringReply();});
+  assert.equal(await h.render().wiringFlowAction(wiringQuestion(),wiringAction),false);
+  assert.ok(await h.render().wiringFlowAction(wiringQuestion(),wiringAction));
+  assert.equal(h.calls[0].body.request_id,h.calls[1].body.request_id);assert.equal(h.state().prompt,'original draft');
+});
+test('wiring chat transport ignores a late reply after a cleared conversation',async()=>{
+  const response=deferred(),h=wiringHarness(()=>response.promise);
+  const waiting=h.render().wiringFlowAction(wiringQuestion(),wiringAction);
+  h.render().acceptExternal({...record(),context_epoch:1});h.render();response.resolve(wiringReply());
+  assert.equal(await waiting,false);assert.equal(h.render().project.context_epoch,1);assert.ok(!h.render().project.messages.some(m=>m.id==='next-prompt'));
+});
+test('wiring chat transport ignores a late reply after a guide or wiring change',async()=>{
+  const response=deferred(),h=wiringHarness(()=>response.promise);
+  const waiting=h.render().wiringFlowAction(wiringQuestion(),wiringAction);
+  h.update(s=>({...s,guide:{...s.guide,confirmed:{}}}));h.render();response.resolve(wiringReply());
+  assert.equal(await waiting,false);assert.equal(h.render().project.messages.at(-1).id,'photo-prompt');
+});
+test('wiring chat transport makes double clicks a single request',async()=>{
+  const response=deferred(),h=wiringHarness(()=>response.promise),controller=h.render();
+  const waiting=controller.wiringFlowAction(wiringQuestion(),wiringAction);
+  assert.equal(await controller.wiringFlowAction(wiringQuestion(),wiringAction),false);assert.equal(h.calls.length,1);
+  response.resolve(wiringReply());assert.ok(await waiting);
+});
+test('wiring chat transport passes the human confirmation context only on the explicit bound action',async()=>{
+  const message=wiringQuestion({wiring_flow:{...wiringQuestion().wiring_flow,kind:'wire_review',wire_id:'wire-1',actions:['review']}});
+  const h=wiringHarness(()=>wiringReply(message));h.render().acceptExternal({...record(),messages:[message],total:1});
+  const context={project:h.state().design,code:'manual code',test_keys:{'hc-sr04':'confirmed-key'},guide_confirmations:{'wire-1':{at:'now'}}};
+  assert.ok(await h.render().wiringFlowAction(message,{...wiringAction,op:'review',wire_id:'wire-1',decision:'confirmed'},context));
+  assert.deepEqual(h.calls[0].body.context,context);assert.equal(h.calls[0].body.action.decision,'confirmed');
+  assert.deepEqual(h.state().guide.confirmed,{});
+});
+test('wiring chat transport rejects an action absent from the current question',async()=>{
+  const h=wiringHarness(()=>assert.fail('No unoffered action'));
+  assert.equal(await h.render().wiringFlowAction(wiringQuestion(),{...wiringAction,op:'analyse'}),false);assert.equal(h.calls.length,0);
+});
+test('wiring receipt transport reads the exact completed human receipt after a lost ACK and flow advancement',async()=>{
+  const message=wiringQuestion({session_id:'debug-1',wiring_flow:{...wiringQuestion().wiring_flow,kind:'wire_review',wire_id:'wire-1',actions:['review']}});
+  const h=wiringHarness((path,body)=>{if(body)throw Error('lost acknowledgement');return {...wiringReply(message),receipt_state:'done',
+    request_id:h.calls[0].body.request_id,guide_receipt:{request_id:h.calls[0].body.request_id}};});
+  h.render().acceptExternal({...record(),messages:[message],total:1});
+  const context={project:h.state().design,code:'manual code',test_keys:{'hc-sr04':'after'},guide_confirmations:{'wire-1':{at:'frozen-time'}}};
+  assert.equal(await h.render({id:'debug-1',binding:{test_keys:{'hc-sr04':'before'}}}).wiringFlowAction(message,{...wiringAction,op:'review',wire_id:'wire-1',decision:'confirmed'},context),false);
+  assert.equal(h.render().wiringReceiptPending,true);
+  h.render().acceptExternal(wiringReply(message).conversation);h.render();
+  const result=await h.render().recoverWiringFlow();assert.ok(result);
+  assert.match(h.calls[1].path,/\/wiring-flow\/receipts\//);assert.equal(h.calls[1].body,undefined);
+  assert.equal(result.outbox.context.guide_confirmations['wire-1'].at,'frozen-time');
+  assert.deepEqual(h.state().guide.confirmed,{});
+  h.render().acknowledgeWiringFlow(result.outbox.request_id);assert.equal(h.render().wiringReceiptPending,false);
+});
+test('wiring receipt transport retries a missing submission with its persisted original request and context',async()=>{
+  const message=wiringQuestion({session_id:'debug-1',wiring_flow:{...wiringQuestion().wiring_flow,kind:'wire_review',wire_id:'wire-1',actions:['review']}});
+  let posts=0;const h=wiringHarness((_path,body)=>{if(body){if(posts++===0)throw Error('upload never reached server');return {...wiringReply(message),guide_receipt:{request_id:body.request_id}};}
+    return {...wiringReply(message),conversation:{...record(),messages:[message],total:1},receipt_state:'missing'};});
+  h.render().acceptExternal({...record(),messages:[message],total:1});
+  const context={project:h.state().design,code:'manual code',test_keys:{'hc-sr04':'after'},guide_confirmations:{'wire-1':{at:'original-time'}}};
+  assert.equal(await h.render({id:'debug-1',binding:{}}).wiringFlowAction(message,{...wiringAction,op:'review',wire_id:'wire-1',decision:'confirmed'},context),false);
+  assert.ok(await h.render().recoverWiringFlow(true));assert.equal(h.calls.length,3);
+  assert.equal(h.calls[2].body.request_id,h.calls[0].body.request_id);assert.deepEqual(h.calls[2].body.context,h.calls[0].body.context);
+  assert.ok(h.persisted.has('boardvision.assistant.v1.wiring-outbox'));assert.deepEqual(h.state().guide.confirmed,{});
+});
+
+test('known test help imports one short assistant invitation without a model request, draft changes or phone context changes',async()=>{
+  const h=harness((_path,body)=>importReply(body)),controller=h.render(),snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo');
+  const before=structuredClone(controller.mobileContext);
+  const invitation=offerFor(snapshot),facts=factsFor(snapshot);
+  const messageId=await controller.offerTestHelp(snapshot,invitation,facts);
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].path,'assistant/conversations/project/import');
+  const body=h.calls[0].body;assert.match(body.source_id,/^test-help:[a-f0-9]{64}$/);
+  assert.equal(messageId,receiptFor(body).id);
+  assert.equal(body.kind,'legacy-debug');assert.equal(body.messages.length,1);
+  assert.equal(body.messages[0].role,'assistant');assert.equal(body.messages[0].text,invitation.text);
+  assert.doesNotMatch(JSON.stringify(body.messages),/PRIVATE TEST LOG|selected-test|session_id|capture_ids/);
+  assert.equal(body.test_help.test_id,'selected-test');
+  assert.equal(body.test_help.offer_id,invitation.id);
+  assert.match(body.test_help.code_hash,/^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(body.test_help),/PRIVATE TEST LOG|manual code/);
+  assert.equal(h.state().prompt,'original draft');assert.equal(h.state().code,'manual code');
+  assert.deepEqual(h.render().mobileContext,before);
+});
+test('invitation delivery retry reuses the issue receipt; new test and cleared chat have independent receipts',async()=>{
+  let attempts=0,epoch=0;const h=harness((_path,body)=>{if(attempts++===0)throw Error('offline');return importReply(body,{epoch});});
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo'),invitation=offerFor(snapshot),facts=factsFor(snapshot);
+  assert.equal(await h.render().offerTestHelp(snapshot,invitation,facts),false);
+  assert.equal(await h.render().offerTestHelp(snapshot,{...invitation,id:'new-local-render'},facts),receiptFor(h.calls[1].body).id);
+  assert.equal(h.calls[0].body.source_id,h.calls[1].body.source_id);
+  const another=maker.enterDebug(h.state(),'hc-sr04','another-test','no_echo');
+  assert.equal(await h.render().offerTestHelp(another,offerFor(another),factsFor(another)),receiptFor(h.calls[2].body).id);
+  assert.notEqual(h.calls[2].body.source_id,h.calls[0].body.source_id);
+  h.render().acceptExternal({...record(),context_epoch:1});
+  epoch=1;
+  assert.equal(await h.render().offerTestHelp(snapshot,{...invitation,contextEpoch:1},facts),receiptFor(h.calls[3].body,{epoch}).id);
+  assert.notEqual(h.calls[3].body.source_id,h.calls[0].body.source_id);
+  assert.equal(h.state().prompt,'original draft');
+});
+test('a late invitation hash cannot submit a changed project, guide round or cleared chat',async()=>{
+  for(const change of ['project','round','epoch']) {
+    const h=harness(()=>assert.fail('Stale invitation must not import'));
+    const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo');
+    const promise=h.render().offerTestHelp(snapshot,offerFor(snapshot),factsFor(snapshot));
+    if(change==='project')h.update(s=>({...s,design:{...s.design,revision:2}}));
+    if(change==='round')h.update(s=>({...s,guide:{...s.guide,run:1}}));
+    if(change==='epoch')h.render().acceptExternal({...record(),context_epoch:1});
+    h.render();assert.equal(await promise,false);assert.equal(h.calls.length,0);
+  }
+});
+
+test('test-help import receipt hash matches the fixed Python contract for Chinese and newline text',async()=>{
+  const {testHelpImportKey}=harness(()=>assert.fail('Hashing cannot request anything')).exports;
+  assert.equal(await testHelpImportKey('test-help:contract-chinese','HC-SR04+ 沒有讀到距離。\n要拍照檢查接線嗎？'),
+    '7b5c08765b8b34401cdfcff8d776bf21d881ddd48e90a5ca059d2ca3d907b33d');
+});
+const historyMessage=index=>({id:`history-${index}`,role:'user',source:'mobile',text:`message ${index}`,created_at:index,
+  epoch:0,round:0,stage:'guide',capability:'debug'});
+test('a deduplicated invitation older than the last 50 messages is recovered in server order using existing paging',async()=>{
+  let all,exact;
+  const h=harness((path,body)=>{
+    if(body){exact=receiptFor(body);all=Array.from({length:170},(_,i)=>historyMessage(i));all[10]=exact;
+      return {...record(),messages:all.slice(120),before:120,total:170};}
+    if(path.endsWith('?before=120&limit=100'))return {...record(),messages:all.slice(20,120),before:20,total:170};
+    assert.equal(path,'assistant/conversations/project?before=20&limit=100');
+    return {...record(),messages:all.slice(0,20),before:null,total:170};
+  });
+  h.render().acceptExternal({...record(),messages:Array.from({length:50},(_,i)=>historyMessage(i+120)),before:120,total:170});
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo');
+  assert.equal(await h.render().offerTestHelp(snapshot,offerFor(snapshot),factsFor(snapshot)),exact.id);
+  assert.deepEqual(h.calls.map(call=>call.path),['assistant/conversations/project/import',
+    'assistant/conversations/project?before=120&limit=100','assistant/conversations/project?before=20&limit=100']);
+  const result=h.render().project;
+  assert.deepEqual(result.messages.map(m=>m.id),all.map(m=>m.id));assert.equal(result.messages.at(-1).id,'history-169');
+  assert.equal(result.before,null);assert.equal(result.total,170);assert.equal(result.messages[10].import_key,exact.import_key);
+});
+test('a cached exact receipt skips paging while a later identical-text receipt cannot replace its message identity',async()=>{
+  let exact;
+  const h=harness((path,body)=>{
+    assert.ok(body,'No GET is necessary when the exact imported receipt is already cached');
+    exact=receiptFor(body);
+    const wrong={...exact,id:'different-test-same-text',import_key:'another-issue'};
+    const cached={...record(),messages:[exact,...Array.from({length:70},(_,i)=>historyMessage(i)),wrong],total:72};
+    h.render().acceptExternal(cached);h.render();
+    return {...record(),messages:cached.messages.slice(22),before:22,total:72};
+  });
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo');
+  assert.equal(await h.render().offerTestHelp(snapshot,offerFor(snapshot),factsFor(snapshot)),exact.id);
+  assert.equal(h.calls.length,1);assert.equal(h.render().project.messages[0].id,exact.id);
+  assert.equal(h.render().project.messages.at(-1).id,'different-test-same-text');
+});
+test('unknown, wrong-source, wrong-round or wrong-epoch receipts never publish a photo invitation from matching text',async()=>{
+  for(const wrong of [{import_key:'different-issue'},{source:'mobile'},{role:'user'},{epoch:1},{round:1},{text:'different text'},{id:''}]) {
+    const h=harness((_path,body)=>({...record(),messages:[receiptFor(body,wrong)],total:1}));
+    const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo'),before=h.render().project;
+    assert.equal(await h.render().offerTestHelp(snapshot,offerFor(snapshot),factsFor(snapshot)),false);
+    assert.equal(h.render().project,before);assert.match(h.render().error,/invitation could not be retrieved.*Retry Ask AI/);
+    assert.equal(h.state().prompt,'original draft');
+  }
+});
+test('late receipt paging cannot accept history after clearing chat, changing project, code, guide or starting a model job',async()=>{
+  for(const change of ['epoch','project','code','round','conversation','model']) {
+    const get=deferred(),requested=deferred();let exact;
+    const h=harness((path,body)=>{
+      if(body){exact=receiptFor(body);return {...record(),messages:[historyMessage(60)],before:60,total:61};}
+      assert.equal(path,'assistant/conversations/project?before=60&limit=100');requested.resolve();return get.promise;
+    });
+    const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo');
+    const pending=h.render().offerTestHelp(snapshot,offerFor(snapshot),factsFor(snapshot));await requested.promise;
+    assert.equal(h.render().busy,true);
+    assert.equal(await h.render().offerTestHelp(snapshot,offerFor(snapshot),factsFor(snapshot)),false,'The receipt lookup owns the flight lock');
+    if(change==='epoch')h.render().acceptExternal({...record(),context_epoch:1});
+    if(change==='project')h.update(s=>({...s,design:{...s.design,revision:2}}));
+    if(change==='code')h.update(s=>({...s,code:'changed code'}));
+    if(change==='round')h.update(s=>({...s,guide:{...s.guide,run:1}}));
+    if(change==='conversation')h.render().activateConversation({...record(),id:'new-conversation'});
+    if(change==='model')h.render().acceptExternal({...record(),jobs:[{id:'other-model-job',status:'running'}]});
+    const before=h.render().project;
+    get.resolve({...record(),messages:[exact],before:null,total:61});
+    assert.equal(await pending,false);assert.equal(h.render().project,before);
+    assert.ok(!h.render().project.messages.some(message=>message.id===exact.id));
+    assert.equal(h.render().pending,false);assert.equal(h.state().prompt,'original draft');
+  }
+});
+test('a receipt page with a nondecreasing cursor fails safely instead of fetching forever',async()=>{
+  const h=harness((_path,body)=>({...record(),messages:body?[historyMessage(60)]:[historyMessage(30)],before:60,total:61}));
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo');
+  assert.equal(await h.render().offerTestHelp(snapshot,offerFor(snapshot),factsFor(snapshot)),false);
+  assert.equal(h.calls.length,2);assert.match(h.render().error,/invitation could not be retrieved/);
+});
+
+function sharedOffer(h, changes={}) {
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','selected-test','no_echo');
+  const invitation={...offerFor(snapshot),messageId:'exact-reminder'};
+  const offer={offer_id:invitation.id,message_id:invitation.messageId,state:'pending',can_act:true,can_dismiss:true,
+    component_id:invitation.componentId,reusable_review:false,project_id:invitation.projectId,project_revision:invitation.revision,
+    guide_run:invitation.guideRun,context_epoch:invitation.contextEpoch,guide_key:invitation.guideKey,test_id:'selected-test',reason:'no_echo',mode:'wiring'};
+  h.render().acceptExternal({...record(),messages:[{id:invitation.messageId,role:'assistant',text:invitation.text,source:'legacy-debug',
+    epoch:0,round:0,stage:'guide',test_help_offer:offer,...changes}]});
+  h.render();return {invitation,offer};
+}
+
+test('shared photo consent calls one authoritative action and publishes its exact receipt without model or local session creation',async()=>{
+  let offer;
+  const session={id:'shared-review',wiring_review:{id:'review',component_id:'hc-sr04'}};
+  const h=harness((path,body)=>{
+    assert.equal(path,'assistant/conversations/project/test-help');assert.equal(body.op,'start');
+    return {offer:{...offer,state:'started'},debug_session:session};
+  });
+  const bound=sharedOffer(h);offer=bound.offer;
+  const result=await h.render().testHelpAction(bound.invitation,'start');
+  assert.equal(result.debug_session,session);assert.equal(h.calls.length,1);
+  assert.deepEqual(h.calls[0].body,{op:'start',offer_id:bound.invitation.id,message_id:'exact-reminder'});
+  assert.equal(h.render().project.messages[0].test_help_offer.state,'started');
+  assert.equal(h.state().prompt,'original draft');assert.equal(h.state().code,'manual code');
+});
+
+test('shared Later remains available while a model runs and only dismisses the invitation',async()=>{
+  let offer;
+  const h=harness((_path,body)=>{
+    assert.equal(body.op,'later');return {offer:{...offer,state:'dismissed',can_act:false,can_dismiss:false}};
+  });
+  const bound=sharedOffer(h);offer={...bound.offer,can_act:false};
+  const original=h.render().project;
+  h.render().acceptExternal({...original,messages:original.messages.map(m=>({...m,test_help_offer:offer})),jobs:[{id:'running-model',status:'running'}]});
+  h.render();
+  assert.equal(await h.render().testHelpAction(bound.invitation,'start'),false);
+  assert.ok(await h.render().testHelpAction(bound.invitation,'later'));
+  assert.equal(h.calls.length,1);assert.equal(h.render().project.messages[0].test_help_offer.state,'dismissed');
+  assert.equal(h.render().project.jobs[0].status,'running');assert.equal(h.state().prompt,'original draft');
+});
+
+test('shared action cannot dispatch from an old, archived, wrong-source or replaced reminder',async()=>{
+  for(const change of [{epoch:1},{round:1},{archived:true},{source:'mobile'},{role:'user'},
+    {test_help_offer:{offer_id:'replaced',can_act:true,can_dismiss:true,state:'pending',mode:'wiring'}}]) {
+    const h=harness(()=>assert.fail('A mismatched reminder cannot invoke any action'));
+    const {invitation}=sharedOffer(h,change);
+    assert.equal(await h.render().testHelpAction(invitation,'start'),false);
+    assert.equal(await h.render().testHelpAction(invitation,'later'),false);assert.equal(h.calls.length,0);
+  }
+});
+
+test('late shared action receipts cannot overwrite a cleared context, edited code or replacement offer',async()=>{
+  for(const change of ['epoch','code','offer','dismissed']) {
+    const response=deferred(),h=harness(()=>response.promise),bound=sharedOffer(h);
+    const pending=h.render().testHelpAction(bound.invitation,'start');
+    const previous=h.render().project;
+    if(change==='epoch')h.render().acceptExternal({...previous,context_epoch:1});
+    if(change==='code')h.update(s=>({...s,code:'changed code'}));
+    if(change==='offer'||change==='dismissed')h.render().acceptExternal({...previous,messages:previous.messages.map(m=>({...m,
+      test_help_offer:change==='offer'?{...bound.offer,offer_id:'new-offer'}:{...bound.offer,state:'dismissed'}}))});
+    const current=h.render().project;
+    response.resolve({offer:{...bound.offer,state:'started'},debug_session:{id:'old-review'}});
+    assert.equal(await pending,false);assert.equal(h.render().project,current);
+  }
+});
+
+test('explicit test help sends the frozen debug context without clearing the draft or inheriting another session/photo',async()=>{
+  const pending=deferred(),h=harness(()=>pending.promise);
+  h.update(s=>({...s,stage:'guide'}));
+  h.render().acceptExternal({...record(),active_media:{asset_ids:['old-photo'],capture_id:'old-capture',attachments:[],epoch:0,round:0}});
+  const controller=h.render({id:'another-debug-session',status:'diagnosing'});
+  const mobileBefore=structuredClone(controller.mobileContext);
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','exact-test','no_echo');
+  const facts={project_id:snapshot.design.id,project_revision:snapshot.design.revision,component_id:'hc-sr04',test_id:'exact-test',
+    reason:'no_echo',outcome:'inconclusive',samples:{near:{count:0,median_cm:null}},logs:['Private test log'],
+    expected_wiring:snapshot.design.wiring.filter(w=>w.componentId==='hc-sr04')};
+  const visible='Please help troubleshoot this HC-SR04+ function test.';
+  const send=controller.sendTestHelp(snapshot,visible,facts);
+  assert.equal(h.calls.length,1);
+  const request=h.calls[0];assert.equal(request.path,'assistant/conversations/project/messages');
+  assert.equal(request.body.target,'debug');assert.equal(request.body.context.debug_context.entry.runId,'exact-test');
+  assert.equal(request.body.context.debug_context.entry.componentId,'hc-sr04');
+  assert.equal(request.body.context.debug_session_id,null);assert.equal(request.body.inherit_media,false);
+  assert.equal(request.body.text,visible);assert.doesNotMatch(request.body.text,/exact-test|Private test log|\{/);
+  assert.deepEqual(request.body.context.component_test_help,facts);
+  facts.samples.near.count=99;facts.logs[0]='Changed';
+  assert.equal(request.body.context.component_test_help.samples.near.count,0);
+  assert.equal(request.body.context.component_test_help.logs[0],'Private test log');
+  assert.deepEqual(h.render({id:'another-debug-session',status:'diagnosing'}).mobileContext,mobileBefore);
+  assert.equal('component_test_help' in h.render().mobileContext.context,false);
+  assert.deepEqual(request.body.asset_ids,[]);assert.equal(request.body.capture_id,null);
+  assert.equal(await controller.sendTestHelp(snapshot,'Duplicate'),false);
+  h.render().setDraft('new typing while help sends');
+  pending.resolve(record());assert.equal(await send,true);
+  assert.equal(h.state().prompt,'new typing while help sends');assert.equal(h.state().code,'manual code');
+  assert.equal(h.calls.length,1);
+});
+test('test help retries an uncertain send with the same id and preserves an existing composer draft',async()=>{
+  let attempts=0;const h=harness(()=>{if(attempts++===0)throw Error('offline');return record();});
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','exact-test','no_echo');
+  const facts={project_id:snapshot.design.id,project_revision:snapshot.design.revision,component_id:'hc-sr04',test_id:'exact-test',logs:['hidden']};
+  assert.equal(await h.render().sendTestHelp(snapshot,'Test help',facts),false);
+  const requestId=h.calls[0].body.request_id;
+  assert.equal(h.state().prompt,'original draft');
+  assert.equal(await h.render().sendTestHelp(snapshot,'Test help',facts),true);
+  assert.equal(h.calls[1].body.request_id,requestId);assert.equal(h.state().prompt,'original draft');
+  assert.deepEqual(h.calls[1].body.context.component_test_help,facts);
+});
+test('background test facts cannot be sent under another project, component, revision or run',async()=>{
+  const h=harness(()=>assert.fail('Mismatched hidden facts must not send'));
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04','exact-test','no_echo');
+  const facts={project_id:snapshot.design.id,project_revision:snapshot.design.revision,component_id:'hc-sr04',test_id:'exact-test'};
+  for(const wrong of [{project_id:'other'},{project_revision:99},{component_id:'mrd-tf240-8p-cs'},{test_id:'other-run'}])
+    assert.equal(await h.render().sendTestHelp(snapshot,'Test help',{...facts,...wrong}),false);
+  assert.equal(h.calls.length,0);assert.equal(h.state().prompt,'original draft');
+});
+test('preflight help without a test run replaces an older issue and keeps diagnostic errors out of the chat',async()=>{
+  const h=harness(()=>record());
+  h.update(s=>maker.enterDebug(s,'mrd-tf240-8p-cs','old-tft-test','black'));
+  const snapshot=maker.enterDebug(h.state(),'hc-sr04',undefined,'test_failed');
+  const facts={project_id:snapshot.design.id,project_revision:snapshot.design.revision,component_id:'hc-sr04',test_id:null,
+    reason:null,outcome:'inconclusive',detail:'Private preflight error'};
+  assert.equal(await h.render().sendTestHelp(snapshot,'Please help check this HC-SR04+ test.',facts),true);
+  const sent=h.calls[0].body;
+  assert.equal(sent.context.debug_context.entry.componentId,'hc-sr04');assert.equal(sent.context.debug_context.entry.runId,undefined);
+  assert.equal(sent.context.component_test_help.detail,'Private preflight error');
+  assert.doesNotMatch(sent.text,/Private|old-tft-test|\{/);
+});
+test('test help cannot submit a replaced project, code, wiring round or demo',async()=>{
+  const h=harness(()=>assert.fail('Stale test help must not send'));
+  const base=h.state(),snapshot=maker.enterDebug(base,'hc-sr04','exact-test','no_echo');
+  for(const mutate of [s=>({...s,design:{...s.design,revision:2}}),s=>({...s,code:'changed'}),s=>({...s,guide:{...s.guide,run:1}})]) {
+    h.update(mutate(base));assert.equal(await h.render().sendTestHelp(snapshot,'Old help'),false);
+  }
+  h.update(base);h.render().setDemoOpen(true);assert.equal(await h.render().sendTestHelp(snapshot,'Demo help'),false);
+  assert.equal(h.calls.length,0);
+});
 
 test('accepted send clears only the submitted draft and freezes stage/version/code',async()=>{
   for(const newDraft of ['', 'new typed draft']) {
@@ -225,10 +634,10 @@ function chatComponents(locale) {
     '../lib/i18n':{useI18n:()=>({locale,tx:value=>typeof value==='string'?value:value[locale]})},
     '../lib/maker':maker, './ProjectConcept':{ProjectConcept:()=>null},
     '../lib/assistant':harness(()=>record()).exports,
-    '../lib/assistantHistory':history,
+    '../lib/assistantHistory':history, '../lib/assistantAnalysis':analysisHelpers,
     './MobileCompanion':{MobileCompanion:()=>null,MobileAttachmentCards:()=>null},
     '../lib/useChatScroll':{useChatScroll:()=>({chatRef:null,contentRef:null,unread:false})}};
-  for (const name of ['AIModelControls','MakerModelMenu','UnifiedAssistant','AssistantWorkspace']) {
+  for (const name of ['AIModelControls','MakerModelMenu','AssistantAnalysisTime','UnifiedAssistant','AssistantWorkspace']) {
     const exports={};
     const compiled=ts.transpileModule(readFileSync(new URL(`../src/components/${name}.tsx`,import.meta.url),'utf8'),{
       compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX},
@@ -238,6 +647,18 @@ function chatComponents(locale) {
   }
   return modules;
 }
+
+test('analysis feedback keeps one composer and disables desktop submission with a visible clock',()=>{
+  const {UnifiedAssistant}=chatComponents('zh-TW')['./UnifiedAssistant'];
+  const html=renderToStaticMarkup(React.createElement(UnifiedAssistant,{
+    state:{...maker.initialMaker(),stage:'guide'},setState(){},onNewProject(){},
+    controller:{record:record(),draft:'保留草稿',demoOpen:false,busy:true,wiringAnalysis:{startedAt:Date.now()/1000-12}},
+    legacy:{ai:{logged_in:true},aiOptions:{selectionValid:true},busy:false},
+  }));
+  assert.match(html,/分析中/);assert.match(html,/已用 0:12/);assert.match(html,/草稿會保留/);
+  assert.match(html,/<button[^>]*class="[^"]*assistant-send[^"]*"[^>]*disabled/);
+  assert.equal((html.match(/<textarea/g)||[]).length,1);assert.match(html,/保留草稿/);
+});
 
 test('AI design demo in the chat menu is offered only in stage 01',()=>{
   for(const locale of ['en','zh-TW']) {
@@ -286,6 +707,66 @@ test('shared history keeps server message identities while cleared history requi
   assert.equal(history.conversationMessageNote(value.messages[0],value),'previous_round');
   assert.equal(history.conversationMessageNote(value.messages[2],value),'previous_context');
   assert.deepEqual(value,before,'Displaying history cannot rewrite its source context');
+});
+
+test('photo invitation actions belong only to the exact receipt even when a later same-text reminder is current',()=>{
+  const text='Check this component with photos?';
+  const message={role:'assistant',text,source:'legacy-debug',created_at:1,stage:'guide',capability:'answer',round:3,epoch:2};
+  const messages=[
+    {...message,id:'old-context',epoch:1},
+    {...message,id:'old-round',round:2},
+    {...message,id:'archived',archived:true},
+    {...message,id:'ordinary',source:'mobile'},
+    {...message,id:'user',role:'user'},
+    {...message,id:'older-reminder'},
+    {...message,id:'current-reminder'},
+  ];
+  const next={...record(),context_epoch:2,round:3,messages,total:messages.length};
+  const before=structuredClone(next);
+  for(const locale of ['en','zh-TW']) {
+    const {UnifiedAssistant}=chatComponents(locale)['./UnifiedAssistant'];
+    const html=renderToStaticMarkup(React.createElement(UnifiedAssistant,{
+      state:{...maker.initialMaker(),stage:'guide',guide:{run:3}},setState(){},onNewProject(){},
+      controller:{record:next,draft:'Keep my draft',demoOpen:false,mobileContext:{round:3},busy:false},
+      legacy:{ai:{logged_in:true},aiOptions:{selectionValid:true},busy:false},
+      testHelpFocus:'active-offer',testHelpText:text,testHelpMessageId:'older-reminder',
+      onTestHelpActionTargetChange(){assert.fail('Rendering alone cannot dispatch an action');},
+    }));
+    const articles=[...html.matchAll(/<article[^>]*data-message-id="([^"]+)"[^>]*>([\s\S]*?)<\/article>/g)];
+    assert.deepEqual(articles.filter(([, , body])=>body.includes('assistant-message-actions')).map(([,id])=>id),['older-reminder']);
+    assert.match(html,/Keep my draft/);
+    assert.doesNotMatch(html,/data-message-id="old-context"/);
+  }
+  assert.deepEqual(next,before,'Showing an action host cannot modify observations or history');
+});
+
+test('cleared, expired, mismatched, missing and Demo invitations leave conversation messages without action hosts',()=>{
+  const text='Check this component with photos?';
+  const next={...record(),context_epoch:2,round:3,messages:[
+    {id:'reminder',role:'assistant',text,source:'legacy-debug',created_at:1,stage:'guide',round:3,epoch:2},
+  ],total:1};
+  const {UnifiedAssistant}=chatComponents('en')['./UnifiedAssistant'];
+  const base={state:{...maker.initialMaker(),stage:'guide',guide:{run:3}},setState(){},onNewProject(){},
+    controller:{record:next,draft:'Keep my draft',demoOpen:false,mobileContext:{round:3},busy:false},
+    legacy:{ai:{logged_in:true},aiOptions:{selectionValid:true},busy:false},
+    testHelpFocus:'active-offer',testHelpText:text,testHelpMessageId:'reminder',onTestHelpActionTargetChange(){assert.fail('No action should run');},
+  };
+  const variants=[
+    {...base,testHelpFocus:undefined},
+    {...base,testHelpMessageId:undefined},
+    {...base,testHelpMessageId:'missing-receipt'},
+    {...base,testHelpText:'Different issue'},
+    {...base,onTestHelpActionTargetChange:undefined},
+    {...base,controller:{...base.controller,demoOpen:true}},
+    {...base,controller:{...base.controller,record:{...next,context_epoch:3}}},
+    {...base,controller:{...base.controller,mobileContext:{round:4}}},
+    {...base,controller:{...base.controller,record:null}},
+  ];
+  for(const props of variants) {
+    const html=renderToStaticMarkup(React.createElement(UnifiedAssistant,props));
+    assert.doesNotMatch(html,/assistant-message-actions/);
+    assert.match(html,/Keep my draft/);
+  }
 });
 
 test('model and reasoning controls live inside the single composer across stages, locales and Demo',()=>{

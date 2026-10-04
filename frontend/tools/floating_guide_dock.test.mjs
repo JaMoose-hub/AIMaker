@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
+import {createElement} from 'react';
 import {componentTests,designFor,maker,renderGuide} from './project_guide_fixture.mjs';
 
 function fixture(cid='hc-sr04',phase='awaiting_near') {
@@ -13,6 +14,26 @@ function fixture(cid='hc-sr04',phase='awaiting_near') {
   return {design,session,floating:true,embedded:true,tests:{status:{connected:true,active:run,results:[run]}},run};
 }
 const beforeDetails = html => html.split('<details class="test-diagnostics">')[0];
+
+test('collapse control shares the existing module header in prepare, wiring and test phases', async()=>{
+  const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);
+  for(const session of [maker.emptyGuide(),maker.startProjectGuide(maker.emptyGuide()),fixture().session]) {
+    const html=await renderGuide({design,session,embedded:true,floating:true,
+      visibilityControl:createElement('button',{'aria-label':'收合接線引導','aria-expanded':true},'收合')});
+    const header=html.match(/<header class="guide-panel-header guide-panel-header-embedded">([\s\S]*?)<\/header>/)?.[1];
+    assert.ok(header);
+    assert.match(header,/guide-module-track/);
+    assert.match(header,/guide-restart-action/);
+    const restart=header.match(/<button[^>]*class="guide-restart-action guide-icon-action"[\s\S]*?<\/button>/)?.[0];
+    assert.ok(restart);
+    assert.match(restart,/aria-label="重新開始接線引導"/);
+    assert.match(restart,/title="清除本輪接線/);
+    assert.match(restart,/<svg aria-hidden="true"/);
+    assert.equal(restart.replace(/<[^>]*>/g,''),'','restart icon keeps its name in accessibility attributes');
+    assert.match(header,/aria-label="收合接線引導" aria-expanded="true"/);
+    assert.equal((html.match(/aria-label="收合接線引導"/g)||[]).length,1);
+  }
+});
 
 test('dock has one mounted test card with visible sampling and stop, without duplicate side controls',async()=>{
   const f=fixture(),before=structuredClone(f);
@@ -54,9 +75,12 @@ test('active wiring keeps real endpoints and required TFT warning without starti
     if(cid==='mrd-tf240-8p-cs')assert.match(html,/BLK 留空/);
   }
 });
-test('dock uses content height, low blur and translucent backgrounds; legacy fixed heights are absent',()=>{
+test('bottom dock uses full width and content height, with a single column on narrow screens',()=>{
   const css=readFileSync(new URL('../src/floatingGuide.css',import.meta.url),'utf8');
-  assert.match(css,/width: min\(620px/);assert.match(css,/var\(--bg-panel\) 56%, transparent/);
+  assert.match(css,/position: static; flex: 0 0 auto/);assert.match(css,/width: 100%; height: auto/);
+  assert.match(css,/var\(--bg-panel\) 56%, transparent/);
+  assert.match(css,/grid-template-columns: minmax\(0,1fr\) minmax\(190px,26%\)/);
+  assert.match(css,/@media \(max-width: 700px\)[\s\S]*grid-template-columns: minmax\(0,1fr\); grid-template-rows: auto auto auto/);
   assert.match(css,/backdrop-filter: blur\(3px\)/);
   assert.doesNotMatch(css,/height: min\((280|340|420)px|height: 100%|blur\(16px\)/);
 });

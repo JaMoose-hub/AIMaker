@@ -111,6 +111,7 @@ function renderSettings({locale='en',collapsible=true,busy=false,disabled=false,
     compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX},
   }).outputText)(id=>{
     if(id==='react')return React;
+    if(id==='../lib/headerPanels')return {useHeaderPanel:(_panel,initial=false)=>React.useState(initial)};
     if(id==='react/jsx-runtime')return {jsx,jsxs:jsx,Fragment:React.Fragment};
     if(id==='../lib/i18n')return {useI18n:()=>({locale,t:key=>strings[key],tx:value=>value})};
     if(id==='./ThemeSelect')return {ThemeSelect:()=>React.createElement('select',{'aria-label':'Theme'},React.createElement('option',null,'Dark'))};
@@ -127,9 +128,9 @@ test('Settings is localized, closed initially and keeps the original three contr
   for(const [locale,label] of [['en','Settings'],['zh-TW','設定']]) {
     const html=renderSettings({locale});
     assert.match(html,/<details class="runtime-settings">/);
-    assert.ok(html.includes(`</span>${label}</summary>`));
+    assert.ok(html.includes(`<span class="runtime-settings-label">${label}</span></summary>`));
     assert.equal((html.match(/<select /g)??[]).length,3);
-    assert.match(html,/<summary aria-controls="([^"]+)">[\s\S]*<div class="runtime-settings-popover" id="\1">/);
+    assert.match(html,/<summary aria-controls="([^"]+)"[^>]*>[\s\S]*<div class="runtime-settings-popover" id="\1">/);
     assert.match(html,/<option value="pi5" selected="">Raspberry Pi 5<\/option>/);
     assert.doesNotMatch(html,/<details[^>]*\bopen=/);
   }
@@ -157,7 +158,7 @@ test('Settings disclosure keeps business state untouched and cleans up the outsi
   assert.match(runtime,/document.addEventListener\("pointerdown", closeOutside, true\)/);
   assert.match(runtime,/document.removeEventListener\("pointerdown", closeOutside, true\)/);
   assert.match(runtime,/querySelector\("summary"\)\?\.focus\(\)/);
-  for(const event of ['keydown','focusout']) {
+  for(const event of ['keydown','focusin']) {
     assert.ok(runtime.includes(`addEventListener("${event}"`));
     assert.ok(runtime.includes(`removeEventListener("${event}"`));
   }
@@ -173,4 +174,11 @@ test('camera tools have one persistent host inside Settings, not a second worksp
   assert.match(app,/createPortal\(renderCameraTools\(videoControls\), cameraSettingsHost\)/);
   assert.doesNotMatch(app,/webcam-gpio-capture|captureWebcamGpio|deploy-camera-tools/);
   assert.match(app,/<AiDebugPanel actionsOnly/);
+});
+
+test('Settings icon keeps its name, tooltip and existing panel association',()=>{
+  const html=renderSettings(),summary=html.match(/<summary[^]*?<\/summary>/)?.[0];
+  assert.match(summary,/aria-controls="[^"]+" aria-label="Settings" title="Settings"/);
+  assert.match(summary,/class="runtime-settings-icon"[^>]*aria-hidden="true"/);
+  assert.match(summary,/class="runtime-settings-label">Settings/);
 });

@@ -14,6 +14,7 @@ const load=(path,deps={})=>{
     compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX},
   }).outputText)(id=>{
     if(id==='react')return React;
+    if(id==='../lib/headerPanels')return {useHeaderPanel:(_panel,initial=false)=>React.useState(initial)};
     if(id==='react/jsx-runtime')return runtime;
     if(id.endsWith('.css'))return {};
     if(id in deps)return deps[id];
@@ -23,6 +24,15 @@ const load=(path,deps={})=>{
 };
 const {WorkspaceHeader}=load('../src/components/WorkspaceHeader.tsx');
 const deny=()=>{throw Error('Hardware actions disabled in layout fixture');};
+const phoneSource=ts.createSourceFile('MobileCompanion.tsx',read('../src/components/MobileCompanion.tsx'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+let phoneTrigger;
+function findPhoneTrigger(node) {
+  if(ts.isVariableDeclaration(node)&&node.name.getText(phoneSource)==='trigger')phoneTrigger=node.initializer.getText(phoneSource);
+  ts.forEachChild(node,findPhoneTrigger);
+}
+findPhoneTrigger(phoneSource);
+const renderPhone=new Function('React','session','mobile','connectionLabel','open','view','controller','showConnection','workspace','tr',
+  ts.transpileModule(`const trigger=${phoneTrigger};`,{compilerOptions:{jsx:ts.JsxEmit.React}}).outputText+';return trigger;');
 const css=()=>['styles','debug','responsive','guideAi','tinkro','assistant','maker','deviceConnections','mobile']
   .map(name=>read(`../src/${name}.css`)).join('\n');
 function html(url) {
@@ -41,8 +51,7 @@ function html(url) {
   });
   const h=React.createElement;
   const phone=h('div',{className:'mobile-toolbar-slot mobile-header-slot'},
-    h('button',{type:'button',className:'mobile-connect-button','data-connected':connected,'aria-label':connected?tr('手機已連接','Phone connected'):tr('連接手機','Connect phone')},
-      h('span',{className:'mobile-connection-dot','aria-hidden':true}),h('span',null,connected?tr('已連接','Connected'):tr('連接','Connect'))));
+    renderPhone(React,connected?{}:null,{},connected?tr('手機已連接','Phone connected'):tr('連接手機','Connect phone'),false,'connection',{project:{}},deny,{trigger:{}},tr));
   const brand=h('div',{className:'brand'},h('div',{className:'brand-text'},
     h('h1',{className:'brand-title'},h('img',{className:'brand-logo',src:'/brand/tinkro-dark.png',alt:'Tinkro',width:128,height:40})),h('div',{className:'brand-subtitle'},'Vibe Maker Studio')));
   const navigation=h('nav',{className:'maker-nav','aria-label':tr('作品工作流程','Maker workflow')},

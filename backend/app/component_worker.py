@@ -2197,6 +2197,14 @@ class ComponentPoseWorker:
         """Infer and project one source frame without publishing or tracking state."""
         return self._direct_yolo_result(slot, self._locate_eye_yolo_once(slot.frame))
 
+    def photo_context(self):
+        """Borrow the serialized model with an independent photo search cursor.
+
+        Photo calls never reset the live tracker, publish poses, or own/close the
+        borrowed model. Profile/reference features are read-only photo inputs.
+        """
+        return ComponentPhotoContext(self)
+
     def _publish_result(self, result: ComponentPoseResult, slot: FrameSlot | None = None) -> None:
         self._state.set(result, slot)
         self._publish(component_pose_message(result))
@@ -2380,3 +2388,23 @@ class ComponentPoseWorker:
                     window.reset()
                     log.exception('HC intermediate acquisition frame failed')
         return last_seq
+
+
+class ComponentPhotoContext:
+    """The existing direct-photo algorithm, without a live worker lifecycle."""
+
+    def __init__(self, worker):
+        self._profile = worker._profile
+        self._locator = worker._locator
+        self._reference_recovery = worker._reference_recovery
+        self._scale_recovery_enabled = worker._scale_recovery_enabled
+        self._yolo_only = worker._yolo_only
+        self._reset_eye_yolo_search()
+
+    # These routines touch only the attributes above. Inference is serialized
+    # by the locator's existing owner lock; no worker or temporal tracker is used.
+    _reset_eye_yolo_search = ComponentPoseWorker._reset_eye_yolo_search
+    _locate_eye_yolo_once = ComponentPoseWorker._locate_eye_yolo_once
+    _outline_matches_box = ComponentPoseWorker._outline_matches_box
+    _direct_yolo_result = ComponentPoseWorker._direct_yolo_result
+    detect_yolo_frame = ComponentPoseWorker.detect_yolo_frame

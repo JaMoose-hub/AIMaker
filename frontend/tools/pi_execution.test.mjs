@@ -15,11 +15,21 @@ function compile(path, replacements={}) {
   return url(js);
 }
 const apiUrl=compile('lib/piApi.ts'), api=await import(apiUrl);
+// Resolve the real header hook; these standalone renders retain its local fallback.
+const headerPanelsUrl=compile('lib/headerPanels.tsx');
 const textUrl=url('export const useMakerText=()=> (zh,en)=>zh;');
 const localeUrl=url('export const useI18n=()=>({locale:"zh-TW",t:key=>key});');
+const deployLayoutUrl=compile('components/DeploySplitLayout.tsx',{
+  '../lib/deploySplit':compile('lib/deploySplit.ts'),
+  '../lib/studioSplit':compile('lib/studioSplit.ts'),
+  '../lib/useMaker':textUrl,
+  './deploySplit.css':url(''),
+});
 async function render(name, status, props={}, connection={}) {
   const context=url(`export const usePiConnection=()=>({...${JSON.stringify({status,pending:false,networkError:false,error:null,...connection})},connect(){},action(){},perform(){}});`);
   const module=await import(compile(`components/${name}.tsx`,{'../lib/piApi':apiUrl,'../lib/PiConnection':context,
+    '../lib/headerPanels':headerPanelsUrl,
+    './DeploySplitLayout':deployLayoutUrl,
     '../lib/systemText':systemTextUrl,
     '../lib/useMaker':textUrl,'../lib/i18n':localeUrl,'../lib/wiringGuideProfiles':url('export const piPhotoresistorExample=()=>"print(1)";')}));
   return renderToStaticMarkup(createElement(module[name],props));
