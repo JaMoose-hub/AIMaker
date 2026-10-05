@@ -7,6 +7,9 @@ import {flowModule, reviewHelpers} from './wiring_photo_flow_fixture.mjs';
 // Synthetic receipts only: no server, photograph capture, model or hardware.
 const helpers = flowModule('../src/lib/wiringChat.ts', {'./wiringReview': reviewHelpers});
 const analysisHelpers = flowModule('../src/lib/assistantAnalysis.ts', {});
+const progressHelpers = flowModule('../src/lib/assistantProgress.ts', {});
+const progressComponent = flowModule('../src/components/AssistantJobProgress.tsx', {react:React,
+  '../lib/useMaker':{useMakerText:()=> (_zh,en)=>en},'./assistantJobProgress.css':{}});
 const analysisComponent = flowModule('../src/components/AssistantAnalysisTime.tsx', {react:React,
   '../lib/useMaker':{useMakerText:()=> (_zh,en)=>en},'../lib/assistantAnalysis':analysisHelpers});
 const flow = (extra = {}) => ({flow_id:'flow',review_id:'review',revision:4,round:1,component_id:'hc-sr04',
@@ -154,7 +157,7 @@ test('the unified assistant keeps photo guidance in ordinary messages, one compo
     '../lib/assistantHistory':{conversationMessages:r=>r.messages,conversationMessageNote:()=>null},
     './ProjectConcept':{ProjectConcept:()=>null},'./MakerModelMenu':{MakerModelMenu:()=>null},
     './MobileCompanion':{MobileCompanion:()=>null,MobileAttachmentCards:()=>null},'./WiringChatMessage':h.mod,
-    './AssistantAnalysisTime':analysisComponent});
+    './AssistantAnalysisTime':analysisComponent,'../lib/assistantProgress':progressHelpers,'./AssistantJobProgress':progressComponent});
   const calls=[];const controller={record:{id:'chat',context_epoch:0,before:null,messages:[ordinary,invite,m],jobs:[]},
     mobileContext:{round:1},draft:'',busy:false,demoOpen:false};
   const markup=renderToStaticMarkup(React.createElement(compiled.UnifiedAssistant,{state:{stage:'guide',guide:{run:1},selected:['hc-sr04']},

@@ -147,9 +147,12 @@
 .mw-wiring-chat-actions .mw-row { flex-wrap:wrap; gap:8px; }
 .mw-wiring-chat-actions .mw-quiet { min-height:44px; font-size:11px; }
 .mw-wiring-chat-actions .mw-error-text { font-size:12px; overflow-wrap:anywhere; }
-.mw-wiring-chat-photo .mw-photo-open { display:block; width:100%; padding:0; border:0; background:transparent; cursor:zoom-in; }
+.mw-message-media .mw-photo-open { display:block; width:100%; padding:0; border:0; background:transparent; cursor:zoom-in; }
+.mw-message-media .mw-photo-open:focus-visible { outline:2px solid var(--mw-accent); outline-offset:-2px; }
 .mw-wiring-original { width:calc(100% - 24px); max-width:720px; max-height:calc(100dvh - 24px); margin:auto; padding:12px; border:1px solid var(--mw-line-strong); border-radius:var(--radius-card); background:var(--mw-panel); color:var(--mw-ink); overflow:auto; }
 .mw-wiring-original::backdrop { background:#061018aa; }
 .mw-wiring-original>header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.mw-wiring-original>header>strong { min-width:0; overflow-wrap:anywhere; }
+.mw-wiring-original>header>.mw-quiet { flex:none; min-width:44px; min-height:44px; }
 .mw-wiring-original>img { display:block; width:100%; height:auto; max-height:72dvh; object-fit:contain; }
 .mw-wiring-original>p { margin-top:10px; color:var(--mw-secondary); font-size:12px; }

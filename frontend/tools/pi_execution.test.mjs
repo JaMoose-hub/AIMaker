@@ -61,6 +61,35 @@ test('deployment keeps the editor on the left and output on the right',async()=>
   assert.doesNotMatch(html,/功能通過|整合驗證通過/);
 });
 
+test('live preview stacks above output, preserves the draft and has one editor height control',async()=>{
+  const html=await render('PiDeployPanel',status,{draft:'# keep draft',livePreview:createElement('div',{className:'deployment-live-host'},'Shared image'),onDebug(){}});
+  assert.match(html,/deploy-results-column has-live-preview/);
+  assert.ok(html.indexOf('Shared image')<html.indexOf('class="deploy-output workflow-surface"'));
+  assert.equal((html.match(/type="range"/g)||[]).length,1);
+  assert.equal((html.match(/class="pi-console"/g)||[]).length,1);
+  assert.match(html,/# keep draft/);
+  assert.match(html,/<details class="deploy-output-details"><summary>執行資訊/);
+});
+
+test('compact output keeps runtime failures and disconnect alerts outside collapsed metadata',async()=>{
+  const html=await render('PiDeployPanel',{...status,program:'failed',error:'RuntimeError: preview failure',logs:['still readable'],exit_code:1,version:{code_hash:'abc123'}},
+    {livePreview:createElement('div'),onDebug(){}},{networkError:true});
+  assert.match(html,/Pi 狀態待確認/);
+  assert.match(html,/class="pi-deploy-button deploy-code-deploy" disabled=""/);
+  assert.match(html,/<\/details>[\s\S]*role="alert"[\s\S]*RuntimeError: preview failure/);
+  assert.match(html,/abc123/);
+  assert.match(html,/still readable/);
+  assert.match(html,/沒有反應？幫我檢查/);
+  assert.doesNotMatch(html,/停止作品/);
+});
+
+test('compact output stop action retains exact-owner and pending guards',async()=>{
+  const props={livePreview:createElement('div')};
+  assert.match(await render('PiDeployPanel',{...status,invocation_id:'current',pid:41},props),/<button type="button">停止作品/);
+  assert.match(await render('PiDeployPanel',status,props),/<button type="button" disabled="">停止作品/);
+  assert.match(await render('PiDeployPanel',{...status,invocation_id:'current',pid:41},props,{pending:true}),/<button type="button" disabled="">停止作品/);
+});
+
 test('empty deployment view has no duplicate Pi connection card or badge',async()=>{
   for(const candidate of [null,
     {...status,connected:false,program:'unknown',deployment:'idle'},

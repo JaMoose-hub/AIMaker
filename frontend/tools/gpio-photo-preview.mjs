@@ -37,10 +37,27 @@ const fixed={
 const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#172731"/><rect x="200" y="180" width="420" height="720" rx="24" fill="#316f61"/><rect x="1040" y="250" width="470" height="200" rx="18" fill="#3a718a"/><rect x="1040" y="620" width="470" height="200" rx="18" fill="#315775"/><text x="900" y="100" fill="white" font-size="36" text-anchor="middle">OFFLINE GPIO FIXTURE — NOT A HARDWARE TEST</text></svg>';
 const bootstrap=`
 const options=new URLSearchParams(location.search);
-localStorage.clear();localStorage.setItem('boardvision.maker.v1',JSON.stringify(${JSON.stringify(state)}));
+const resetFixture=options.has('workflow-reset');
+const entryFixture=options.get('guide-entry');
+const entrySeedKey='guide-entry-seeded:'+entryFixture;
+if((!resetFixture&&!entryFixture)||(resetFixture&&!sessionStorage.getItem('workflow-reset-seeded'))||(entryFixture&&!sessionStorage.getItem(entrySeedKey))) {
+  localStorage.clear();localStorage.setItem('boardvision.maker.v1',JSON.stringify(${JSON.stringify(state)}));
+  if(resetFixture)sessionStorage.setItem('workflow-reset-seeded','true');
+  if(entryFixture) {
+    const s=${JSON.stringify({...state,guide:{...reviewGuide,componentIndex:1,index:6,run:3}})};
+    if(entryFixture==='inspection') {
+      s.guide.inspection=true;s.guide.inspectionSource='debug';
+      s.guide.inspectionReturn={componentIndex:1,index:6,phase:'review',mode:'camera'};
+    }
+    localStorage.setItem('boardvision.maker.v1',JSON.stringify(s));
+    sessionStorage.setItem(entrySeedKey,'true');
+  }
+}
 localStorage.setItem('boardvision.locale.v1',options.get('lang')||'en');localStorage.setItem('boardvision.theme.v1',options.get('theme')||'dark');
 localStorage.setItem('boardvision.wiring-guide-visible.v1','true');
 const fixed=${JSON.stringify(fixed)},design=${JSON.stringify(design)},board=${JSON.stringify(board)};
+if(options.get('reset-case')==='hardware')Object.assign(fixed['/api/pi/status'],{program:'running',pid:1234});
+if(options.get('reset-case')==='unknown')delete fixed['/api/pi/status'].execution;
 const dockCase=(${JSON.stringify(dockCases)})[options.get('guide-case')];
 if(dockCase){localStorage.setItem('boardvision.maker.v1',JSON.stringify(dockCase.state));fixed['/api/pi/component-tests']=dockCase.tests;fixed['/api/pi/status'].connected=dockCase.tests.connected;}
 const replay=${JSON.stringify(replay)};
@@ -128,7 +145,7 @@ window.fetch=async(input,init={})=>{
     const conversation={id:'offline-debug-'+(++seq),project_id:body.project_id,messages:[],check_ids:[],archived:false};
     fixed['/api/debug/conversations']={conversation};return json({conversation});
   }
-  if(path==='/api/assistant/conversations'&&method==='POST') {chat={id:body.id,kind:'project',locale:body.locale,project_id:design.id,messages:[],jobs:[],before:null,total:0,context_epoch:0,round:0,demo:null};return json(chat);}
+  if(path==='/api/assistant/conversations'&&method==='POST') {chat={id:body.id,kind:'project',locale:body.locale,project_id:body.project_id??null,messages:[],jobs:[],before:null,total:0,context_epoch:0,round:0,demo:null};return json(chat);}
   if(path.startsWith('/api/assistant/conversations/')&&['reset','import'].includes(path.split('/').at(-1))&&method==='POST') {
     if(path.endsWith('/reset'))chat={...chat,messages:[],jobs:[],total:0,round:body.round??chat?.round??0,context_epoch:(chat?.context_epoch??0)+1};
     return json(chat);
@@ -143,6 +160,11 @@ window.fetch=async(input,init={})=>{
   if(path==='/api/mobile/stream/offer')return json({type:'answer',sdp:'offline'});
   if(path==='/api/mobile/stream-capture') {phonePhoto=packet('phone');return json(phonePhoto);}
   if(path.startsWith('/api/mobile/captures/'))return json(phonePhoto);
+  if(path==='/api/photo-wiring/snapshot'&&method==='POST') {
+    const photo=packet(sourceKind,body);
+    photo.image_url='/api/photo-wiring/captures/'+photo.capture_id+'/image';
+    return json({...photo,continuous_inference:true});
+  }
   if(path==='/api/photo-wiring/sessions'&&method==='POST')return json({session_id:'offline-webcam',continuous_inference:false});
   if(path==='/api/photo-wiring/sessions/offline-webcam/captures'){
     if(window.__gpioQa.captureDelay)await new Promise(r=>setTimeout(r,window.__gpioQa.captureDelay));

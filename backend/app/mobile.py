@@ -466,6 +466,24 @@ class MobileService:
                 available_context=({k: self.latest.get(k) for k in ("context_id", "conversation_id", "title", "stage", "published_at")} if self.latest else None))
             return result
 
+    def desktop_connection(self, cid):
+        """Device presence only; never expose another project's media or context."""
+        with self.lock:
+            now = self.clock()
+            phone_sids = {listener[0] for listener in self.listeners if listener[0]}
+            connected = []
+            for session in self.sessions.values():
+                stream = session["stream"]
+                received = stream["last_video_received"]
+                fresh_video = stream["active"] and received is not None and 0 <= now-received <= PREVIEW_TTL
+                if session["expires"] >= now and (session["session_id"] in phone_sids or fresh_video):
+                    connected.append(session)
+            if not connected:
+                return None
+            session = max(connected, key=lambda item: (item["conversation_id"] == cid, item["created_at"]))
+            return {**{key: session[key] for key in ("session_id", "conversation_id", "context_id")},
+                    "title": self.context(session["context_id"]).get("title", "Tinkro")}
+
     def desktop_snapshot(self, cid):
         with self.lock:
             matches = [s for s in self.sessions.values() if s["conversation_id"] == cid and s["expires"] >= self.clock()]
@@ -956,13 +974,25 @@ class MobileService:
             if not stream["active"] or values.get("generation") != stream["generation"]:
                 raise HTTPException(409, "mobile_stream_generation_changed")
             result = {"generation": stream["generation"], "reported_at": self.wall()}
-            limits = dict(capture_fps=240, send_fps=240, send_bitrate_kbps=100000,
-                          width=16384, height=16384, rtt_ms=600000)
+            limits = dict(capture_fps=240, send_fps=240, encode_fps=240,
+                          send_bitrate_kbps=100000, target_bitrate_kbps=100000,
+                          width=16384, height=16384, rtt_ms=600000,
+                          encode_ms=600000, sample_interval_ms=600000)
             for key, maximum in limits.items():
                 value = values.get(key)
                 if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
-                                          or not math.isfinite(value) or not 0 <= value <= maximum
+                                          or not 0 <= value <= maximum or not math.isfinite(value)
+                                          or (key == "sample_interval_ms" and value == 0)
                                           or (key in {"width", "height"} and (value < 1 or int(value) != value))):
+                    raise HTTPException(422, "mobile_invalid_publisher_metrics")
+                result[key] = value
+            # Counters belong to this client sample, not to server receipt.
+            # Missing/reset deltas remain unknown rather than becoming zero.
+            for key in ("frames_encoded", "frames_sent", "nack_count_delta", "pli_count_delta",
+                        "retransmitted_packets_delta", "retransmitted_bytes_delta"):
+                value = values.get(key)
+                if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                                          or not 0 <= value <= 9007199254740991):
                     raise HTTPException(422, "mobile_invalid_publisher_metrics")
                 result[key] = value
             reason = values.get("quality_limitation_reason")

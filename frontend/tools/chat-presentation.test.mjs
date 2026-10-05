@@ -91,14 +91,35 @@ test('orb ambience uses slow decorative motion without animating layout or flash
   assert.match(css,/animation: assistant-orb-breathe 4\.6s ease-in-out infinite/);
   assert.match(css,/animation: assistant-orb-drift 10s linear infinite/);
   assert.match(css,/animation: assistant-orb-orbit 12s linear infinite/);
-  assert.match(css,/linear-gradient\(145deg, #203f51, #142c42 55%, #0d192e\)/);
-  assert.match(css,/\.assistant-collapse::before\s*\{[^}]*inset: -9px;[^}]*pointer-events: none/);
+  assert.match(css,/linear-gradient\(145deg, var\(--brand-navy\), #142745 55%, #0b182e\)/);
+  assert.match(css,/\.assistant-collapse::before\s*\{[^}]*inset: -1px;[^}]*pointer-events: none/);
   assert.match(css,/\.assistant-collapse::after\s*\{[^}]*mask-image: radial-gradient[^}]*pointer-events: none/);
   for(const name of ['breathe','drift','orbit']) {
     const frames=css.match(new RegExp(`@keyframes assistant-orb-${name} \\{([^]*?)\\} \\}`))?.[1];
     assert.ok(frames);assert.doesNotMatch(frames,/\b(width|height|top|left|right|bottom|filter|box-shadow):/);
   }
   assert.match(css,/:root\[data-theme="light"\] \.assistant-collapse::before/);
+});
+
+test('Ask AI label is centered without wrapping and the halo stays close to the orb',()=>{
+  const css=read('../src/assistant.css');
+  assert.match(css,/\.ai-collapsed \.assistant-orb-label\s*\{[^}]*left: 50%; transform: translateX\(-50%\); white-space: nowrap/);
+  const breathe=css.match(/@keyframes assistant-orb-breathe \{([^]*?)\} \}/)?.[1];
+  assert.match(breathe,/opacity: \.58; transform: scale\(1\.04\)/);
+  const halo=css.match(/\.assistant-collapse::before\s*\{([^}]+)\}/)?.[1];
+  assert.match(halo,/inset: -1px/);
+  assert.ok((46+2)*1.04<=50,'peak breathing halo must remain within 50px around the 46px hit area');
+  assert.doesNotMatch(css,/0 0 (14|22)px color-mix\(in srgb, var\(--brand-teal\)/);
+});
+
+test('AI orb shares the logo blue/teal palette, thin rim and soft white core in both themes',()=>{
+  const css=read('../src/assistant.css');
+  const sphere=css.match(/\.assistant-orb \{([^]*?)\n\}/)?.[1];
+  assert.ok(sphere);assert.match(sphere,/var\(--brand-blue\)/);assert.match(sphere,/var\(--brand-teal\)/);assert.match(sphere,/var\(--brand-navy\)/);
+  assert.match(css,/\.assistant-collapse::before \{[^}]*var\(--brand-blue\)[^}]*var\(--brand-teal\)/);
+  assert.match(css,/\.assistant-collapse::after \{[^}]*transparent calc\(100% - 1px\)/);
+  assert.match(css,/\.assistant-orb-core \{[^}]*color: #eafffa/);
+  assert.match(css,/:root\[data-theme="light"\] \.assistant-orb \{[^}]*var\(--brand-teal\)/);
 });
 
 test('workspace transitions and send decorations respect reduced motion',()=>{

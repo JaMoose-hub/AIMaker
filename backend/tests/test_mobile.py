@@ -106,6 +106,62 @@ def setup(tmp_path):
     return service, phone, clock
 
 
+def test_desktop_connection_is_project_independent_and_status_only(setup):
+    service, phone, clock = setup
+    sid = phone["session_id"]
+    assert service.desktop_connection("another-project") is None, "A saved pairing alone is not presence"
+
+    async def run():
+        desktop = service.subscribe(cid=phone["conversation_id"])
+        assert service.desktop_connection("another-project") is None, "A desktop listener is not a phone"
+        mobile = service.subscribe(sid=sid)
+        try:
+            service.publish_context(context("another-project", title="New project"))
+            before = deepcopy(service.sessions)
+            summary = service.desktop_connection("another-project")
+            assert summary == dict(session_id=sid, conversation_id=phone["conversation_id"],
+                                   context_id=phone["context_id"], title="Photo project")
+            assert service.desktop_snapshot("another-project")["session"] is None
+            assert service.sessions == before, "Status does not join or reset the phone"
+            clock.now = service.sessions[sid]["expires"]+1
+            assert service.desktop_connection("another-project") is None
+        finally:
+            service.unsubscribe(mobile)
+            service.unsubscribe(desktop)
+    asyncio.run(run())
+
+
+def test_desktop_connection_requires_fresh_video_without_phone_channel(setup):
+    service, phone, clock = setup
+    stream = service.sessions[phone["session_id"]]["stream"]
+    stream.update(active=True, last_video_received=clock.now)
+    assert service.desktop_connection("another-project")["session_id"] == phone["session_id"]
+    clock.now += 1.501
+    assert service.desktop_connection("another-project") is None
+
+
+def test_desktop_connection_prefers_current_project_and_clears_after_disconnect(setup):
+    service, phone, _ = setup
+    service.publish_context(context("another-project"))
+    invitation = service.create_pairing("another-project", "http://192.168.1.5:8100")
+    other = service.pair(invitation["code"], "Other phone")
+
+    async def run():
+        old_listener = service.subscribe(sid=phone["session_id"])
+        new_listener = service.subscribe(sid=other["session_id"])
+        try:
+            assert service.desktop_connection(phone["conversation_id"])["session_id"] == phone["session_id"]
+            assert service.desktop_connection("another-project")["session_id"] == other["session_id"]
+            await service.disconnect(other["session_id"])
+            assert service.desktop_connection("another-project")["session_id"] == phone["session_id"]
+            await service.disconnect(phone["session_id"])
+            assert service.desktop_connection("another-project") is None
+        finally:
+            service.unsubscribe(old_listener)
+            service.unsubscribe(new_listener)
+    asyncio.run(run())
+
+
 def feed(service, phone, clock, seq, stamp, **changes):
     clock.now = stamp
     sid = phone["session_id"]
@@ -239,10 +295,16 @@ def test_profile_and_publisher_metrics_are_generation_scoped_diagnostics_only(se
     assert stream["bitrate_kbps"] == service.rtc.bitrate_kbps == 12000
     payload = dict(generation=stream["generation"], capture_fps=30., send_fps=29.8,
                    send_bitrate_kbps=8123., width=1080, height=1920, rtt_ms=15., quality_limitation_reason="none",
+                   encode_fps=29.7, encode_ms=4.2, frames_encoded=1800, frames_sent=1795,
+                   sample_interval_ms=1001., nack_count_delta=2, pli_count_delta=0,
+                   retransmitted_packets_delta=3, retransmitted_bytes_delta=1200,
+                   target_bitrate_kbps=12000.,
                    publisher_connected=True, can_capture=True, received_frames=999)
     before = deepcopy(service.sessions[sid]["stream"])
     result = service.publisher_metrics(sid, payload)
     assert result["send_fps"] == 29.8 and result["reported_at"] == clock.wall()
+    assert {key: result[key] for key in payload if key in result} == {
+        key: value for key, value in payload.items() if key in result}
     assert set(service.sessions[sid]["stream"]) == set(before)
     assert {k:v for k,v in service.sessions[sid]["stream"].items() if k != "publisher_stats"} == {k:v for k,v in before.items() if k != "publisher_stats"}
     assert not service.snapshot(sid)["stream"]["publisher_connected"]
@@ -267,6 +329,98 @@ def test_publisher_metrics_reject_invalid_numbers_without_state_change(setup, ba
         service.publisher_metrics(sid, {"generation": stream["generation"], "send_fps": bad})
     assert error.value.status_code == 422
     assert service.snapshot(sid)["stream"]["publisher_stats"] is None
+
+
+def test_publisher_metrics_preserve_unknown_deltas_and_distinguish_measured_zero(setup):
+    service, phone, _ = setup
+    sid = phone["session_id"]
+    generation = asyncio.run(service.start_stream(sid))["generation"]
+    deltas = ("nack_count_delta", "pli_count_delta", "retransmitted_packets_delta",
+              "retransmitted_bytes_delta")
+    first = service.publisher_metrics(sid, dict(generation=generation, frames_encoded=120,
+        frames_sent=118, sample_interval_ms=None, **{key: None for key in deltas}))
+    assert first["frames_encoded"] == 120 and first["frames_sent"] == 118
+    assert first["sample_interval_ms"] is None
+    assert all(first[key] is None for key in deltas)
+    measured = service.publisher_metrics(sid, dict(generation=generation,
+        sample_interval_ms=1000., **{key: 0 for key in deltas}))
+    assert measured["sample_interval_ms"] == 1000.
+    assert all(measured[key] == 0 for key in deltas)
+    # A client SSRC/counter reset starts a new sample with unknown deltas.
+    reset = service.publisher_metrics(sid, dict(generation=generation, frames_encoded=1,
+        frames_sent=1, **{key: None for key in deltas}))
+    assert reset["frames_encoded"] == reset["frames_sent"] == 1
+    assert reset["sample_interval_ms"] is None
+    assert all(reset[key] is None for key in deltas)
+    assert first["frames_encoded"] == 120  # prior returned samples stay unchanged
+
+
+@pytest.mark.parametrize("field", ["encode_fps", "encode_ms", "sample_interval_ms", "target_bitrate_kbps"])
+@pytest.mark.parametrize("bad", [True, "1", float("nan"), float("inf"), -1, 10**400])
+def test_publisher_encoder_metrics_reject_invalid_numbers_preserving_previous_sample(setup, field, bad):
+    service, phone, _ = setup
+    sid = phone["session_id"]
+    generation = asyncio.run(service.start_stream(sid))["generation"]
+    service.publisher_metrics(sid, dict(generation=generation, encode_fps=30., encode_ms=4.,
+        sample_interval_ms=1000., target_bitrate_kbps=12000.))
+    before = deepcopy(service.sessions[sid])
+    with pytest.raises(HTTPException) as error:
+        service.publisher_metrics(sid, {"generation": generation, field: bad})
+    assert error.value.status_code == 422
+    assert service.sessions[sid] == before
+
+
+@pytest.mark.parametrize("field,maximum", [("encode_fps", 240), ("encode_ms", 600000),
+    ("sample_interval_ms", 600000), ("target_bitrate_kbps", 100000)])
+def test_publisher_encoder_metrics_numeric_boundaries(setup, field, maximum):
+    service, phone, _ = setup
+    sid = phone["session_id"]
+    generation = asyncio.run(service.start_stream(sid))["generation"]
+    result = service.publisher_metrics(sid, {"generation": generation, field: maximum})
+    assert result[field] == maximum
+    with pytest.raises(HTTPException) as error:
+        service.publisher_metrics(sid, {"generation": generation, field: maximum+0.5})
+    assert error.value.status_code == 422
+    assert service.sessions[sid]["stream"]["publisher_stats"] == result
+    if field == "sample_interval_ms":
+        with pytest.raises(HTTPException) as error:
+            service.publisher_metrics(sid, {"generation": generation, field: 0})
+        assert error.value.status_code == 422
+        assert service.sessions[sid]["stream"]["publisher_stats"] == result
+        assert service.publisher_metrics(sid, {"generation": generation, field: 0.5})[field] == 0.5
+    else:
+        assert service.publisher_metrics(sid, {"generation": generation, field: 0})[field] == 0
+
+
+@pytest.mark.parametrize("field", ["frames_encoded", "frames_sent", "nack_count_delta", "pli_count_delta",
+    "retransmitted_packets_delta", "retransmitted_bytes_delta"])
+@pytest.mark.parametrize("bad", [True, "1", 1.25, 1., float("nan"), float("inf"), -1, 2**53, 10**400])
+def test_publisher_counters_require_bounded_integers_preserving_previous_sample(setup, field, bad):
+    service, phone, _ = setup
+    sid = phone["session_id"]
+    generation = asyncio.run(service.start_stream(sid))["generation"]
+    service.publisher_metrics(sid, dict(generation=generation, frames_encoded=100,
+        frames_sent=98, sample_interval_ms=1000., nack_count_delta=0))
+    before = deepcopy(service.sessions[sid])
+    with pytest.raises(HTTPException) as error:
+        service.publisher_metrics(sid, {"generation": generation, field: bad})
+    assert error.value.status_code == 422
+    assert service.sessions[sid] == before
+
+
+@pytest.mark.parametrize("field", ["frames_encoded", "frames_sent", "nack_count_delta", "pli_count_delta",
+    "retransmitted_packets_delta", "retransmitted_bytes_delta"])
+def test_publisher_counters_preserve_exact_safe_integer_limits_and_nullable_values(setup, field):
+    service, phone, _ = setup
+    sid = phone["session_id"]
+    generation = asyncio.run(service.start_stream(sid))["generation"]
+    for value in (0, 2**53-1, None):
+        result = service.publisher_metrics(sid, {"generation": generation, field: value})
+        assert result[field] == value
+        assert value is None or type(result[field]) is int
+        assert service.sessions[sid]["stream"]["publisher_stats"][field] == value
+    assert not service.sessions[sid]["stream"]["publisher_connected"]
+    assert not service.sessions[sid]["stream"]["can_capture"]
 
 
 def test_video_receipt_expiry_revokes_lock_once_and_old_metrics_cannot_restore_live_status(setup):

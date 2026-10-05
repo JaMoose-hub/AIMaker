@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.designs import GenerateRequest
-from app.mobile import MAX_UPLOAD
+from app.mobile import MAX_UPLOAD, PREVIEW_TTL
 from app.guided_wiring_review import WiringReviewAction, WiringDialogueReference
 from app.assistant import TestHelpAction
 from app.mobile_web import ROOT as WEB_ROOT, web_configuration
@@ -98,6 +98,16 @@ class StreamMetricsBody(BaseModel):
     height: int | None = Field(default=None, ge=1, le=16384, strict=True)
     rtt_ms: float | None = Field(default=None, ge=0, le=600000, allow_inf_nan=False, strict=True)
     quality_limitation_reason: str | None = Field(default=None, max_length=64)
+    encode_fps: float | None = Field(default=None, ge=0, le=240, allow_inf_nan=False, strict=True)
+    encode_ms: float | None = Field(default=None, ge=0, le=600000, allow_inf_nan=False, strict=True)
+    frames_encoded: int | None = Field(default=None, ge=0, le=9007199254740991, strict=True)
+    frames_sent: int | None = Field(default=None, ge=0, le=9007199254740991, strict=True)
+    sample_interval_ms: float | None = Field(default=None, gt=0, le=600000, allow_inf_nan=False, strict=True)
+    nack_count_delta: int | None = Field(default=None, ge=0, le=9007199254740991, strict=True)
+    pli_count_delta: int | None = Field(default=None, ge=0, le=9007199254740991, strict=True)
+    retransmitted_packets_delta: int | None = Field(default=None, ge=0, le=9007199254740991, strict=True)
+    retransmitted_bytes_delta: int | None = Field(default=None, ge=0, le=9007199254740991, strict=True)
+    target_bitrate_kbps: float | None = Field(default=None, ge=0, le=100000, allow_inf_nan=False, strict=True)
 
 
 class CaptureBody(BaseModel):
@@ -171,9 +181,11 @@ async def disconnect(request: Request):
 
 
 @router.get("/desktop-session")
-def desktop_session(request: Request, conversation_id: str):
+def desktop_session(request: Request, conversation_id: str, response: Response):
     desktop(request)
-    return request.app.state.mobile_service.desktop_snapshot(conversation_id)
+    response.headers["Cache-Control"] = "no-store"
+    service = request.app.state.mobile_service
+    return {**service.desktop_snapshot(conversation_id), "connection": service.desktop_connection(conversation_id)}
 
 
 @router.post("/join")
@@ -296,6 +308,17 @@ async def start_stream(request: Request, body: StreamBody | None = None, session
 @router.post("/stream/metrics")
 def stream_metrics(body: StreamMetricsBody, request: Request):
     return request.app.state.mobile_service.publisher_metrics(identity(request), body.model_dump())
+
+
+@router.get("/stream/diagnostics")
+async def stream_diagnostics(request: Request, response: Response,
+                             generation: int = Query(..., ge=1), session_id: str | None = None):
+    sid = identity(request, session_id)
+    result = await request.app.state.mobile_service.rtc.diagnostics(sid, generation, max_age=PREVIEW_TTL)
+    # A session may be revoked while getStats yields; do not return retired data.
+    identity(request, sid)
+    response.headers["Cache-Control"] = "no-store"
+    return result
 
 
 @router.post("/stream/offer")

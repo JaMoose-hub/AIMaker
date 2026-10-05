@@ -43,6 +43,7 @@ export interface AssistantMessage {
 export interface AssistantJob {
   id: string; status: "running" | "completed" | "failed" | "unknown"; request_id: string;
   stage: MakerStage; capability: string; phase?: string; result?: ProjectDesign | null; error?: string;
+  epoch?: number;
   version?: { project_id?: string; revision?: number }; checklist_revision?: number;
 }
 export interface DesignChecklist {

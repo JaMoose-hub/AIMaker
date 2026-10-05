@@ -53,6 +53,22 @@ test('offline idle Pi can restart wiring without an AI session or any mutation',
   assert.deepEqual(f.mutations(), []);
 });
 
+test('whole-workflow Reset never stops an owned AI session or its queued physical work',async()=>{
+  for(const queued of [false,true]) {
+    const before=idle(),job={id:'owned-test',state:'running'};
+    before['debug/sessions'].active=session({status:'running',jobs:queued?[job]:[]});
+    if(queued)before['pi/status'].execution.jobs=[job];
+    const f=fixture({before});
+    await rejects(()=>prepareProjectWiringEdit('project',f.request,false),queued?'hardware_work_active':'other_debug_active');
+    assert.deepEqual(f.mutations(),[]);
+  }
+});
+
+test('whole-workflow Reset permits an idle snapshot without any hardware or AI writes',async()=>{
+  const f=fixture();assert.equal(await prepareProjectWiringEdit('unassigned-project',f.request,false),true);
+  assert.deepEqual(f.mutations(),[]);assert.equal(f.calls.length,4);
+});
+
 test('all four current snapshots start together before any one completes', async () => {
   const reads = new Map();
   const done = prepareProjectWiringEdit('project', (path, body) => {

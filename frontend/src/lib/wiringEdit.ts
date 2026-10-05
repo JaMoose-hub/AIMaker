@@ -11,7 +11,7 @@ const pendingJob = (state: string) => !["finished", "failed", "cancelled"].inclu
  * Read actual reservations as well as the queue: an empty queue alone does not
  * prove a remote test stopped, especially after a backend restart.
  */
-export async function prepareProjectWiringEdit(projectId: string, request = makerRequest): Promise<boolean> {
+export async function prepareProjectWiringEdit(projectId: string, request = makerRequest, stopOwnedAI = true): Promise<boolean> {
   async function snapshot() {
     const [pi, tests, trials, sessions] = await Promise.all([
       request<PiStatus>("pi/status"),
@@ -30,9 +30,12 @@ export async function prepareProjectWiringEdit(projectId: string, request = make
     const session = current.session;
     const ownSession = session?.binding?.project_id === projectId;
     const ownedJobs = new Set(ownSession ? session?.jobs.map(job => job.id) : []);
-    if (current.jobs.some(job => !ownedJobs.has(job.id))) throw new Error("hardware_work_active");
+    if (current.jobs.some(job => !ownedJobs.has(job.id)) || !stopOwnedAI && current.jobs.length) throw new Error("hardware_work_active");
     if (session && !terminal(session.status)) {
       if (ownSession) {
+        // A whole-workflow Reset is UI-only: it must never stop an AI worker
+        // that could own a physical test. The user stops it explicitly first.
+        if (!stopOwnedAI) throw new Error("other_debug_active");
         // 'stop' is also supported by existing backends and by restored cases
         // whose original context is absent. It never starts a replacement check.
         const stopped = await request<DebugSession>(`debug/sessions/${encodeURIComponent(session.id)}/actions`, {

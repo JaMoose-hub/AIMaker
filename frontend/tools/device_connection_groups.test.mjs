@@ -75,11 +75,11 @@ test('real phone trigger keeps localized tooltip, accessible state and original 
   let trigger;
   function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='trigger')trigger=node.initializer.getText(file);ts.forEachChild(node,visit);}
   visit(file);assert.ok(trigger);
-  const factory=new Function('React','session','mobile','connectionLabel','open','view','controller','showConnection','workspace','tr',
+  const factory=new Function('React','phoneConnected','connectionError','connectionLabel','open','view','controller','showConnection','workspace','tr',
     ts.transpileModule(`const trigger=${trigger};`,{compilerOptions:{jsx:ts.JsxEmit.React}}).outputText+';return trigger;');
   for(const [connected,label] of [[false,'連接手機'],[true,'手機已連接'],[true,'Phone connected']]) {
     let clicks=0;
-    const button=factory(React,connected?{}:null,{},label,false,'connection',{project:{}},()=>clicks++,{trigger:{}},zh=>zh);
+    const button=factory(React,connected,false,label,false,'connection',{project:{}},()=>clicks++,{trigger:{}},zh=>zh);
     assert.equal(button.props.title,label);assert.equal(button.props['aria-label'],label);
     assert.equal(button.props['data-connected'],connected);assert.equal(button.props['aria-controls'],'mobile-companion-panel');
     const html=renderToStaticMarkup(button);assert.match(html,/class="mobile-device-icon"[^>]*aria-hidden="true"/);

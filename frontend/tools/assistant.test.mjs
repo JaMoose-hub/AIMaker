@@ -26,6 +26,10 @@ const analysisHelpers = {};
 new Function('exports', ts.transpileModule(readFileSync(new URL('../src/lib/assistantAnalysis.ts', import.meta.url), 'utf8'), {
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
 }).outputText)(analysisHelpers);
+const progressHelpers = {};
+new Function('exports', ts.transpileModule(readFileSync(new URL('../src/lib/assistantProgress.ts', import.meta.url), 'utf8'), {
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
+}).outputText)(progressHelpers);
 function harness(request, {demo=null, guard=async()=>true, brokenStorage=false, persisted=new Map()}={}) {
   const values=[], refs=[], calls=[]; let index=0, ref=0;
   let state={...maker.initialMaker(), design:designFor(), prompt:'original draft', code:'manual code'};
@@ -635,9 +639,10 @@ function chatComponents(locale) {
     '../lib/maker':maker, './ProjectConcept':{ProjectConcept:()=>null},
     '../lib/assistant':harness(()=>record()).exports,
     '../lib/assistantHistory':history, '../lib/assistantAnalysis':analysisHelpers,
+    '../lib/assistantProgress':progressHelpers, './assistantJobProgress.css':{},
     './MobileCompanion':{MobileCompanion:()=>null,MobileAttachmentCards:()=>null},
     '../lib/useChatScroll':{useChatScroll:()=>({chatRef:null,contentRef:null,unread:false})}};
-  for (const name of ['AIModelControls','MakerModelMenu','AssistantAnalysisTime','UnifiedAssistant','AssistantWorkspace']) {
+  for (const name of ['AIModelControls','MakerModelMenu','AssistantAnalysisTime','AssistantJobProgress','UnifiedAssistant','AssistantWorkspace']) {
     const exports={};
     const compiled=ts.transpileModule(readFileSync(new URL(`../src/components/${name}.tsx`,import.meta.url),'utf8'),{
       compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX},
@@ -647,6 +652,82 @@ function chatComponents(locale) {
   }
   return modules;
 }
+
+test('generation feedback follows the authoritative job phase and ignores finished or cleared jobs',()=>{
+  const job={id:'generate-1',request_id:'request-1',stage:'design',capability:'design',epoch:0,status:'running',phase:'design'};
+  const progress=phase=>progressHelpers.assistantProgress({...record(),jobs:[{...job,phase}]});
+  assert.deepEqual(progress('design'),{key:'progress:project:generate-1',phase:'design'});
+  assert.deepEqual(progress('image'),{key:'progress:project:generate-1',phase:'image'});
+  assert.equal(progressHelpers.assistantProgress({...record(),jobs:[{...job,capability:'media',phase:'image'}]}).phase,'processing');
+  for(const status of ['completed','failed','unknown'])
+    assert.equal(progressHelpers.assistantProgress({...record(),jobs:[{...job,status,phase:'image'}]}),null);
+  assert.equal(progressHelpers.assistantProgress({...record(),context_epoch:1,jobs:[job]}),null);
+  assert.equal(progressHelpers.assistantProgress(null),null);
+  assert.deepEqual(progressHelpers.assistantProgress(record(),true),{key:'progress:project:pending',phase:'processing'});
+  assert.equal(progressHelpers.assistantProgress(record(),false,{id:'legacy-job',phase:'image'}).phase,'image');
+});
+
+test('sending immediately shows visible feedback before the request is accepted, and errors remove it',async()=>{
+  const response=deferred(),h=harness(()=>response.promise);
+  const sending=h.render().send();
+  assert.equal(progressHelpers.assistantProgress(h.render().record,h.render().pending).phase,'processing');
+  response.reject(Error('offline'));
+  assert.equal(await sending,false);
+  assert.equal(progressHelpers.assistantProgress(h.render().record,h.render().pending),null);
+  assert.match(h.render().error,/offline/);
+  assert.equal(h.state().prompt,'original draft');
+});
+
+test('image progress stays visible after request acceptance and disappears only on a terminal server update',async()=>{
+  const response=deferred(),h=harness(()=>response.promise);
+  const job={id:'generate-1',request_id:'request-1',stage:'design',capability:'design',epoch:0,status:'running',phase:'design'};
+  const sending=h.render().send();
+  response.resolve({...record(),jobs:[job]});assert.equal(await sending,true);
+  let controller=h.render();
+  assert.equal(controller.pending,false);assert.equal(controller.busy,true);
+  assert.equal(progressHelpers.assistantProgress(controller.record,controller.pending).phase,'design');
+  controller.acceptExternal({...record(),jobs:[{...job,phase:'image'}]});controller=h.render();
+  assert.equal(progressHelpers.assistantProgress(controller.record,controller.pending).phase,'image');
+  controller.acceptExternal({...record(),jobs:[{...job,phase:'image',status:'completed'}]});controller=h.render();
+  assert.equal(controller.busy,false);
+  assert.equal(progressHelpers.assistantProgress(controller.record,controller.pending),null);
+  assert.equal(h.calls.length,1,'feedback must not start a second request or image job');
+});
+
+test('chat shows one animated in-progress message through submission, design and image generation',()=>{
+  for(const locale of ['zh-TW','en']) {
+    const {UnifiedAssistant}=chatComponents(locale)['./UnifiedAssistant'];
+    const job={id:'generate-1',request_id:'request-1',stage:'design',capability:'design',epoch:0,status:'running'};
+    const render=(jobs=[],pending=false,phase='design',aiJobId=null)=>renderToStaticMarkup(React.createElement(UnifiedAssistant,{
+      state:{...maker.initialMaker(),aiJobId},setState(){},onNewProject(){},
+      controller:{record:{...record(),jobs},draft:'',demoOpen:false,busy:pending||jobs.some(j=>j.status==='running'),pending},
+      legacy:{ai:{logged_in:true},aiOptions:{selectionValid:true},busy:false,phase},
+    }));
+    for(const [jobs,pending,phase,title] of [
+      [[],true,'processing',locale==='en'?'Working on your request':'正在處理需求'],
+      [[{...job,phase:'design'}],false,'design',locale==='en'?'AI is designing your project':'AI 正在設計作品'],
+      [[{...job,phase:'image'}],false,'image',locale==='en'?'Generating your image':'正在生成圖片'],
+    ]) {
+      const html=render(jobs,pending);
+      assert.match(html,new RegExp(`data-progress-phase="${phase}" role="status" aria-live="polite" aria-atomic="true"`));
+      assert.ok(html.includes(title));assert.ok(html.includes(locale==='en'?'In progress':'進行中'));
+      assert.equal((html.match(/class="ai-debug-message is-assistant assistant-job-progress"/g)||[]).length,1);
+      assert.match(html,/class="assistant-job-progress-dots" aria-hidden="true"/);
+      assert.doesNotMatch(html,/\d+%|role="progressbar"/,'no invented percentages');
+    }
+    assert.match(render([],false,'image','legacy-job'),/data-progress-phase="image"/);
+    for(const status of ['completed','failed','unknown'])
+      assert.doesNotMatch(render([{...job,status,phase:'image',error:'fixture error'}]),/assistant-job-progress/);
+    assert.doesNotMatch(render(),/assistant-job-progress/);
+  }
+  const source=readFileSync(new URL('../src/components/UnifiedAssistant.tsx',import.meta.url),'utf8');
+  assert.match(source,/useChatScroll\(latest \|\| progress \? chatKey/,'phase updates use the existing history-aware scroll hook');
+  const css=readFileSync(new URL('../src/components/assistantJobProgress.css',import.meta.url),'utf8');
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)[^]*animation: none/);
+  assert.match(css,/var\(--chat-ai-ink/,'use the existing AI bubble palette');
+  for(const file of ['../src/lib/assistantProgress.ts','../src/components/AssistantJobProgress.tsx'])
+    assert.doesNotMatch(readFileSync(new URL(file,import.meta.url),'utf8'),/fetch\(|setInterval\(|setTimeout\(|useEffect\(/);
+});
 
 test('analysis feedback keeps one composer and disables desktop submission with a visible clock',()=>{
   const {UnifiedAssistant}=chatComponents('zh-TW')['./UnifiedAssistant'];
@@ -820,9 +901,9 @@ test('orb toggle exposes its action and unread state without conditionally unmou
   const previousWindow=globalThis.window;
   globalThis.window={matchMedia:()=>({matches:false})};
   try {
-    for(const locale of ['en','zh-TW']) for(const aiOpen of [true,false]) {
+    for(const locale of ['en','zh-TW']) for(const aiOpen of [true,false]) for(const unread of [true,false]) {
       const {AssistantWorkspace}=chatComponents(locale)['./AssistantWorkspace'];
-      const html=renderToStaticMarkup(React.createElement(AssistantWorkspace,{aiOpen,onAiOpen(){},latestReply:'new-reply',
+      const html=renderToStaticMarkup(React.createElement(AssistantWorkspace,{aiOpen,onAiOpen(){},latestReply:unread?'new-reply':'',
         children:React.createElement('div',{id:'camera-kept'}),assistant:React.createElement('textarea',{defaultValue:'draft kept'})}));
       assert.match(html,new RegExp(`aria-expanded="${aiOpen}"`));
       assert.match(html,/aria-controls="assistant-chat-content"/);
@@ -830,12 +911,13 @@ test('orb toggle exposes its action and unread state without conditionally unmou
       assert.match(html,/class="assistant-orb" aria-hidden="true"/);
       assert.match(html,/class="assistant-orb-core"/);
       assert.match(html,/class="assistant-orb-chevron"/);
+      assert.match(html,/class="assistant-orb-label" aria-hidden="true">Ask AI<\/span>/);
       assert.match(html,/id="camera-kept"/);
       assert.match(html,/>draft kept<\/textarea>/);
       const label=aiOpen ? (locale==='en'?'Collapse AI conversation':'收合 AI 對話')
-        : (locale==='en'?'Open AI conversation, new reply':'展開 AI 對話，有新回覆');
+        : locale==='en' ? `Ask AI: Open AI conversation${unread?', new reply':''}` : `Ask AI：展開 AI 對話${unread?'，有新回覆':''}`;
       assert.ok(html.includes(`aria-label="${label}"`));
-      assert.equal(html.includes('assistant-orb-unread'),!aiOpen);
+      assert.equal(html.includes('assistant-orb-unread'),!aiOpen&&unread);
     }
   } finally { globalThis.window=previousWindow; }
 });

@@ -1,7 +1,8 @@
 """HTTP/WS protocol and media boundaries; no live application or camera."""
 from io import BytesIO
+from copy import deepcopy
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
@@ -23,6 +24,105 @@ def app(setup):
 
 def auth(phone):
     return {"Authorization": "Bearer "+phone["token"]}
+
+
+def test_desktop_session_connection_summary_is_loopback_only_and_project_safe(app, setup):
+    service, phone, clock = setup
+    service.publish_context(context("another-project", title="New project"))
+    service.sessions[phone["session_id"]]["stream"].update(active=True, last_video_received=clock.now)
+    params = dict(conversation_id="another-project")
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        assert client.get("/api/mobile/desktop-session", params=params).status_code == 403
+    with TestClient(app, client=("127.0.0.1", 5000)) as client:
+        result = client.get("/api/mobile/desktop-session", params=params)
+        assert result.status_code == 200 and result.headers["cache-control"] == "no-store"
+        body = result.json()
+        assert body["session"] is None
+        assert body["context"]["conversation_id"] == "another-project"
+        assert body["connection"]["conversation_id"] == phone["conversation_id"]
+        assert set(body["connection"]) == {"session_id", "conversation_id", "context_id", "title"}
+        clock.now += 1.501
+        assert client.get("/api/mobile/desktop-session", params=params).json()["connection"] is None
+
+
+def test_stream_diagnostics_loopback_and_bearer_auth_are_readonly(app, setup):
+    service, phone, _ = setup
+    sid = phone["session_id"]
+    calls = []
+
+    async def diagnostics(selected, generation, max_age):
+        calls.append((selected, generation, max_age))
+        if generation != 3:
+            raise HTTPException(409, "mobile_stream_generation_changed")
+        return dict(generation=3, decoded=dict(seq=20, age_ms=12000, fresh=False), inbound_rtp=[])
+
+    service.rtc.diagnostics = diagnostics
+    before = deepcopy(service.sessions)
+    path = "/api/mobile/stream/diagnostics"
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        assert client.get(path, params=dict(session_id=sid, generation=3)).status_code == 403
+        assert client.get(path, params=dict(generation=3), headers={"Authorization": "Bearer expired"}).status_code == 401
+        assert client.get(path, params=dict(generation=3, session_id="another"), headers=auth(phone)).status_code == 403
+        assert client.get(path, headers=auth(phone)).status_code == 422
+        assert client.get(path, params=dict(generation=0), headers=auth(phone)).status_code == 422
+        assert calls == []
+        response = client.get(path, params=dict(generation=3), headers=auth(phone))
+        assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+        assert response.json()["decoded"]["fresh"] is False
+        assert client.get(path, params=dict(generation=2), headers=auth(phone)).status_code == 409
+    with TestClient(app, client=("127.0.0.1", 5000)) as client:
+        assert client.get(path, params=dict(generation=3)).status_code == 401
+        assert client.get(path, params=dict(session_id="missing", generation=3)).status_code == 404
+        assert client.get(path, params=dict(session_id=sid, generation=3)).status_code == 200
+    assert calls == [(sid, 3, 1.5), (sid, 2, 1.5), (sid, 3, 1.5)]
+    assert service.sessions == before
+
+
+def test_stream_diagnostics_revoked_session_during_stats_returns_no_old_data(app, setup):
+    service, phone, _ = setup
+
+    async def diagnostics(*_, **__):
+        service.sessions.pop(phone["session_id"])
+        return dict(generation=3, decoded={"seq": 999})
+
+    service.rtc.diagnostics = diagnostics
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        result = client.get("/api/mobile/stream/diagnostics", params=dict(generation=3), headers=auth(phone))
+    assert result.status_code == 401 and "decoded" not in result.json()
+
+
+def test_extended_stream_metrics_preserve_zero_vs_missing_and_large_integer_counters(app, setup):
+    service, phone, _ = setup
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        generation = client.post("/api/mobile/stream", headers=auth(phone)).json()["generation"]
+        payload = dict(generation=generation, encode_fps=30., encode_ms=3.2, frames_encoded=9007199254740991,
+            frames_sent=4000, sample_interval_ms=3000., nack_count_delta=0, pli_count_delta=None,
+            retransmitted_packets_delta=12, retransmitted_bytes_delta=8000, target_bitrate_kbps=12000.)
+        response = client.post("/api/mobile/stream/metrics", headers=auth(phone), json=payload)
+        assert response.status_code == 200
+        saved = service.sessions[phone["session_id"]]["stream"]["publisher_stats"]
+        for field, value in payload.items():
+            assert saved[field] == value
+        response = client.post("/api/mobile/stream/metrics", headers=auth(phone), json=dict(generation=generation))
+        assert response.status_code == 200
+        saved = service.sessions[phone["session_id"]]["stream"]["publisher_stats"]
+        assert saved["nack_count_delta"] is None and saved["frames_encoded"] is None
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("encode_fps", True), ("encode_fps", 241), ("encode_ms", "2.5"), ("encode_ms", -1),
+    ("encode_ms", 600001), ("frames_encoded", 1.0), ("frames_sent", 9007199254740992),
+    ("sample_interval_ms", 0), ("sample_interval_ms", 600001), ("nack_count_delta", -1),
+    ("pli_count_delta", True), ("retransmitted_packets_delta", "1"),
+    ("retransmitted_bytes_delta", 9007199254740992), ("target_bitrate_kbps", 100001),
+    ("target_bitrate_kbps", "NaN"),
+])
+def test_extended_stream_metrics_reject_invalid_numbers_before_storage(app, setup, field, bad):
+    service, phone, _ = setup
+    before = deepcopy(service.sessions)
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        response = client.post("/api/mobile/stream/metrics", headers=auth(phone), json=dict(generation=1, **{field: bad}))
+    assert response.status_code == 422 and service.sessions == before
 
 
 def jpeg():

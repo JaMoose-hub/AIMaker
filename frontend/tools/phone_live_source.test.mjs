@@ -65,3 +65,28 @@ test('ordinary phone view still supports GPIO when the optional tracking mode is
   assert.equal(pin.detection.frame_id,77);
   assert(html.includes('src="/video"'));
 });
+
+test('the actual App follows an already selected phone in guide and deployment without borrowing webcam or photo ownership',()=>{
+  const app=ts.createSourceFile('App.tsx',readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let selected,workspace;
+  function visit(node){
+    if(ts.isVariableDeclaration(node)&&node.name.getText(app)==='phoneSourceSelected')selected=node.initializer;
+    if(ts.isJsxAttribute(node)&&node.name.getText(app)==='mobileWorkspace')workspace=node.initializer?.expression;
+    ts.forEachChild(node,visit);
+  }
+  visit(app);assert.ok(selected);assert.ok(workspace);
+  const property=workspace.properties.find(item=>item.name?.getText(app)==='phoneSourceSelected');
+  assert.ok(property&&ts.isShorthandPropertyAssignment(property),'the real desktop companion receives selected-source ownership separately from guide UI');
+  const follows=new Function('config','imageView','makerStage','displayModeActive','assistant',`return ${selected.getText(app)};`);
+  for(const stage of ['guide','deploy']) {
+    assert.equal(follows({camera_source:'phone'},'phone',stage,false,{demoOpen:false}),true);
+    for(const [config,view,display,demo] of [
+      [{camera_source:'device'},'webcam',false,false],
+      [{camera_source:'device'},'phone',false,false],
+      [{camera_source:'phone'},'photo',false,false],
+      [{camera_source:'phone'},'phone',true,false],
+      [{camera_source:'phone'},'phone',false,true],
+    ])assert.equal(follows(config,view,stage,display,{demoOpen:demo}),false);
+  }
+  assert.equal(follows({camera_source:'phone'},'phone','design',false,{demoOpen:false}),false);
+});

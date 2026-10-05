@@ -26,7 +26,7 @@ test('deployment columns respond to available pane width without overflowing pho
 
 test('code remains before output and no component is moved or conditionally remounted',()=>{
   const panel=readFileSync(new URL('../src/components/PiDeployPanel.tsx',import.meta.url),'utf8');
-  assert.ok(panel.indexOf('className="deploy-primary-column"')<panel.indexOf('className="deploy-results-column"'));
+  assert.ok(panel.indexOf('className="deploy-primary-column"')<panel.indexOf('className={`deploy-results-column'));
   assert.match(panel,/<textarea id="pi-python-code" className="pi-code-editor"/);
   assert.match(panel,/<pre\s[^>]*className="pi-console"/);
 });

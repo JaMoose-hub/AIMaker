@@ -38,8 +38,8 @@ function nodes(tree, predicate) {
   visit(tree);
   return found;
 }
-function harness({state = maker.initialMaker(), locale = 'en', boardId = 'raspberry-pi-5', displayMode = 'standard'} = {}) {
-  const values = [], debugCalls = [], sourceSelections=[];
+function harness({state = maker.initialMaker(), locale = 'en', boardId = 'raspberry-pi-5', displayMode = 'standard', resetResult = true, assistantBusy = false} = {}) {
+  const values = [], debugCalls = [], sourceSelections=[], resetConversations=[];
   let cursor = 0, current = state, demoOpen = false;
   // These are App's local state slots; the external hooks below have no effects.
   const initial = {0: {board_id: boardId, camera_source: 'device', runtime_revision: 1}, 1: board, 14: displayMode};
@@ -55,8 +55,8 @@ function harness({state = maker.initialMaker(), locale = 'en', boardId = 'raspbe
   const imports = {
     react,
     './lib/useMaker': {useMaker: () => ({state: current, setState, saved: true}), useMakerText: () => (zh, en) => locale === 'en' ? en : zh},
-    './lib/useMakerAI': {useMakerAI: () => ({aiOptions:{},newProject: async () => {setState(maker.newMakerProject); return true;}})},
-    './lib/assistant': {useAssistant: () => ({record:null, demoOpen, setDemoOpen:value=>{demoOpen=value;}, busy:false, prepareConversation:async()=>({id:'new'}), activateConversation:()=>{}, archiveWiring:async()=>true})},
+    './lib/useMakerAI': {useMakerAI: () => ({aiOptions:{},newProject: async id => {resetConversations.push(id);if(resetResult)setState(maker.newMakerProject); return resetResult;}})},
+    './lib/assistant': {useAssistant: () => ({record:null, mobileContext:{conversation_id:'fixture'}, demoOpen, setDemoOpen:value=>{demoOpen=value;}, busy:assistantBusy, prepareConversation:async()=>({id:'new'}), activateConversation:()=>{}, reportError:fail, archiveWiring:async()=>true})},
     './lib/maker': maker,
     './lib/gpioPhotoWorkspace': photoWorkspace,
     './lib/useGpioPhotoCapture':{useGpioPhotoCapture:()=>({busy:false,needsResume:false,error:null,capture:fail,resume:fail})},
@@ -86,8 +86,45 @@ function harness({state = maker.initialMaker(), locale = 'en', boardId = 'raspbe
     React.Children.toArray(nav.props.children).find(n => n.key === `.$${stage}`).props.onClick();
     return render();
   };
-  return {render, find, navigate, state: () => current, debugCalls,sourceSelections};
+  return {render, find, navigate, state: () => current, debugCalls,sourceSelections,resetConversations};
 }
+
+test('global Reset returns to 01, clears photo/guide/code context and preserves the source owner',async()=>{
+  const design=designFor(), h=harness({state:{...maker.initialMaker(),stage:'deploy',design,code:'# old',debug:{caseId:'old'}}});
+  h.navigate('guide');let tree=h.render();
+  const workspace=h.find(tree,'UnifiedAssistant')[0].props.mobileWorkspace;
+  await workspace.onShow(true);tree=h.render();
+  workspace.onPhoto({capture_id:'old-photo',wires:[],video_size:[1920,1080]},true,{round:0,context:{workspace_project_id:design.id,project_version:design.revision}});
+  tree=h.render();assert.ok(h.find(tree,'VideoView')[0].props.alternateView.props.record);
+  h.find(tree,'UnifiedAssistant')[0].props.controller.setDemoOpen(true);
+  const reset=h.find(h.render(),'WorkflowResetControl')[0];
+  assert.equal(await reset.props.onReset(),true);
+  tree=h.render();assert.equal(h.state().stage,'design');assert.equal(h.state().designView,'concept');
+  assert.equal(h.state().design,null);assert.equal(h.state().code,'');assert.deepEqual(h.state().guide,maker.emptyGuide());
+  assert.equal(h.state().debug,undefined);assert.equal(h.find(tree,'DemoWorkspace').length,0);
+  assert.equal(h.find(tree,'VideoView').length,1);assert.equal(h.find(tree,'VideoView')[0].props.config.camera_source,'phone');
+  assert.deepEqual(h.sourceSelections,['phone'],'Reset never selects or reconnects a camera');
+  assert.deepEqual(h.resetConversations,['new'],'persist the fresh chat with the fresh project');
+  tree=h.navigate('guide');h.find(tree,'VideoView')[0].props.viewNavigation.props.onChange('photo');
+  assert.equal(h.find(h.render(),'VideoView')[0].props.alternateView.props.record,null,'old captured photo is no longer selected or in this round');
+  const deploy=h.find(h.navigate('deploy'),'PiDeployPanel')[0];
+  assert.equal(deploy.props.draft,'','an old standalone code draft cannot reappear after Reset');
+  deploy.props.onDraftChange('# fresh');assert.equal(h.state().code,'# fresh');
+});
+
+test('global Reset leaves state and photos intact after a failed guard; busy work never enters reset',async()=>{
+  const design=designFor();
+  for(const options of [{resetResult:false},{assistantBusy:true}]) {
+    const before={...maker.initialMaker(),stage:'guide',design,code:'# keep'},h=harness({state:before,...options});
+    let tree=h.render();h.find(tree,'UnifiedAssistant')[0].props.mobileWorkspace.onPhoto({capture_id:'keep-photo',wires:[],video_size:[1920,1080]},true,
+      {round:0,context:{workspace_project_id:design.id,project_version:design.revision}});
+    tree=h.render();const reset=h.find(tree,'WorkflowResetControl')[0];
+    assert.equal(Boolean(reset.props.busy),Boolean(options.assistantBusy));
+    assert.equal(await reset.props.onReset(),false);assert.equal(h.state(),before);
+    assert.equal(h.find(h.render(),'VideoView')[0].props.alternateView.props.record.capture.capture_id,'keep-photo');
+    assert.equal(h.resetConversations.length,options.assistantBusy?0:1);
+  }
+});
 
 test('unified wiring keeps one camera and guide controls without a design demo entry', () => {
   const h = harness({state:{...maker.initialMaker(),stage:'guide',design:designFor()}});
@@ -115,19 +152,21 @@ test('unified wiring keeps one camera and guide controls without a design demo e
   assert.equal(h.find(h.render(), 'GuidePaneLayout')[0].props.resizable, false, 'hiding the guide restores the full camera area');
 });
 
-test('design demo entry belongs only to stage 01 for both concept and blueprint views', () => {
+test('design views omit the duplicate demo toolbar and keep the assistant demo controller', () => {
   for (const locale of ['en','zh-TW']) for (const designView of ['concept','blueprint']) {
     const h=harness({locale,state:{...maker.initialMaker(),design:designFor(),designView}});
-    const tree=h.render(),entries=nodes(tree,n=>n.props.className==='assistant-demo-entry');
-    assert.equal(entries.length,1);
-    assert.equal(entries[0].props.children,locale==='en'?'Try AI design demo':'體驗 AI 設計 Demo');
-    assert.equal(nodes(tree,n=>n.props.className==='assistant-design-tools').length,1);
+    const tree=h.render();
+    assert.equal(nodes(tree,n=>n.props.className==='assistant-demo-entry').length,0);
+    assert.equal(nodes(tree,n=>n.props.className==='assistant-design-tools').length,0,
+      'removing the duplicate action also removes its empty toolbar row');
+    assert.equal(h.find(tree,designView==='blueprint'?'BlueprintPage':'DesignStudio').length,1);
     for(const stage of ['guide','deploy']) {
       const next=h.navigate(stage);
       assert.equal(nodes(next,n=>n.props.className==='assistant-demo-entry').length,0);
       assert.equal(nodes(h.find(next,'VideoView')[0].props.viewControl(null),n=>n.props.className==='assistant-demo-entry').length,0);
     }
-    const before=h.state();entries[0].props.onClick();
+    h.navigate('design');
+    const before=h.state();h.find(h.render(),'UnifiedAssistant')[0].props.controller.setDemoOpen(true);
     assert.equal(h.find(h.render(),'DemoWorkspace').length,1,'the original demo workspace still opens');
     assert.equal(h.state(),before,'opening demo does not replace the project or wiring progress');
   }
@@ -167,9 +206,30 @@ test('phone connection docks left of Pi; view navigation shares the camera and o
   for(const stage of ['design','deploy','guide']) {
     tree=h.navigate(stage);workspace=h.find(tree,'UnifiedAssistant')[0].props.mobileWorkspace;
     assert.equal(workspace.trigger,headerHost,'connection entry stays in the global header');
-    assert.equal(workspace.controls,stage==='guide'?host:null);
+    assert.equal(workspace.controls,stage==='design'?null:host);
     assert.equal(h.find(tree,'UnifiedAssistant').length,1,'do not remount a duplicate phone controller');
   }
+});
+
+test('stage 03 portals the existing camera into one preview host without resetting project or source',()=>{
+  const design=designFor(), initial={...maker.initialMaker(),stage:'guide',design,code:'# edited draft'};
+  const h=harness({state:initial});
+  let tree=h.navigate('deploy'),panel=h.find(tree,'PiDeployPanel')[0];
+  assert.equal(h.find(tree,'VideoView').length,1);
+  assert.equal(panel.props.livePreview.props.className,'deployment-live-host');
+  const host={id:'deployment-camera-host'},controls={id:'deployment-source-host'};
+  panel.props.livePreview.ref(host);
+  let camera=h.find(h.render(),'VideoView')[0];
+  assert.equal(camera.props.livePreviewHost,host);
+  assert.equal(camera.props.sourceControl,null);
+  camera.props.livePreviewControls.ref(controls);
+  assert.equal(h.find(h.render(),'UnifiedAssistant')[0].props.mobileWorkspace.controls,controls);
+  tree=h.navigate('guide');camera=h.find(tree,'VideoView')[0];
+  assert.equal(camera.props.livePreviewHost,null);
+  assert.equal(camera.props.livePreviewControls,null);
+  assert.equal(h.state().design,design);
+  assert.equal(h.state().code,'# edited draft');
+  assert.equal(h.sourceSelections.length,0);
 });
 
 for (const locale of ['en', 'zh-TW']) test(`New project → 02 uses the empty guide, never 03 or legacy tools (${locale})`, async () => {
@@ -216,7 +276,7 @@ test('03 is the only Maker stage that renders one deployment panel, with or with
       assert.equal(panels.length, stage === 'deploy' ? 1 : 0, stage);
       if (panels.length) {
         assert.equal(panels[0].props.project, design ?? undefined);
-        assert.equal(panels[0].props.draft, design ? 'manual draft' : undefined);
+        assert.equal(panels[0].props.draft, 'manual draft', 'the workflow owns its code even before project confirmation');
       }
     }
   }

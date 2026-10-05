@@ -106,17 +106,33 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
     if (busy || sending.current) return;
     setState(clearMakerConversation);
   }
-  async function newProject(): Promise<boolean> {
+  async function newProject(conversationId?: string): Promise<boolean> {
     if (busy || sending.current) return false;
     sending.current = true; setPending(true); setResetting(true); setError("");
     try {
-      if (state.design && !await prepareProjectWiringEdit(state.design.id)) return false;
+      // An empty/unconfirmed project can still have a running standalone Pi job.
+      if (!await prepareProjectWiringEdit(state.design?.id ?? "unassigned-project", undefined, false)) return false;
       if (latestState.current !== state) throw new Error(locale === "en" ? "The draft changed. Please confirm starting over again." : "草稿已變更，請重新確認從頭開始。");
       const fresh = newMakerProject(state);
       // Backup must succeed before resetting; never delete images or remote history.
       try {
         localStorage.setItem(`${MAKER_STORAGE}.before-new-project`, JSON.stringify(state));
-        localStorage.setItem(MAKER_STORAGE, JSON.stringify(fresh));
+        // Commit both workspace pointers together. Otherwise reloading a fresh
+        // project could restore the old chat and its photo references.
+        const chatKey = "boardvision.assistant.v1";
+        const previousChat = conversationId ? localStorage.getItem(chatKey) : null;
+        if (conversationId) {
+          localStorage.setItem(`${chatKey}.before-new-project`, JSON.stringify(previousChat));
+          localStorage.setItem(chatKey, conversationId);
+        }
+        try { localStorage.setItem(MAKER_STORAGE, JSON.stringify(fresh)); }
+        catch (cause) {
+          if (conversationId) {
+            if (previousChat === null) localStorage.removeItem(chatKey);
+            else localStorage.setItem(chatKey, previousChat);
+          }
+          throw cause;
+        }
       } catch { throw new Error(locale === "en" ? "Could not save the backup. Your current project has been kept." : "無法保存備份，已保留目前作品。"); }
       setState(s => s === state ? fresh : s);
       setPhase("design");
@@ -125,7 +141,7 @@ export function useMakerAI(state: MakerState, setState: Dispatch<SetStateAction<
       const code = cause instanceof Error ? cause.message : "";
       const messages: Record<string, [string, string]> = {
         hardware_work_active: ["Pi 還有執行中的程式或測試，請先在執行管理停止；目前作品已保留。", "Stop the running Pi program or test in Execution first. Your project is kept."],
-        other_debug_active: ["另一個作品的 AI 檢查仍在進行，請先停止；目前作品已保留。", "Stop the other project's AI check first. Your project is kept."],
+        other_debug_active: ["AI 檢查仍在進行，請先停止；目前作品已保留。", "Stop the active AI check first. Your project is kept."],
         ai_stop_unconfirmed: ["無法確認 AI 已停止，目前作品已保留。", "AI stop could not be confirmed. Your project is kept."],
         wiring_state_unavailable: ["無法核對目前工作狀態，作品已保留；請確認後端連線後重試。", "Could not check active work. Your project is kept; check the backend connection and retry."],
         wiring_backend_restart_required: ["後端版本不符，請重啟程式後重試；目前作品已保留。", "Restart the backend to update its API, then retry. Your project is kept."],

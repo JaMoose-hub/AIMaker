@@ -558,7 +558,7 @@ test('rapid wiring confirmations retry the newest context after an earlier refre
   let pending=false,finish;
   const session={async contextChanged(next){if(pending)return;pending=true;calls.push(next);await new Promise(resolve=>{finish=resolve;});pending=false;return base;}};
   const first={...context,test_keys:{hc:'first-confirmation'}},latest={...context,test_keys:{hc:'second-confirmation'}};
-  function effect(next){const bindings={record:base,active:true,current:false,approvedRepairCode:false,sameProject:true,currentCodeHash:'hash',cameraSource:'device',cameraRuntimeRevision:4,context:next,actionContext:next,staleNotified,session};return new Function(...Object.keys(bindings),`${code};return refreshEffect;`)(...Object.values(bindings));}
+  function effect(next){const bindings={record:base,active:true,current:false,approvedRepairCode:false,sameProject:true,chatGuidance:false,sameCode:true,sameCamera:true,currentCodeHash:'hash',cameraSource:'device',cameraRuntimeRevision:4,context:next,actionContext:next,staleNotified,session};return new Function(...Object.keys(bindings),`${code};return refreshEffect;`)(...Object.values(bindings));}
   effect(first)();
   effect(latest)();
   await Promise.resolve();

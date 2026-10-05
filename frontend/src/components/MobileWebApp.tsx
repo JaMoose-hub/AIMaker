@@ -7,6 +7,7 @@ import { WiringCaptureFraming } from "./WiringChatMessage";
 import { mobileVideoFresh, type MobileCapture } from "../lib/mobile";
 import { mobileTestHelpOffer, mobileWiringPhotoFlow, useMobileAssetUrl, useMobileBrowser, type MobileWiringPhotoRequest } from "../lib/useMobileBrowser";
 import { captureBrowserVideoFrame } from "../lib/mobileBrowserCapture";
+import { PhoneCameraAutoTune } from "./PhoneCameraAutoTune";
 import type { CaptureTicket } from "../lib/mobileBrowser";
 import { mobileObjectName, mobilePairingCode, mobilePhotoGeometry, mobilePhotoLayout, mobilePhotoMatches,
   mobilePhotoReasons, mobilePhotoSource, mobileReadiness } from "../lib/mobileWebView";
@@ -31,6 +32,31 @@ function SecureEntry({ url }: { url?: string }) {
     {httpsUrl ? <a className="mw-button mw-primary" href={httpsUrl}>{tr("開啟 HTTPS 手機頁", "Open HTTPS phone page")}<Symbol name="arrow" /></a> : null}</div>;
 }
 
+/** The authenticated image stays local to this message; opening it never changes the workspace. */
+export function MobileChatImage({ src, alt, title, openLabel }: { src: string; alt: string; title: string; openLabel: string }) {
+  const tr = useMobileText();
+  const [openedSrc, setOpenedSrc] = useState<string | null>(null);
+  const opened = openedSrc === src;
+  const trigger = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    if (!opened || !element) return;
+    element.showModal();
+    return () => { element.close(); trigger.current?.focus({ preventScroll: true }); };
+  }, [opened, src]);
+  return <>
+    <button ref={trigger} type="button" className="mw-photo-open" aria-haspopup="dialog" aria-label={openLabel} onClick={() => setOpenedSrc(src)}>
+      <img src={src} alt={alt} loading="lazy" />
+    </button>
+    {opened ? <dialog ref={dialog} className="mw-wiring-original" aria-label={title} onClose={() => setOpenedSrc(null)}
+      onCancel={event => { event.preventDefault(); setOpenedSrc(null); }}>
+      <header><strong>{title}</strong><button type="button" className="mw-quiet" autoFocus onClick={() => setOpenedSrc(null)}>{tr("關閉", "Close")}</button></header>
+      <img src={src} alt={alt} />
+    </dialog> : null}
+  </>;
+}
+
 function AssetView({ api, asset }: { api: Workspace["api"]; asset: Asset }) {
   const tr = useMobileText();
   const [play, setPlay] = useState(false);
@@ -38,8 +64,10 @@ function AssetView({ api, asset }: { api: Workspace["api"]; asset: Asset }) {
   const path = video && !play ? asset.thumbnail_url : asset.image_url || asset.url;
   const media = useMobileAssetUrl(api, path);
   return <figure className="mw-message-media">
-    {media.url ? video && play ? <video src={media.url} controls playsInline preload="metadata" />
-      : <img src={media.url} alt={asset.filename ?? tr("聊天附件", "Conversation attachment")} loading="lazy" /> : null}
+    {media.url ? video ? play ? <video src={media.url} controls playsInline preload="metadata" />
+      : <img src={media.url} alt={asset.filename ?? tr("聊天附件", "Conversation attachment")} loading="lazy" />
+      : <MobileChatImage src={media.url} alt={asset.filename ?? tr("聊天附件", "Conversation attachment")}
+        title={asset.filename ?? tr("圖片", "Image")} openLabel={tr("放大查看圖片", "View full image")} /> : null}
     {video && !play ? <button type="button" className="mw-quiet" onClick={() => setPlay(true)}>{tr("播放影片", "Play video")}</button> : null}
     {media.error ? <button type="button" className="mw-quiet" onClick={media.retry}>{tr("重新讀取附件", "Reload attachment")}</button> : null}
     <figcaption>{asset.filename ?? (video ? tr("影片", "Video") : tr("照片", "Photo"))}</figcaption>
@@ -71,17 +99,11 @@ export function MobileTestHelpActions({ w, message }: { w: Workspace; message: A
 export function MobileWiringChatPhoto({ w, message }: { w: Workspace; message: AssistantMessage }) {
   const tr = useMobileText();
   const media = useMobileAssetUrl(w.api, message.wiring_flow?.kind === "photo" ? message.wiring_flow.image_url : undefined);
-  const [opened, setOpened] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const element = dialog.current; if (opened) element?.showModal(); return () => element?.close(); }, [opened]);
   if (message.wiring_flow?.kind !== "photo" || !message.wiring_flow.image_url) return null;
   return <figure className="mw-message-media mw-wiring-chat-photo">
-    {media.url ? <button type="button" className="mw-photo-open" onClick={() => setOpened(true)} aria-label={tr("放大查看接線照片原圖", "View the original wiring photo larger")}><img src={media.url} alt={tr("已提交的接線照片", "Submitted wiring photo")} loading="lazy" /></button> : null}
+    {media.url ? <MobileChatImage src={media.url} alt={tr("已提交的接線照片", "Submitted wiring photo")}
+      title={tr("接線照片原圖", "Original wiring photo")} openLabel={tr("放大查看接線照片原圖", "View the original wiring photo larger")} /> : null}
     {media.error ? <button type="button" className="mw-quiet" onClick={media.retry}>{tr("重新讀取照片", "Reload photo")}</button> : null}
-    {opened && media.url ? <dialog ref={dialog} className="mw-wiring-original" onCancel={event => { event.preventDefault(); setOpened(false); }}>
-      <header><strong>{tr("接線照片原圖", "Original wiring photo")}</strong><button type="button" className="mw-quiet" autoFocus onClick={() => setOpened(false)}>{tr("關閉", "Close")}</button></header>
-      <img src={media.url} alt={tr("接線照片原圖", "Original wiring photo")} />
-    </dialog> : null}
   </figure>;
 }
 
@@ -180,6 +202,10 @@ export function MobileWebCamera({ w, httpsUrl, onCaptured, onDebugCaptured }: { 
   const latestWorkspace = useRef(w); latestWorkspace.current = w;
   const [resolution, setResolution] = useState<"1080p" | "720p">("1080p");
   const [bitrate, setBitrate] = useState(12000);
+  useEffect(() => {
+    const applied = w.rtc.stats.appliedBitrateKbps;
+    if (applied !== undefined && [3000, 8000, 12000].includes(applied)) setBitrate(applied);
+  }, [w.rtc.stats.appliedBitrateKbps]);
   const [cameraOpening, setCameraOpening] = useState(false);
   const [captureKind, setCaptureKind] = useState<"debug" | "gpio" | null>(null);
   const [localFrame, setLocalFrame] = useState<{ stream: MediaStream; width: number; height: number; ready: boolean } | null>(null);
@@ -276,9 +302,12 @@ export function MobileWebCamera({ w, httpsUrl, onCaptured, onDebugCaptured }: { 
     {w.captureJob ? <div className="mw-capture-handoff" role="status"><strong>{w.captureJob.error ?? tr("正在保存與分析這張照片", "Saving and analyzing this photo")}</strong>
       <button type="button" className="mw-quiet" disabled={w.busy} onClick={() => void w.retryCapture()}>{tr("重試這張照片", "Retry this photo")}</button>
       <button type="button" className="mw-quiet" disabled={w.busy} onClick={() => w.discardCapture()}>{tr("取消這張照片", "Discard this photo")}</button></div> : null}
+    <PhoneCameraAutoTune controller={w.cameraTune} video={video}
+      disabled={!w.secureContext || !local?.ready || !w.rtc.publishing || !receiveFresh || w.busy || cameraOpening || Boolean(w.captureTicket || w.captureJob)}
+      onResolution={value => { setResolution(value); void w.startStream({ resolution: value, bitrateKbps: bitrate }); }} />
     <details className="mw-camera-settings"><summary>{tr("串流設定", "Stream settings")}</summary><div className="mw-camera-settings-body">
-    <div className="mw-stream-settings"><label>{tr("解析度", "Resolution")}<select value={resolution} onChange={event => setResolution(event.target.value as "1080p" | "720p")}><option value="1080p">1080p · 30 FPS</option><option value="720p">720p · 30 FPS</option></select></label>
-      <label>{tr("畫質", "Quality")}<select value={bitrate} onChange={event => setBitrate(Number(event.target.value))}><option value={3000}>{tr("流暢", "Smooth")}</option><option value={8000}>{tr("標準", "Standard")}</option><option value={12000}>{tr("高畫質", "High")}</option></select></label></div>
+    <div className="mw-stream-settings"><label>{tr("解析度", "Resolution")}<select disabled={w.busy || cameraOpening} value={resolution} onChange={event => setResolution(event.target.value as "1080p" | "720p")}><option value="1080p">1080p · 30 FPS</option><option value="720p">720p · 30 FPS</option></select></label>
+      <label>{tr("畫質", "Quality")}<select disabled={w.busy || cameraOpening} value={bitrate} onChange={event => setBitrate(Number(event.target.value))}><option value={3000}>{tr("流暢", "Smooth")}</option><option value={8000}>{tr("標準", "Standard")}</option><option value={12000}>{tr("高畫質", "High")}</option></select></label></div>
     {w.rtc.stream ? <button type="button" className="mw-button mw-secondary" disabled={!w.secureContext || w.busy || cameraOpening || Boolean(w.captureTicket)} onClick={() => void w.startStream({ resolution, bitrateKbps: bitrate })}>{tr("套用並重新串流", "Apply & restart stream")}</button> : null}
     <details className="mw-camera-diagnostics"><summary>{tr("串流資訊", "Stream details")}</summary><div className="mw-camera-diagnostics-body">
     <p className="mw-metric-note" role="status">{w.rtc.status}</p>

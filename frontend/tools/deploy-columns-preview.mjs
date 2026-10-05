@@ -1,4 +1,5 @@
-// Memory-only build on a private loopback port; no shared dist or backend access.
+// Memory-only build on a private loopback port. Optional read-only display of
+// the already running FrameBus; never proxies camera/Pi/model actions.
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -19,12 +20,19 @@ const assets=new Map(result.outputFiles.map(file=>['/'+file.path.split(/[\\/]/).
 const html='<!doctype html><html lang="zh-Hant" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tinkro · deployment layout preview</title><link rel="icon" href="/brand/tinkro-symbol.svg"><link rel="stylesheet" href="/deploy-columns-preview.css"></head><body><div id="root"></div><script type="module" src="/deploy-columns-preview.js"></script></body></html>';
 const server=createServer(async(req,res)=>{
   try{
-    const path=new URL(req.url,'http://127.0.0.1').pathname;
-    let asset=path==='/'?[html,'text/html']:assets.get(path);
+    const url=new URL(req.url,'http://127.0.0.1'),path=url.pathname;
+    if(req.method!=='GET'){res.writeHead(405);res.end('Fixture is read-only');return;}
+    if(path==='/preview-frame.jpg'&&process.env.DEPLOY_PREVIEW_LIVE==='1'){
+      const response=await fetch('http://127.0.0.1:8100/frame.jpg',{signal:AbortSignal.timeout(5000),cache:'no-store'});
+      if(!response.ok){res.writeHead(response.status);res.end('Current frame unavailable');return;}
+      res.writeHead(200,{'Content-Type':'image/jpeg','Cache-Control':'no-store','X-Frame-Seq':response.headers.get('X-Frame-Seq')||''});
+      res.end(Buffer.from(await response.arrayBuffer()));return;
+    }
+    let asset=path==='/'?[url.searchParams.get('theme')==='light'?html.replace('data-theme="dark"','data-theme="light"'):html,'text/html']:assets.get(path);
     if(['/brand/tinkro-dark.png','/brand/tinkro-symbol.svg','/brand/tinkro-light-filter.svg'].includes(path))asset=[await readFile(new URL('public'+path,base)),path.endsWith('.png')?'image/png':'image/svg+xml'];
     if(!asset){res.writeHead(404);res.end('No API in this fixture');return;}
     res.writeHead(200,{'Content-Type':asset[1],'Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; connect-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'"});res.end(asset[0]);
   }catch{res.writeHead(500);res.end('Fixture unavailable');}
 });
-await new Promise(done=>server.listen(0,'127.0.0.1',done));
+await new Promise(done=>server.listen(Number(process.env.DEPLOY_PREVIEW_PORT||0),'127.0.0.1',done));
 console.log(`Isolated deployment layout: http://127.0.0.1:${server.address().port}/`);

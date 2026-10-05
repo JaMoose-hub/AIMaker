@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { acceptTrackingFrame, trackingCursor, trackingDisplayFrame, type TrackingFrame } from "./realtimeFrame";
 import { openMotionDisplay } from "./motionDisplayStore";
+import { decodePhoneTrackingImage } from "./trackingImageDecode";
 
 /** One in-flight request/decode, then atomically expose that JPEG and poses. */
 export function useRealtimeTracking(enabled: boolean, boardId: string | null, revision: number, targetHz = 30, sourceKey = "standard") {
@@ -37,9 +38,13 @@ export function useRealtimeTracking(enabled: boolean, boardId: string | null, re
         if (!acceptTrackingFrame(next, boardId, revision, after)) return;
         // Decoding before setting state prevents a previous JPEG from being
         // displayed underneath the next pose during a network/decode delay.
-        const image = new Image();
-        image.src = next.image;
-        await image.decode();
+        if (sourceKey.startsWith("phone:")) {
+          await decodePhoneTrackingImage(next.image, abort.signal);
+        } else {
+          const image = new Image();
+          image.src = next.image;
+          await image.decode();
+        }
         if (disposed || abort.signal.aborted) return;
         after = next.seq;
         lastFrameAt = Date.now();

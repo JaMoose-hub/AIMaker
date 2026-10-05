@@ -11,6 +11,7 @@ import { PiConnectionControl } from "./components/PiConnectionControl";
 import { WiringGuidePanel } from "./components/WiringGuidePanel";
 import { RuntimeToolbar } from "./components/RuntimeToolbar";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
+import { WorkflowResetControl } from "./components/WorkflowResetControl";
 import { DeviceConnectionGroups } from "./components/DeviceConnectionGroups";
 import { HeaderPanelProvider } from "./lib/headerPanels";
 import { StatusBar } from "./components/StatusBar";
@@ -202,6 +203,12 @@ export default function App() {
   const [mobileTriggerHost, setMobileTriggerHost] = useState<HTMLDivElement | null>(null);
   const [mobileControlsHost, setMobileControlsHost] = useState<HTMLDivElement | null>(null);
   const [cameraSettingsHost, setCameraSettingsHost] = useState<HTMLDivElement | null>(null);
+  const [deploymentPreviewHost, setDeploymentPreviewHost] = useState<HTMLDivElement | null>(null);
+  const [workflowResetPending, setWorkflowResetPending] = useState(false);
+  const [workflowResetError, setWorkflowResetError] = useState("");
+  const workflowResetFlight = useRef(false);
+  const phoneSourceSelected = config?.camera_source === 'phone' && imageView === 'phone'
+    && (makerStage === 'guide' || makerStage === 'deploy') && !displayModeActive && !assistant.demoOpen;
   const phoneMainActive = imageView === 'phone' && makerStage === "guide" && !displayModeActive && !assistant.demoOpen;
   const photoMainActive = imageView === 'photo' && makerStage === "guide" && !displayModeActive && !assistant.demoOpen;
   const lastLiveView = useRef<'webcam' | 'phone'>('webcam');
@@ -261,6 +268,9 @@ export default function App() {
     active: makerStage === 'guide' && !displayModeActive && !assistant.demoOpen,
     allowed: !captureDisabledReason }, keepGpioPhoto);
   const photoOperationBusy = gpioCapture.busy || gpioCapture.needsResume;
+  const workflowOperationBusy = makerAI.busy || assistant.busy || photoOperationBusy || liveCamera.pending || aiDebug.pending
+    || Boolean(testHelpActionId) || calibrateOpen || cameraPickerOpen || controllerSwitching || glasses.pending
+    || Boolean(assistant.project?.jobs.some(job => job.status === "running") || assistant.demo?.jobs.some(job => job.status === "running"));
   const canChangeImage = cameraAvailable && !photoOperationBusy;
   canShowPhoto.current = canChangeImage;
   const debugWebcamReady = (config?.camera_source === 'device' || phoneReady) && !eyeActive && !backendDown
@@ -428,17 +438,30 @@ export default function App() {
       candidate: { ...s.candidate, id: s.design.id, revision: s.design.revision + 1 } } : s, replaceManual));
   };
   const startNewProject = async () => {
-    if (assistant.busy) return false;
+    if (workflowResetFlight.current) return false;
+    if (workflowOperationBusy || wiringFlowFlight.current) {
+      setWorkflowResetError(tr("請先完成目前操作，再重新開始；目前工作已保留。", "Finish the current operation before restarting. Your work is kept."));
+      return false;
+    }
+    workflowResetFlight.current = true;
+    setWorkflowResetPending(true); setWorkflowResetError("");
     try {
-    const nextConversation = await assistant.prepareConversation();
-    if (!await makerAI.newProject()) return false;
-    assistant.activateConversation(nextConversation);
-    setGuideTarget(null);
-    setSelectedPinId(null);
-    setEvidenceDiagram(null);
-    setDiagramCaptureOverride(null);
-    return true;
-    } catch (error) { assistant.reportError(error); return false; }
+      const nextConversation = await assistant.prepareConversation();
+      if (typeof nextConversation?.id !== "string" || !nextConversation.id.trim()) throw new Error("invalid_conversation");
+      if (!await makerAI.newProject(nextConversation.id)) return false;
+      assistant.activateConversation(nextConversation);
+      assistant.setDemoOpen(false);
+      setGuideTarget(null); setSelectedPinId(null); setFilter("all");
+      setEvidenceDiagram(null); setDiagramCaptureOverride(null);
+      setGpioPhotos([]); setSelectedPhoto("");
+      // Clear this round's references, not the capture archive or live source.
+      setImageView(config?.camera_source === "phone" ? "phone" : "webcam");
+      setTestHelpOffer(null); setTestHelpMessageTarget(null); setTestHelpActionId(null);
+      return true;
+    } catch (error) {
+      setWorkflowResetError(tr("無法建立新工作流程，目前工作已保留；請確認後端連線後重試。", "Could not create a new workflow. Your work is kept; check the backend and retry."));
+      assistant.reportError(error); return false;
+    } finally { workflowResetFlight.current = false; setWorkflowResetPending(false); }
   };
 
   const handleLocaleChange = useCallback(
@@ -909,6 +932,9 @@ export default function App() {
               </button>)}
           </nav>}>
           {displayModeActive ? <MakerModelMenu state={maker} setState={setMaker} assistant={makerAI} /> : null}
+          {!displayModeActive ? <WorkflowResetControl onReset={startNewProject}
+            busy={workflowResetPending || workflowOperationBusy}
+            error={workflowResetError || makerAI.error} /> : null}
           {!displayModeActive ? <DeviceConnectionGroups
             phoneLabel={tr("手機連線", "Phone connection")} piLabel={tr("Pi 執行", "Pi runtime")}
             phoneName={tr("手機", "Phone")} piName="Pi"
@@ -927,8 +953,8 @@ export default function App() {
             wiringReview={aiDebug.record?.wiring_review} onWiringFlowAction={handleWiringFlowAction} onWiringReceiptRetry={recoverWiringDecision}
             testHelpMessageId={testHelpInvitation?.messageId} onTestHelpActionTargetChange={setTestHelpMessageTarget}
             mobileWorkspace={{ trigger: !displayModeActive ? mobileTriggerHost : null,
-              controls: makerStage === "guide" && !assistant.demoOpen && !displayModeActive ? mobileControlsHost : null,
-              preview: null, showing: phoneMainActive,
+              controls: (makerStage === "guide" || makerStage === "deploy") && !assistant.demoOpen && !displayModeActive ? mobileControlsHost : null,
+              preview: null, showing: phoneMainActive, phoneSourceSelected,
               source: config?.camera_source === 'phone' ? 'phone' : 'webcam',
               selectedPhoneSource: liveCamera.status?.kind === 'phone' && liveCamera.status.session_id && liveCamera.status.generation !== null
                 ? { session_id: liveCamera.status.session_id, generation: liveCamera.status.generation } : null,
@@ -938,7 +964,6 @@ export default function App() {
         {assistant.demoOpen && makerEnabled && !displayModeActive ? <DemoWorkspace controller={assistant} /> : null}
         <div className="assistant-project-workspace" hidden={assistant.demoOpen && !displayModeActive}>
         {makerEnabled && makerStage === "design" ? <div className="maker-design-stage">
-          <div className="assistant-design-tools"><button type="button" className="assistant-demo-entry" onClick={() => assistant.setDemoOpen(true)}>{tr("體驗 AI 設計 Demo", "Try AI design demo")}</button></div>
           {maker.designView === "blueprint" && maker.design ? <BlueprintPage key={`${maker.design.id}:${maker.design.revision}`}
             design={maker.design} onGuide={() => navigateMaker("guide")}
             onEdit={() => setMaker(s => ({ ...s, designView: "concept" }))}
@@ -954,6 +979,8 @@ export default function App() {
           stacked={makerEnabled && !maker.standalone && !displayModeActive}
           resizable={makerEnabled && Boolean(project) && guideVisible && !displayModeActive && !floatingGuide}>
           <VideoView
+            livePreviewHost={makerEnabled && makerStage === 'deploy' && !displayModeActive ? deploymentPreviewHost : null}
+            livePreviewControls={makerStage === 'deploy' ? <div className="image-source-host" ref={setMobileControlsHost} /> : null}
             viewNavigation={imageViewControls}
             viewControl={videoControls => <>{!floatingGuide ? <div className="assistant-guide-tools">{guideVisibilityControl}</div> : null}
               {makerEnabled ? cameraSettingsHost ? createPortal(renderCameraTools(videoControls), cameraSettingsHost) : null : renderCameraTools(videoControls)}
@@ -1076,8 +1103,9 @@ export default function App() {
             </>
           )}
         </GuidePaneLayout>
-        {makerEnabled && makerStage === "deploy" ? <div className="maker-deploy-main"><PiDeployPanel project={project ?? undefined} draft={project ? maker.code : undefined}
-          onDebug={deployment=>{openAssistant();setGuideTarget(null);setMaker(s=>({...s,debug:{...s.debug,panelOpen:true,intent:"debug",source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined}}));}} onDraftChange={project ? code => setMaker(s => ({ ...s, code, hardware: {} })) : undefined} /></div> : null}
+        {makerEnabled && makerStage === "deploy" ? <div className="maker-deploy-main"><PiDeployPanel project={project ?? undefined} draft={maker.code}
+          livePreview={<div className="deployment-live-host" ref={setDeploymentPreviewHost} />}
+          onDebug={deployment=>{openAssistant();setGuideTarget(null);setMaker(s=>({...s,debug:{...s.debug,panelOpen:true,intent:"debug",source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined}}));}} onDraftChange={code => setMaker(s => ({ ...s, code, hardware: {} }))} /></div> : null}
         </div>
         </AssistantWorkspace>
       </main>

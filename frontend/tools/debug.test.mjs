@@ -389,7 +389,8 @@ test('three-stage navigation migrates old debug to the integrated assistant with
   assert.doesNotMatch(app,/makerStage === "debug"|stage:"debug"/);
   assert.doesNotMatch(app,/className="maker-design-views"/);
   assert.match(readFileSync(new URL('../src/components/DesignViewSwitch.tsx',import.meta.url),'utf8'),/className="maker-design-views"/);
-  assert.match(app,/onDebug=\{openDebug\}/);
+  assert.match(app,/onDebug=\{deployment=>\{openAssistant\(\);setGuideTarget\(null\);/);
+  assert.match(app,/intent:"debug",source:"deploy",deployment,componentId:undefined,selectedComponentId:undefined,runId:undefined,symptom:undefined/);
 });
 
 test('logic-only draft changes preserve component test bindings and debug context',()=>{

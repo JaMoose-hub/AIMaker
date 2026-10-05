@@ -64,7 +64,7 @@ async function fixture(run) {
         emptyBrowserDraft: empty, mobileBrowserDraftKey: () => 'draft-key', loadBrowserDraft: async () => empty(), saveBrowserDraft: async () => {}, saveBrowserPairing() {},
         browserLease: () => ({ key: '', deadline: 0 }), mergeBrowserSession: (_, next) => next,
         mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false, browserMediaReference: () => ({ asset_ids: [] }) };
-    const domain = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser,
+    const domain = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },
         './mobile': { mobileVideoFresh: () => false }, './mobileViewerStats': { mobileMeasurementFresh: () => false },
         './mobileBrowserRtc': { idleBrowserRtc: () => ({ stats: {}, stream: null }), BrowserPublisher: class { async stop() {} stopLocal() {} } }, './wiringReview': {},
         './assistantAnalysis': load('../src/lib/assistantAnalysis.ts') });

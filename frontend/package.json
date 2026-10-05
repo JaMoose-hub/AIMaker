@@ -14,7 +14,7 @@
     "test:theme": "node --test tools/tinkro.test.mjs tools/theme.test.mjs tools/workspace_header.test.mjs tools/chat-presentation.test.mjs",
     "test:language": "node --test tools/language.test.mjs",
     "test:stages": "node --test tools/maker_stage.test.mjs tools/concept_motors.test.mjs tools/demo_image.test.mjs tools/assistant.test.mjs",
-    "test:photo-wiring": "node --test tools/photo_wiring.test.mjs tools/mobile.test.mjs tools/mobile_browser.test.mjs tools/mobile_web.test.mjs tools/mobile_capture.test.mjs tools/mobile_wiring_review.test.mjs tools/mobile_test_help.test.mjs tools/mobile_wiring_chat.test.mjs",
+    "test:photo-wiring": "node --test tools/photo_wiring.test.mjs tools/mobile.test.mjs tools/mobile_browser.test.mjs tools/mobile_web.test.mjs tools/mobile_capture.test.mjs tools/mobile_wiring_review.test.mjs tools/mobile_test_help.test.mjs tools/mobile_wiring_chat.test.mjs tools/mobile_chat_image.test.mjs",
     "test:wiring-review": "node --test tools/wiring_review.test.mjs tools/wiring_photo_flow.test.mjs tools/wiring_review_guide.test.mjs tools/wiring_review_integration.test.mjs tools/wiring_review_entry.test.mjs tools/test_help_invitation_ui.test.mjs tools/wiring_chat.test.mjs tools/wiring_receipt.test.mjs",
     "test": "npm run check:i18n && npm run test:language && npm run test:guides && npm run test:headers && npm run test:pin-calibration && npm run test:theme && npm run test:wiring-ai && npm run test:stages && npm run test:photo-wiring && npm run test:wiring-review && npm run build",
     "preview": "vite preview",

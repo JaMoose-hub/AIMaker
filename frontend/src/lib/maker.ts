@@ -349,9 +349,12 @@ export function restoreMaker(raw: string | null): MakerState {
     if (stored.design && !validDesign(stored.design)) return base;
     if (stored.candidate && !validDesign(stored.candidate)) stored.candidate = null;
     const design = stored.design ?? null;
-    const guide = { ...emptyGuide(), ...(stored.guide ?? {}), restored: true, checks: [], phase: "prepare" as const };
+    // Reopening starts the guide from preparation, not a saved inspection cursor.
+    // Keep confirmations and the run binding so historical/live tests are not invalidated.
+    const { inspection: _inspection, inspectionSource: _source, inspectionReturn: _return, ...savedGuide } = stored.guide ?? {};
+    const guide = { ...emptyGuide(), ...savedGuide, restored: true, checks: [], phase: "prepare" as const };
     guide.run = Number.isSafeInteger(guide.run) && guide.run! >= 0 ? guide.run : 0;
-    guide.componentIndex = Number.isInteger(guide.componentIndex) ? Math.max(0, Math.min(guide.componentIndex, (design?.component_ids.length ?? 1) - 1)) : 0;
+    guide.componentIndex = 0;
     guide.mode = guide.mode === "2d" ? "2d" : "camera";
     guide.confirmed = Object.fromEntries((design?.wiring ?? []).flatMap(w => {
       const record = stored.guide?.confirmed?.[w.id];

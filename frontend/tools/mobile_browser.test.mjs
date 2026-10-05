@@ -194,18 +194,18 @@ test('publisher transport measures selected path and counter deltas without inve
     ['transport',{type:'transport',selectedCandidatePairId:'selected'}],
     ['wrong',{type:'candidate-pair',state:'succeeded',currentRoundTripTime:5}],
     ['selected',{type:'candidate-pair',state:'succeeded',currentRoundTripTime:.025}],
-    ['video',{type:'outbound-rtp',kind:'video',id:'video',timestamp:1000,framesSent:30,bytesSent:100000,totalEncodeTime:.15,codecId:'codec',transportId:'transport',frameWidth:1080,frameHeight:1920,qualityLimitationReason:'none',...out}]
+    ['video',{type:'outbound-rtp',kind:'video',id:'video',timestamp:1000,framesSent:30,framesEncoded:30,bytesSent:100000,totalEncodeTime:.15,codecId:'codec',transportId:'transport',frameWidth:1080,frameHeight:1920,qualityLimitationReason:'none',...out}]
   ]);
   const first=rtc.readBrowserPublisherStats(report(),null);assert.equal(first.stats.sendFps,undefined);assert.equal(first.stats.bitrateKbps,undefined);
-  const next=rtc.readBrowserPublisherStats(report({timestamp:2000,framesSent:60,bytesSent:1100000,totalEncodeTime:.3}),first.sample);
+  const next=rtc.readBrowserPublisherStats(report({timestamp:2000,framesSent:60,framesEncoded:60,bytesSent:1100000,totalEncodeTime:.3}),first.sample);
   assert.equal(next.stats.sendFps,30);assert.equal(next.stats.bitrateKbps,8000);assert.equal(next.stats.encodeMs,5);assert.equal(next.stats.rttMs,25);assert.equal(next.stats.codec,'video/H264');
-  const reset=rtc.readBrowserPublisherStats(report({timestamp:3000,framesSent:1,bytesSent:100,totalEncodeTime:0}),next.sample);
+  const reset=rtc.readBrowserPublisherStats(report({timestamp:3000,framesSent:1,framesEncoded:1,bytesSent:100,totalEncodeTime:0}),next.sample);
   assert.equal(reset.stats.sendFps,undefined);assert.equal(reset.stats.bitrateKbps,undefined);assert.equal(reset.stats.encodeMs,undefined);
   const missing=rtc.readBrowserPublisherStats(report({framesSent:undefined,bytesSent:undefined,totalEncodeTime:NaN,frameWidth:NaN}),null);
   assert.equal(missing.stats.sendFps,undefined);assert.equal(missing.stats.width,undefined);
 });
 
-test('cached publisher timestamps cannot refresh capture or fallback send FPS; reset clocks recover from a new baseline',()=>{
+test('cached publisher timestamps cannot refresh capture or encoder FPS; reset clocks recover from a new baseline',()=>{
   const report=(timestamp,frames,bytes)=>new Map([
     ['source',{type:'media-source',kind:'video',framesPerSecond:30}],
     ['video',{type:'outbound-rtp',kind:'video',id:'video',ssrc:1,timestamp,framesSent:frames,bytesSent:bytes,framesPerSecond:29,frameWidth:1920,frameHeight:1080}]
@@ -214,9 +214,84 @@ test('cached publisher timestamps cannot refresh capture or fallback send FPS; r
   const cached=rtc.readBrowserPublisherStats(report(2000,60,2000000),initial.sample);
   assert.deepEqual(cached.stats,{});assert.deepEqual(cached.sample,initial.sample);
   const reset=rtc.readBrowserPublisherStats(report(100,1,1000),cached.sample);
-  assert.deepEqual(reset.stats,{});assert.equal(reset.sample.timestamp,100);assert.equal(reset.sample.frames,1);
+  assert.deepEqual(reset.stats,{});assert.equal(reset.sample.timestamp,100);assert.equal(reset.sample.framesSent,1);
   const recovered=rtc.readBrowserPublisherStats(report(1100,31,1001000),reset.sample);
   assert.equal(recovered.stats.captureFps,30);assert.equal(recovered.stats.sendFps,30);assert.equal(recovered.stats.bitrateKbps,8000);
+});
+
+const diagnosticReport=(values={})=>new Map([['video',{type:'outbound-rtp',kind:'video',id:'video',ssrc:41,timestamp:1000,
+  framesEncoded:100,framesSent:70,bytesSent:1000000,totalEncodeTime:.4,nackCount:10,pliCount:2,
+  retransmittedPacketsSent:40,retransmittedBytesSent:5000,targetBitrate:1800000,qualityLimitationReason:'none',...values}]]);
+const diagnosticDeltas=['sendFps','encodeFps','bitrateKbps','encodeMs','nackCountDelta','pliCountDelta','retransmittedPacketsDelta','retransmittedBytesDelta'];
+
+test('encoder and transport diagnostics use independent counters and their measured sample interval',()=>{
+  const first=rtc.readBrowserPublisherStats(diagnosticReport(),null);
+  assert.equal(first.stats.framesEncoded,100);assert.equal(first.stats.framesSent,70);assert.equal(first.stats.targetBitrateKbps,1800);
+  assert.equal(first.stats.sampleIntervalMs,undefined);
+  for(const field of diagnosticDeltas)assert.equal(first.stats[field],undefined,field);
+  const next=rtc.readBrowserPublisherStats(diagnosticReport({timestamp:3000,framesEncoded:170,framesSent:110,bytesSent:1400000,totalEncodeTime:.75,
+    nackCount:13,pliCount:3,retransmittedPacketsSent:47,retransmittedBytesSent:13000,targetBitrate:800000,qualityLimitationReason:'cpu',framesPerSecond:999}),first.sample);
+  assert.equal(next.stats.sampleIntervalMs,2000);assert.equal(next.stats.encodeFps,35);assert.equal(next.stats.sendFps,20);
+  assert.ok(Math.abs(next.stats.encodeMs-5)<1e-9,'Encoding time divides by encoded frames, not sent frames');
+  assert.equal(next.stats.bitrateKbps,1600);assert.equal(next.stats.nackCountDelta,3);assert.equal(next.stats.pliCountDelta,1);
+  assert.equal(next.stats.retransmittedPacketsDelta,7);assert.equal(next.stats.retransmittedBytesDelta,8000);
+  assert.equal(next.stats.targetBitrateKbps,800);assert.equal(next.stats.qualityLimitationReason,'cpu');
+  const stalled=rtc.readBrowserPublisherStats(diagnosticReport({timestamp:4000,framesEncoded:170,framesSent:110,bytesSent:1400000,totalEncodeTime:.75,
+    nackCount:13,pliCount:3,retransmittedPacketsSent:47,retransmittedBytesSent:13000}),next.sample);
+  for(const field of diagnosticDeltas.filter(field=>field!=='encodeMs'))assert.equal(stalled.stats[field],0,field);
+  assert.equal(stalled.stats.encodeMs,undefined,'No encoded frames means no per-frame average');
+});
+
+test('SSRC changes, counter resets and missing counters never turn encoder progress into sent frames',()=>{
+  const first=rtc.readBrowserPublisherStats(diagnosticReport(),null);
+  const resetValues={timestamp:2000,framesEncoded:1,framesSent:1,bytesSent:100,totalEncodeTime:0,nackCount:0,pliCount:0,retransmittedPacketsSent:0,retransmittedBytesSent:0};
+  const reset=rtc.readBrowserPublisherStats(diagnosticReport({...resetValues,framesPerSecond:30}),first.sample);
+  for(const field of diagnosticDeltas)assert.equal(reset.stats[field],undefined,field);
+  assert.equal(reset.stats.framesEncoded,1);assert.equal(reset.stats.framesSent,1);
+  const resumed=rtc.readBrowserPublisherStats(diagnosticReport({...resetValues,timestamp:3000,framesEncoded:11,framesSent:9,bytesSent:900,totalEncodeTime:.06,
+    nackCount:2,pliCount:1,retransmittedPacketsSent:3,retransmittedBytesSent:300}),reset.sample);
+  assert.equal(resumed.stats.encodeFps,10);assert.equal(resumed.stats.sendFps,8);assert.equal(resumed.stats.encodeMs,6);
+  assert.equal(resumed.stats.nackCountDelta,2);assert.equal(resumed.stats.pliCountDelta,1);
+  const switched=rtc.readBrowserPublisherStats(diagnosticReport({...resetValues,ssrc:42}),first.sample);
+  for(const field of diagnosticDeltas)assert.equal(switched.stats[field],undefined,field);
+  assert.equal(switched.stats.sampleIntervalMs,undefined);
+  const encodedOnly={framesSent:undefined,framesEncoded:120,nackCount:undefined,pliCount:undefined,retransmittedPacketsSent:undefined,retransmittedBytesSent:undefined,targetBitrate:undefined};
+  const missing=rtc.readBrowserPublisherStats(diagnosticReport({...encodedOnly,timestamp:2000}),first.sample);
+  assert.equal(missing.stats.encodeFps,20);assert.equal(missing.stats.sendFps,undefined);assert.equal(missing.stats.framesSent,undefined);
+  for(const field of ['nackCountDelta','pliCountDelta','retransmittedPacketsDelta','retransmittedBytesDelta','targetBitrateKbps'])assert.equal(missing.stats[field],undefined,field);
+  const invalid=rtc.readBrowserPublisherStats(diagnosticReport({timestamp:2000,framesSent:-1,framesEncoded:NaN,nackCount:-1,pliCount:Infinity,
+    retransmittedPacketsSent:NaN,retransmittedBytesSent:-1,targetBitrate:Infinity}),first.sample);
+  for(const field of ['sendFps','encodeFps','framesSent','framesEncoded','nackCountDelta','pliCountDelta','retransmittedPacketsDelta','retransmittedBytesDelta','targetBitrateKbps'])assert.equal(invalid.stats[field],undefined,field);
+});
+
+test('cached diagnostic timestamps suppress totals and targets without consuming their next valid delta',()=>{
+  const first=rtc.readBrowserPublisherStats(diagnosticReport(),null);
+  const cached=rtc.readBrowserPublisherStats(diagnosticReport({framesEncoded:150,framesSent:120,nackCount:30,targetBitrate:600000}),first.sample);
+  assert.deepEqual(cached.stats,{});assert.equal(cached.sample,first.sample);
+  const next=rtc.readBrowserPublisherStats(diagnosticReport({timestamp:2000,framesEncoded:160,framesSent:130,nackCount:31}),cached.sample);
+  assert.equal(next.stats.encodeFps,60);assert.equal(next.stats.sendFps,60);assert.equal(next.stats.nackCountDelta,21);
+  const malformed=rtc.readBrowserPublisherStats(diagnosticReport({timestamp:NaN}),next.sample);
+  assert.deepEqual(malformed.stats,{});assert.equal(malformed.sample,null);
+});
+
+test('publisher reports nullable diagnostic fields from one-second sampling without per-frame updates',async()=>{
+  const saved={setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout,now:Date.now};
+  let now=10000,id=0,polls=0;const timers=new Map();
+  Date.now=()=>now;globalThis.setTimeout=(callback,delay)=>{const key=++id;timers.set(key,{callback,delay});return key;};globalThis.clearTimeout=key=>timers.delete(key);
+  const s=setup({peer:{async getStats(){return ++polls===1?diagnosticReport():diagnosticReport({timestamp:2000,framesEncoded:130,framesSent:95,bytesSent:2000000,totalEncodeTime:.55,
+    nackCount:14,pliCount:3,retransmittedPacketsSent:46,retransmittedBytesSent:17000,targetBitrate:2200000,qualityLimitationReason:'bandwidth'});}}});
+  try {
+    await s.publisher.start();await turn();
+    assert.equal(polls,1);assert.equal(s.calls.filter(call=>call.path==='stream/metrics').length,1);
+    const [key,timer]=[...timers].find(([,value])=>value.delay===1000);timers.delete(key);now=14000;timer.callback();await turn();
+    assert.equal(polls,2);const body=s.calls.filter(call=>call.path==='stream/metrics').at(-1).body;
+    assert.equal(body.generation,7);assert.equal(body.encode_fps,30);assert.equal(body.send_fps,25);assert.equal(body.sample_interval_ms,1000);
+    assert.ok(Math.abs(body.encode_ms-5)<1e-9);assert.equal(body.frames_encoded,130);assert.equal(body.frames_sent,95);
+    assert.equal(body.nack_count_delta,4);assert.equal(body.pli_count_delta,1);assert.equal(body.retransmitted_packets_delta,6);
+    assert.equal(body.retransmitted_bytes_delta,12000);assert.equal(body.target_bitrate_kbps,2200);assert.equal(body.quality_limitation_reason,'bandwidth');
+    assert.equal(s.parameters().encodings[0].maxBitrate,8000000,'Diagnostics do not tune the sender');
+    assert.equal([...timers.values()].filter(value=>value.delay===1000).length,1);
+  } finally {await s.publisher.stop();globalThis.setTimeout=saved.setTimeout;globalThis.clearTimeout=saved.clearTimeout;Date.now=saved.now;}
 });
 
 test('a failed getStats poll discards its counter baseline instead of averaging across the interruption',async()=>{
@@ -255,7 +330,8 @@ test('late publisher statistics after stop cannot update UI or report an old str
 test('phone statistics are generation scoped and reporting does not block media startup',async()=>{
   const s=setup({peer:{async getStats(){return new Map([['v',{type:'outbound-rtp',kind:'video',id:'v',timestamp:1000,framesPerSecond:29,frameWidth:1080,frameHeight:1920}]]);}}});
   await s.publisher.start();await turn();const report=s.calls.find(call=>call.path==='stream/metrics');
-  assert.equal(report.body.generation,7);assert.equal(report.body.send_fps,29);assert.equal(report.body.width,1080);assert.equal(report.timeoutMs,2500);
+  assert.equal(report.body.generation,7);assert.equal(report.body.send_fps,undefined);assert.equal(report.body.encode_fps,29);assert.equal(report.body.width,1080);assert.equal(report.timeoutMs,2500);
+  for(const key of ['encode_ms','frames_encoded','frames_sent','sample_interval_ms','nack_count_delta','pli_count_delta','retransmitted_packets_delta','retransmitted_bytes_delta','target_bitrate_kbps'])assert.equal(report.body[key],null,key);
   await s.publisher.stop();
 });
 test('stop during camera permission waits, releases the late track and never negotiates it',async()=>{
@@ -642,7 +718,7 @@ async function streamHookFixture(run) {
   for(const [name,value]of Object.entries(globals))Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});
   Date.now=()=>now;
   const viewer=load('../src/lib/mobileViewerStats.ts');
-  const {useMobileBrowser}=load('../src/lib/useMobileBrowser.ts',{react:hooks,
+  const {useMobileBrowser}=load('../src/lib/useMobileBrowser.ts',{react:hooks,'./usePhoneCameraTune':{usePhoneCameraTune:()=>({busy:false})},
     './mobileBrowser':{...domain,MobileBrowserApi:Api,loadBrowserPairing:()=>({...pairingFixture,session_id:'s',context_id:'ctx'}),
       loadBrowserDraft:async()=>domain.emptyBrowserDraft(),saveBrowserDraft:async()=>{},saveBrowserPairing(){}},
     './mobileBrowserRtc':{...rtc,BrowserPublisher:Publisher},'./mobile':{acceptMobileCapture:()=>true,mobileVideoFresh:()=>false,mobileVideoAgeMs:()=>now-10000},

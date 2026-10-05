@@ -6,6 +6,7 @@ import { useHeaderPanel } from "../lib/headerPanels";
 import type { AssistantController, AssistantMessage } from "../lib/assistant";
 import { acceptPhotoImageSize } from "../lib/photoWiring";
 import { acceptMobileCapture, mobileError, mobileRequest, mobilePreviewLease, mobileModelRuntime, mobileVideoFresh, followMobileSource, openMobileViewer, useMobileCompanion, useDesktopStreamCapture,
+  mobileAddressOrigin, mobileWebOrigin, mobilePairingAtOrigin,
   type MobileCapture, type MobileCheckScope, type MobileContext, type MobileSession, type MobileWebConfiguration } from "../lib/mobile";
 import { PhotoViewport } from "./PhotoWiringPoc";
 import { emptyViewerMetrics, mobileMeasurementFresh, observeVideoPresentation, readViewerSample, viewerMetricDelta, type ViewerSample } from "../lib/mobileViewerStats";
@@ -125,6 +126,8 @@ export interface MobileWorkspaceTargets extends PhoneOverlayOptions {
     controls?: HTMLElement | null;
   /** When present, this portal selects a source instead of selecting a view. */
   source?: ImageSource;
+  /** Selected camera ownership can remain active when the guide preview is hidden. */
+  phoneSourceSelected?: boolean;
   selectedPhoneSource?: { session_id: string; generation: number } | null;
   showing: boolean; canShow: boolean; onShow: (show: boolean, session?: MobileSession | null, isCurrent?: () => boolean) => Promise<boolean>;
   /** A common desktop photo surface, independent of phone pairing. */
@@ -207,6 +210,9 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   const [qrRecord, setQr] = useState<{ payload: string; image: string; error?: string } | null>(null);
   const [webConfiguration, setWebConfiguration] = useState<MobileWebConfiguration | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
+  const connectionRead = useRef(0);
+  const autoPairAttempt = useRef<string | null>(null);
+  const currentMobile = useRef(mobile); currentMobile.current = mobile;
   const [actionError, setActionError] = useState("");
   const [sending, setSending] = useState(false);
   const [capture, setCapture] = useState<MobileCapture | null>(null);
@@ -217,31 +223,38 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   const [view, setView] = useState<"connection" | "live" | "photo">("connection");
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [pairingExpired, setPairingExpired] = useState(false);
+  const [connectionChecked, setConnectionChecked] = useState(false);
   const flight = useRef(false);
   const previewLease = useRef({ key: "", deadline: 0 });
   const [previewClock, setPreviewClock] = useState(0);
   const session = mobile.session;
+  const connection = mobile.connection === undefined ? session : mobile.connection;
+  const connectionError = mobile.connectionError || mobile.error;
+  const phoneConnected = Boolean(connection && !connectionError);
+  const needsProjectSync = phoneConnected && connection?.conversation_id !== controller.mobileContext?.conversation_id;
   const shownStream = useRef<string | null>(null);
   const sourceFollow = useRef<{ key: string; attempts: number; failedAt: number | null } | null>(null);
   const sourceFlight = useRef<object | null>(null);
   const followCurrent = useRef({ selected: false, key: null as string | null, epoch: 0 });
-  const followSelected = Boolean(workspace?.showing && session?.stream.active);
+  const followingPhone = Boolean((workspace?.phoneSourceSelected ?? workspace?.showing)
+    && (workspace?.source === undefined || workspace.source === 'phone'));
+  const followSelected = Boolean(followingPhone && session?.stream.active);
   const followKey = followMobileSource(null, session, true, false).key;
   if (followCurrent.current.selected !== followSelected || followCurrent.current.key !== followKey)
     followCurrent.current = { selected: followSelected, key: followKey, epoch: followCurrent.current.epoch + 1 };
   useEffect(() => () => { followCurrent.current = { selected: false, key: null, epoch: followCurrent.current.epoch + 1 }; }, []);
   useEffect(() => {
     let baseline = shownStream.current;
-    if (baseline === null && workspace?.showing && workspace.selectedPhoneSource && session) {
-      // Returning to guide may reveal an old backend source while the phone
+    if (baseline === null && followingPhone && workspace?.selectedPhoneSource && session) {
+      // Returning to a live workspace may reveal an old source while the phone
       // has already reconnected. Its actual generation is the initial baseline.
       baseline = followMobileSource(null, { ...session, session_id: workspace.selectedPhoneSource.session_id,
         stream: { ...session.stream, generation: workspace.selectedPhoneSource.generation } }, true, false).key;
     }
-    const next = followMobileSource(baseline, session, Boolean(workspace?.showing), Boolean(workspace?.canShow));
+    const next = followMobileSource(baseline, session, followingPhone, Boolean(workspace?.canShow));
     // The desktop source owns one generation and one pixel size. Re-select only
     // the phone view the user is already watching after its camera reconnects.
-    if (!workspace?.showing) { shownStream.current = null; sourceFollow.current = null; return; }
+    if (!followingPhone) { shownStream.current = null; sourceFollow.current = null; return; }
     if (!next.reselect) { shownStream.current = next.key; return; }
     if (!session || !workspace || !next.key || sourceFlight.current) return;
     if (sourceFollow.current?.key !== next.key) sourceFollow.current = { key: next.key, attempts: 0, failedAt: null };
@@ -261,12 +274,14 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
       } finally { if (sourceFlight.current === flight) sourceFlight.current = null; }
     })();
   }, [session?.session_id, session?.context_id, session?.stream.generation, session?.stream.video_receive_fresh, session?.stream.video_received_at,
-    workspace?.showing, workspace?.canShow, workspace?.onShow, workspace?.selectedPhoneSource?.session_id, workspace?.selectedPhoneSource?.generation]);
+    followingPhone, workspace?.canShow, workspace?.onShow, workspace?.selectedPhoneSource?.session_id, workspace?.selectedPhoneSource?.generation]);
   // Only a fresh invitation is paired with a six-digit code. A consumed code is
   // never reused; the plain entry remains the fallback for connected phones.
-  const phoneEntryUrl = session?.base_url?.startsWith("https://") ? `${session.base_url.replace(/\/$/, "")}/mobile`
-    : webConfiguration?.available ? webConfiguration.web_url : null;
-  const invitation = mobile.pairing && !pairingExpired ? mobile.pairing : null;
+  const configuration = mobile.webConfiguration === undefined ? webConfiguration : mobile.webConfiguration;
+  const automaticOrigin = mobileWebOrigin(open && view === "connection" && !connectionChecked ? null : configuration);
+  const chosenOrigin = baseUrl.trim() ? mobileAddressOrigin(baseUrl.trim()) : automaticOrigin;
+  const phoneEntryUrl = automaticOrigin ? `${automaticOrigin}/mobile` : null;
+  const invitation = mobile.pairing && !pairingExpired && mobilePairingAtOrigin(mobile.pairing, chosenOrigin) ? mobile.pairing : null;
   const qrPayload = invitation
     ? invitation.web_url || (typeof invitation.qr_payload === "string" ? invitation.qr_payload : JSON.stringify(invitation.qr_payload))
     : session ? phoneEntryUrl ?? "" : "";
@@ -278,6 +293,36 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   const wantedPhoto = useRef<string | null>(null);
   const photoWorkspace = useRef(workspace); photoWorkspace.current = workspace;
   const conversationId = controller.mobileContext?.conversation_id;
+  useEffect(() => {
+    if (!open || view !== "connection") { autoPairAttempt.current = null; return; }
+    let disposed = false;
+    const read = async () => {
+      if (currentMobile.current.pairingBusy) return;
+      const serial = ++connectionRead.current;
+      try {
+        const next = currentMobile.current.refreshWebConfiguration
+          ? await currentMobile.current.refreshWebConfiguration()
+          : await mobileRequest<MobileWebConfiguration>("web-config", { cache: "no-store" });
+        if (!disposed && serial === connectionRead.current) { setWebConfiguration(next); setConnectionChecked(true); }
+      } catch { if (!disposed && serial === connectionRead.current) { setWebConfiguration(null); setConnectionChecked(true); } }
+    };
+    const foreground = () => { if (!currentMobile.current.pairingBusy && (typeof document === "undefined" || document.visibilityState !== "hidden")) void read(); };
+    void read(); const timer = setInterval(foreground, 5000);
+    if (typeof window !== "undefined") window.addEventListener?.("online", foreground);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", foreground);
+    return () => { disposed = true; connectionRead.current++; clearInterval(timer);
+      if (typeof window !== "undefined") window.removeEventListener?.("online", foreground);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", foreground); };
+  }, [open, view, conversationId, mobile.pairingBusy]);
+  useEffect(() => {
+    if (!open || view !== "connection" || baseUrl.trim()) return;
+    if (!automaticOrigin) { autoPairAttempt.current = null; return; }
+    if (invitation || mobile.pairingBusy) return;
+    const key = `${conversationId}:${automaticOrigin}`;
+    if (autoPairAttempt.current === key) return;
+    autoPairAttempt.current = key;
+    void currentMobile.current.pair();
+  }, [open, view, conversationId, automaticOrigin, invitation, mobile.pairingBusy, baseUrl]);
   const streamCapture = useDesktopStreamCapture(session, next => {
     setCapture(next); setCaptureId(next.capture_id); setPhotoLoading(false); setActionError(""); setView("photo");
     if (photoWorkspace.current?.controls && photoWorkspace.current.onPhoto) {
@@ -360,12 +405,11 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   const outdated = Boolean(currentCapture && session && currentCapture.context_id !== session.context_id);
   async function showConnection() {
     const closing = open && view === "connection";
-    setView("connection"); setOpen(!closing);
+    setView("connection"); setConnectionChecked(false); setOpen(!closing);
     if (!closing) {
-      let configuration: MobileWebConfiguration | null = null;
-      try { configuration = await mobileRequest<MobileWebConfiguration>("web-config"); setWebConfiguration(configuration); }
-      catch { /* Retain compatibility with an older backend/native companion. */ }
-      if (!mobile.pairing || pairingExpired) await mobile.pair(configuration?.available ? configuration.base_url ?? undefined : undefined);
+      setWebConfiguration(null); autoPairAttempt.current = null;
+      // Automatic pairing has one owner: the effect after the fresh panel read.
+      if (baseUrl.trim() && (!mobile.pairing || pairingExpired)) await mobile.pair(baseUrl.trim());
     }
   }
   async function ask(scope?: MobileCheckScope, wireId?: string) {
@@ -388,14 +432,15 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   const readiness = previewFresh && session?.stream.active && session.stream.publisher_connected
     && (session.stream.state !== "locked" || session.stream.can_capture) ? session.stream.state : "finding";
   const mainControls = Boolean(workspace?.controls);
-  const connectionLabel = mobile.error ? tr("手機連線狀態待確認", "Phone connection status unavailable") : session ? tr("手機已連接", "Phone connected") : tr("連接手機", "Connect phone");
-  const trigger = <button type="button" className="mobile-connect-button" data-connected={Boolean(session && !mobile.error)}
+  const connectionLabel = connectionError ? tr("手機連線狀態待確認", "Phone connection status unavailable")
+    : phoneConnected ? needsProjectSync ? tr("手機已連接，尚未同步目前作品", "Phone connected, current project not synced") : tr("手機已連接", "Phone connected") : tr("連接手機", "Connect phone");
+  const trigger = <button type="button" className="mobile-connect-button" data-connected={phoneConnected}
     aria-label={connectionLabel} title={connectionLabel} aria-expanded={open && view === "connection"} aria-controls="mobile-companion-panel" disabled={!controller.project || controller.demoOpen}
     onClick={() => void showConnection()}>{workspace?.trigger ? <><svg className="mobile-device-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
       <rect x="5.5" y="2" width="9" height="16" rx="2" stroke="currentColor" strokeWidth="1.4" />
       <path d="M8 4h4M9 15.5h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg><span className="mobile-connection-dot" aria-hidden="true" />
-      <span className="mobile-connection-label">{mobile.error ? tr("待確認", "Unknown") : session ? tr("已連接", "Connected") : tr("連接", "Connect")}</span></> : connectionLabel}</button>;
+      <span className="mobile-connection-label">{connectionError ? tr("待確認", "Unknown") : phoneConnected ? tr("已連接", "Connected") : tr("連接", "Connect")}</span></> : connectionLabel}</button>;
   const viewControls = <div className="mobile-view-tabs" role="group" aria-label={tr("手機影像檢視", "Phone image views")}>
     <button type="button" aria-pressed={mainControls ? workspace?.showing : open && view === "live"}
       disabled={!session || Boolean(mainControls && !workspace?.canShow)} onClick={() => {
@@ -409,36 +454,37 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   </div>;
   const connectionView = view === "connection";
   const connectionUrl = invitation?.web_url || (session ? phoneEntryUrl : null);
-  const panelError = mobile.error || (connectionView ? qrRecord?.payload === qrPayload ? qrRecord.error ?? "" : "" : actionError);
+  const panelError = (connectionView ? connectionError || mobile.webConfigurationError : mobile.error) || (connectionView ? qrRecord?.payload === qrPayload ? qrRecord.error ?? "" : "" : actionError);
   const panel = open ? <section id="mobile-companion-panel" className={`mobile-companion-panel${connectionView ? " is-connection" : ""}`} aria-label={connectionView ? tr("手機連線", "Phone connection") : tr("手機連線與串流", "Phone connection and streaming")}>
       <header><div><strong>{connectionView ? tr("手機連線", "Phone connection") : tr("手機協作", "Phone companion")}</strong><small>{session?.title ?? controller.mobileContext?.title ?? "Tinkro"}</small></div>
         <button type="button" onClick={() => setOpen(false)} aria-label={tr("收起手機面板", "Close phone panel")}>×</button></header>
       {connectionView ? <div className="mobile-pairing mobile-connection-pairing">
-        <div className="mobile-pairing-status" role="status" data-connected={Boolean(session && !mobile.error)}><span aria-hidden="true" />
-          {mobile.error ? tr("連線狀態待確認", "Connection status unavailable") : session ? tr("手機已連接", "Phone connected") : mobile.pairingBusy ? tr("準備 QR Code…", "Preparing QR code…") : pairingExpired ? tr("QR Code 已過期，請更新", "QR code expired; refresh to connect") : tr("等待手機掃碼", "Waiting for phone scan")}</div>
+        <div className="mobile-pairing-status" role="status" data-connected={phoneConnected}><span aria-hidden="true" />
+          {connectionError ? tr("連線狀態待確認", "Connection status unavailable") : phoneConnected ? tr("手機已連接", "Phone connected") : session ? tr("手機已配對，目前離線", "Phone paired, currently offline") : mobile.pairingBusy ? tr("準備 QR Code…", "Preparing QR code…") : pairingExpired ? tr("QR Code 已過期，請更新", "QR code expired; refresh to connect") : tr("等待手機掃碼", "Waiting for phone scan")}</div>
+        {needsProjectSync ? <p className="mobile-project-sync" role="status">{tr("尚未同步目前作品。請在手機切換到最新工作區，再重新開啟串流。", "Current project not synced. Switch to the latest workspace on your phone, then restart streaming.")}</p> : null}
         {qr && (session || !pairingExpired) ? <img className="mobile-pairing-qr" src={qr} alt={invitation ? tr("手機配對 QR code", "Phone pairing QR code") : tr("手機頁面 QR Code", "Phone page QR code")} /> : null}
         <div className="mobile-pairing-code-card" aria-label={tr("手機配對碼", "Phone pairing code")}>
           <span>{tr("配對碼", "Pairing code")}</span>
-          {mobile.pairing ? <strong className="mobile-pairing-code">{pairingExpired ? tr("配對碼已過期", "Pairing code expired") : mobile.pairing.code}</strong>
+          {invitation ? <strong className="mobile-pairing-code">{invitation.code}</strong>
+            : pairingExpired ? <strong className="mobile-pairing-code">{tr("配對碼已過期", "Pairing code expired")}</strong>
             : <small role="status">{mobile.pairingBusy ? tr("正在產生…", "Preparing…") : tr("請更新配對碼", "Refresh to get a code")}</small>}
           {invitation ? <small>{tr("5 分鐘內有效・限用一次", "Valid for 5 minutes · one use")}</small> : null}
         </div>
-        <p>{session ? invitation ? tr("掃碼或輸入配對碼；目前手機保持連線。", "Scan or enter the code. Your current phone stays connected.")
+        <p>{phoneConnected ? invitation ? tr("掃碼或輸入配對碼；目前手機保持連線。", "Scan or enter the code. Your current phone stays connected.")
           : tr("掃碼返回手機頁面；串流與照片請在工作區操作。", "Scan to reopen the phone page. Streaming and photos stay in the workspace.") : tr("手機與筆電使用同一 Wi-Fi，掃碼開啟 Safari。", "Use the same Wi-Fi as the laptop and scan to open Safari.")}</p>
         {connectionUrl ? <a href={connectionUrl} target="_blank" rel="noreferrer">{tr("開啟手機網頁", "Open phone page")}</a> : null}
-        <button type="button" disabled={mobile.pairingBusy} onClick={() => void mobile.pair(baseUrl || (webConfiguration?.available ? webConfiguration.base_url ?? undefined : undefined))}>{mobile.pairingBusy ? tr("準備配對…", "Preparing pairing…") : session ? tr("更新配對碼", "Refresh pairing code") : tr("更新 QR Code", "Refresh QR code")}</button>
+        <button type="button" disabled={mobile.pairingBusy} onClick={() => void mobile.pair(baseUrl.trim() || undefined)}>{mobile.pairingBusy ? tr("準備配對…", "Preparing pairing…") : session ? tr("更新配對碼", "Refresh pairing code") : tr("更新 QR Code", "Refresh QR code")}</button>
         {!session ? <details className="mobile-pairing-help"><summary>{tr("首次連線／連不上？", "First connection / connection help")}</summary>
           <p>{tr("首次使用請先安裝並信任 Tinkro 區網憑證，再開啟 Safari 相機。", "First install and trust the Tinkro local certificate, then enable the Safari camera.")}</p>
-          {webConfiguration && !webConfiguration.available ? <p>{tr("HTTPS 手機入口尚未啟動。", "The HTTPS phone entry point is not running.")}</p> : null}
-          {mobile.pairing ? <label>{tr("筆電網路位址", "Laptop network address")}<input value={baseUrl || mobile.pairing.base_url || mobile.pairing.base_urls[0] || ""} onChange={event => setBaseUrl(event.target.value)} /></label> : null}
+          {configuration && !configuration.available ? <p>{tr("HTTPS 手機入口尚未啟動。", "The HTTPS phone entry point is not running.")}</p> : null}
+          <label>{tr("手動指定筆電網路位址（選填）", "Manual laptop address (optional)")}<input value={baseUrl} placeholder={automaticOrigin || "https://192.168.1.10:8443"} onChange={event => setBaseUrl(event.target.value)} /></label>
         </details> : null}
       </div> : !session ? <div className="mobile-pairing"><p>{mobile.pairing?.web_url ? tr("iPhone 與筆電連上同一個 Wi-Fi，用手機相機掃描 QR code，選擇以 Safari 開啟 Tinkro。", "Connect iPhone and laptop to the same Wi-Fi. Scan with the phone camera and open Tinkro in Safari.") : tr("請先啟動筆電的手機網頁服務。原生開發版也可輸入下方位址與配對碼。", "Start the laptop's mobile web service. A native development build can also use the address and code below.")}</p>
         {mobile.pairing?.web_url ? <p className="mobile-info">{tr("第一次連線需先在 iPhone 安裝並信任 Tinkro 區網憑證；完成後即可使用 Safari 相機。", "On first connection, install and trust the Tinkro local certificate on iPhone to enable Safari camera access.")}</p> : webConfiguration && !webConfiguration.available ? <p className="mobile-info">{tr("HTTPS 手機入口尚未啟動。", "The HTTPS phone entry point is not running.")}</p> : null}
         {qr && !pairingExpired ? <img className="mobile-pairing-qr" src={qr} alt={tr("手機配對 QR code", "Phone pairing QR code")} /> : null}
-        {mobile.pairing ? <><strong className="mobile-pairing-code">{pairingExpired ? tr("配對碼已過期", "Pairing code expired") : mobile.pairing.code}</strong>
-          {mobile.pairing.web_url ? <a href={mobile.pairing.web_url} target="_blank" rel="noreferrer">{tr("開啟手機網頁", "Open phone page")}</a> : null}
-          <label>{tr("筆電網路位址", "Laptop network address")}<input value={baseUrl || mobile.pairing.base_url || mobile.pairing.base_urls[0] || ""} onChange={event => setBaseUrl(event.target.value)} list="mobile-lan-addresses" placeholder={tr("例如：https://192.168.1.10:8443", "Example: https://192.168.1.10:8443")} /></label>
-          <datalist id="mobile-lan-addresses">{mobile.pairing.base_urls.map(url => <option key={url} value={url} />)}</datalist></> : null}
+        {invitation ? <><strong className="mobile-pairing-code">{invitation.code}</strong>
+          {invitation.web_url ? <a href={invitation.web_url} target="_blank" rel="noreferrer">{tr("開啟手機網頁", "Open phone page")}</a> : null}</> : null}
+        <label>{tr("手動指定筆電網路位址（選填）", "Manual laptop address (optional)")}<input value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder={automaticOrigin || "https://192.168.1.10:8443"} /></label>
         <button type="button" disabled={mobile.pairingBusy} onClick={() => void mobile.pair(baseUrl || undefined)}>{mobile.pairingBusy ? tr("準備配對…", "Preparing pairing…") : tr("產生配對碼", "Create pairing code")}</button>
       </div> : <>
         {session.available_context && session.available_context.context_id !== session.context_id ? <p className="mobile-info">{tr("筆電內容已更新，請在手機切換到最新工作區。", "The desktop context has changed. Switch to the latest workspace on your phone.")}</p> : null}

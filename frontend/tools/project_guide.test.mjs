@@ -170,6 +170,49 @@ test('prepare hides step targets and AI even with restored progress or a previou
   }
 });
 
+test('reopening saved wiring starts at the first module without reviving inspection or skipping to tests', async () => {
+  const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);
+  const confirmed=Object.fromEntries(design.wiring.map(w=>[w.id,{signature:maker.wireSignature(w),mode:'camera',at:'saved'}]));
+  for(const locale of ['zh-TW','en']) for(const phase of ['active','review']) for(const source of [null,'guide','debug']) {
+    const guide={...maker.emptyGuide(),componentIndex:1,index:5,phase,run:3,confirmed,checks:['saved']};
+    const state={...maker.initialMaker(),stage:'guide',design,code:'# manual draft',
+      conversation:[{role:'user',text:'Keep my project'}],
+      guide:source ? maker.reviewProjectWire(design,guide,'hc-sr04','VCC',source) : guide};
+    const before=structuredClone(state), restored=maker.restoreMaker(JSON.stringify(state));
+    assert.deepEqual(state,before,'restoring must not mutate the saved project');
+    assert.equal(restored.guide.phase,'prepare');
+    assert.equal(restored.guide.componentIndex,0);
+    assert.equal(restored.guide.index,0);
+    assert.ok(!restored.guide.inspection);
+    assert.equal(restored.guide.inspectionSource,undefined);
+    assert.equal(restored.guide.inspectionReturn,undefined);
+    assert.deepEqual(restored.guide.checks,[]);
+    for(const key of ['design','code','conversation']) assert.deepEqual(restored[key],state[key]);
+    assert.deepEqual(restored.guide.confirmed,confirmed);
+    assert.equal(restored.guide.run,3);
+    for(const cid of design.component_ids) assert.equal(componentTests.componentTestKey(design,restored.guide,cid),componentTests.componentTestKey(design,state.guide,cid));
+    const html=await renderGuide({design:restored.design,session:restored.guide,locale});
+    assert.match(html,/compact-guide prepare/);
+    assert.match(html,/guide-prepare-message/);
+    assert.ok(html.includes(locale==='en'?'Start wiring →':'開始接線 →'));
+    assert.doesNotMatch(html,/component-test-card|guide-connection-card/);
+    for(const copy of ['Resume wiring','返回接線','Test later','稍後測試']) assert.ok(!html.includes(copy),copy);
+    // Starting is explicit and uses the first wire even when all old records exist.
+    let next=maker.startProjectGuide(restored.guide);
+    const started=await renderGuide({design,session:next,locale});
+    assert.match(started,/data-wiring-target="hc-sr04:GND"/);
+    assert.ok(started.includes(locale==='en'?'Wire 1 of 4':'第 1／4 條接線'));
+    for(let index=0;index<4;index++) {
+      assert.equal(next.phase,'active');
+      assert.equal(next.index,index);
+      next=maker.confirmProjectWire(design,next);
+    }
+    assert.equal(next.phase,'review');
+    assert.deepEqual(next.confirmed,confirmed,'browsing old confirmations must not replace their timestamps');
+    assert.match(await renderGuide({design,session:next,locale}),/component-test-card/);
+  }
+});
+
 test('start, review, next module and restart show steps only during active wiring', async () => {
   const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);
   let session=maker.emptyGuide();

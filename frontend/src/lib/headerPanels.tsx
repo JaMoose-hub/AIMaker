@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
-type HeaderPanel = "phone" | "pi" | "settings";
+type HeaderPanel = "phone" | "pi" | "settings" | "reset";
 type PanelState = HeaderPanel | null;
 const HeaderPanels = createContext<{ active: PanelState; setActive: Dispatch<SetStateAction<PanelState>> } | null>(null);
 

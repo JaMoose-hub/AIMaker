@@ -1,0 +1,8 @@
+body { margin:0; background:var(--surface-canvas); }
+.qa-controls { position:fixed; left:12px; top:12px; width:280px; display:grid; gap:12px; font:13px/1.5 sans-serif; color:var(--ink-primary); }
+.qa-controls label { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.qa-controls button,.qa-controls select { font:inherit; color:var(--ink-primary); background:var(--surface-card); border:1px solid var(--line-default); padding:8px; border-radius:8px; }
+.qa-controls output { overflow-wrap:anywhere; }
+.qa-phone.mobile-web-app { width:390px; max-width:100%; inset:0; }
+@media (max-width:1000px) { .qa-controls { position:static; width:auto; padding:12px; } .qa-phone.mobile-web-app { position:relative; height:800px; margin:12px auto; } }
+@media (max-width:500px) { .qa-controls { display:none; } .qa-phone.mobile-web-app { position:fixed; height:100dvh; margin:0 auto; } }

@@ -80,7 +80,7 @@ async function fixture(run, options = {}) {
         mergeBrowserSession: (_, next) => next, mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false,
         browserMediaReference: () => ({ asset_ids: [] }), browserUuid: () => `request-${++counter}`, browserAttachment: async selected => ({ id: 'attachment', upload_id: 'upload', file: selected, name: selected.name,
             filename: selected.name, type: 'image', mime: selected.type, size: 100, width: 1080, height: 1920 }) };
-    const { useMobileBrowser, mobileWiringPhotoFlow } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser,
+    const { useMobileBrowser, mobileWiringPhotoFlow } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },
         './mobile': { mobileVideoFresh: () => false }, './mobileViewerStats': { mobileMeasurementFresh: () => false },
         './mobileBrowserRtc': { idleBrowserRtc: () => ({ stats: {}, stream: null }), BrowserPublisher: class { async stop() {} stopLocal() {} } }, './wiringReview': reviewDomain,
         './assistantAnalysis': analysisDomain });
@@ -111,7 +111,7 @@ test('mobile shows the current framing example without capturing and keeps old q
     const hooks = { ...React, useRef: current => ({ current }) };
     const { MobileWiringChatActions } = load('../src/components/MobileWebApp.tsx', {
         react: hooks, '../lib/i18n': { useI18n: () => ({ locale: 'zh-TW' }) }, '../lib/assistantHistory': {},
-        './AssistantAnalysisTime': {}, './WiringChatMessage': { WiringCaptureFraming: framing },
+        './AssistantAnalysisTime': {}, './WiringChatMessage': { WiringCaptureFraming: framing }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
         '../lib/mobile': {}, '../lib/useMobileBrowser': { mobileWiringPhotoFlow: f.eligibility },
         '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {} });
     const w = f.render(), message = w.conversation.messages[0];
@@ -288,7 +288,7 @@ test('mobile analysis UI keeps one inline server clock, blocks form submission a
     const { ChatView } = load('../src/components/MobileWebApp.tsx', { react: hooks, '../lib/i18n': { useI18n: () => ({ locale: 'zh-TW' }) },
         '../lib/assistantHistory': load('../src/lib/assistantHistory.ts'), './AssistantAnalysisTime': { AssistantAnalysisTime: time }, '../lib/mobile': {},
         '../lib/useMobileBrowser': {}, '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {},
-        './WiringChatMessage': { WiringCaptureFraming: () => null } });
+        './WiringChatMessage': { WiringCaptureFraming: () => null }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null } });
     const w = { draft: '可以編輯', attachments: [], outbox: [], busy: false, chatSendBlocked: true, wiringAnalysis: { startedAt: 123 },
         conversation: { id: 'chat', context_epoch: 0, round: 1, before: null, jobs: [], messages: [
             { id: 'old', role: 'assistant', text: '舊分析', epoch: 0, round: 0, wiring_flow: { current: true, kind: 'analysing' } },

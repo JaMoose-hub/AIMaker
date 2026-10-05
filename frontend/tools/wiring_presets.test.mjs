@@ -69,7 +69,7 @@ test('compact photo action still enters the countdown and preserves capture guar
   const waiting=[];
   const h=harness({actionsOnly:true,countdown:()=>({remaining:null,run:async action=>{waiting.push(action);},cancel(){}})});
   const capture=nodes(h.render(),n=>n.props?.className==='assistant-capture')[0];
-  assert.match(capture.props['aria-label'],/10 秒倒數/);
+  assert.equal(capture.props['aria-label'],'拍攝這一步');
   await capture.props.onClick();
   assert.equal(waiting.length,1);
   assert.deepEqual(h.actions,[],'No capture or model call before countdown completes');

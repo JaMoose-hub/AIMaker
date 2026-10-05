@@ -50,11 +50,12 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     connectionKind: step.connectionKind, manualOnly: true,
   }), [cid, step.boardPin, step.componentPin, step.connectionKind, session.mode]);
   const active = session.phase === "active";
+  const preparing = session.phase === "prepare";
   const complete = componentComplete(design, session, cid);
-  // Saved results belong to history, not the start-wiring screen. Keep live
-  // test controls reachable even after an edit/restart invalidates the wiring.
-  const showTestCard = complete || Boolean(tests.status.active);
-  const reviewing = session.phase === "review" || (session.phase === "prepare" && complete);
+  // Old confirmations never skip preparation. A live test still keeps its Stop
+  // controls reachable, including on reopening or after a wiring restart.
+  const showTestCard = (!preparing && complete) || Boolean(tests.status.active);
+  const reviewing = session.phase === "review";
   const lastTest = tests.status.results.filter(r => r.component_id === cid).at(-1);
   const passed = lastTest?.outcome === "passed" && !lastTest.invalidated && lastTest.guide_key === componentTestKey(design, session, cid);
   useEffect(() => {
@@ -145,7 +146,7 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
       <button disabled={session.index === 0} onClick={() => onChange({ ...session, index: session.index - 1 })}>{tr("上一步", "Back")}</button>
       <button disabled={session.index >= steps.length - 1} onClick={() => onChange({ ...session, index: session.index + 1 })}>{tr("下一步", "Next")}</button>
       <button disabled={editing || tests.pending} onClick={() => void edit()}>{tr("我要修改此零件接線", "Edit this component wiring")}</button>
-    </> : session.phase === "prepare" && !complete ? <button type="button" className="guide-primary-action" onClick={start}>{tr("開始接線 →", "Start wiring →")}</button>
+    </> : preparing ? <button type="button" className="guide-primary-action" onClick={start}>{tr("開始接線 →", "Start wiring →")}</button>
       : active ? <>
         <button type="button" className="guide-back-action" title={tr("回到前一條接線指示，保留已確認紀錄", "Return to the previous wire; keep confirmations")} disabled={session.index === 0 || tests.pending} onClick={previous}>{tr("上一步", "Back")}</button>
         <button type="button" className="guide-primary-action" onClick={confirm}>{confirmed(step) ? tr("下一步 →", "Next →") : floating ? tr("接好了，下一步 →", "Connected · Next →") : tr("我已接好，下一步 →", "Connected · Next →")}</button>
@@ -179,7 +180,7 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     </>}>
     {editError ? <p className="guide-caution" role="alert">{editError}</p> : null}
     {tests.status.results.some(r => r.program_stop_requested && !r.program_stopped) ? <p className="guide-caution">{tr("已送出停止原作品要求，狀態待確認；請重新連線核對。", "A stop request was sent to the original project; reconnect to confirm its state.")}</p> : null}
-    {session.phase === "prepare" && !complete ? <div className="guide-prepare-message">
+    {preparing ? <div className="guide-prepare-message">
       <strong>{tr("準備開始接線", "Ready to start wiring")}</strong>
       <p>{tr("先關閉硬體電源，再按「開始接線」。", "Turn off hardware power, then press Start wiring.")}</p>
     </div> : null}

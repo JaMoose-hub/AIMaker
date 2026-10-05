@@ -3,6 +3,8 @@ param(
     [string]$CertificateDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -lt 7) { throw '此網路監測器需要 PowerShell 7；請用 pwsh -File .\scripts\start-mobile-web.ps1 重新開啟。尚未啟動 gateway。' }
+. (Join-Path $PSScriptRoot 'mobile-web-network.ps1')
 $taskRepo = Split-Path -Parent $PSScriptRoot
 $taskBackend = Join-Path $taskRepo 'backend'
 $taskPython = Join-Path $taskBackend '.venv\Scripts\python.exe'
@@ -15,23 +17,40 @@ if (-not (Test-Path -LiteralPath $taskConnectionPath)) { throw '請先執行 .\s
 $taskConnection = Get-Content -LiteralPath $taskConnectionPath -Raw | ConvertFrom-Json
 if ($Port -eq 0) { $Port = [int]$taskConnection.port }
 if ($Port -lt 1 -or $Port -gt 65535) { throw '無效的 HTTPS 埠。' }
-if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) { throw "HTTPS Port $Port 已有程式使用；此工具不會停止現有程式。" }
+Assert-TinkroMobilePortFree $Port
 if (-not (Test-Path -LiteralPath (Join-Path $taskFrontend 'index.html'))) { throw '請先在 frontend 執行 npm run build。' }
 try {
     $taskApi = Invoke-RestMethod "$($taskConnection.backend_url)/openapi.json" -TimeoutSec 5
     if (-not $taskApi.paths.PSObject.Properties['/api/mobile/pair']) { throw '目前後端尚未載入手機 API，請重新啟動現有 8100 後端。' }
 } catch { throw "現有 Tinkro 後端無法使用：$($_.Exception.Message)" }
-if ($Port -ne [int]$taskConnection.port) {
-    $taskBase = [UriBuilder]::new([string]$taskConnection.base_url)
-    $taskBase.Port = $Port
-    $taskConnection.base_url = $taskBase.Uri.GetLeftPart([UriPartial]::Authority)
-    $taskConnection.port = $Port
-    [IO.File]::WriteAllText($taskConnectionPath, ($taskConnection | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
-}
-Write-Host "手機用 Safari 開啟：$($taskConnection.base_url)/mobile"
-Write-Host 'HTTPS proxy 只提供手機介面與手機 API；Ctrl+C 只關閉 proxy，不會關閉 8100 後端或相機。'
-Push-Location -LiteralPath $taskBackend
+Write-Host '每 5 秒偵測 Wi-Fi（其次實體 Ethernet），IP 連續兩次一致才啟動 HTTPS gateway。'
+Write-Host 'Ctrl+C 只結束此監測器及其自有 gateway；不會關閉 8100 後端或相機。'
+$taskLock = $null
+$taskNetworkState = New-TinkroMobileNetworkState
+$taskLastEvent = ''
 try {
-    & $taskPython -m app.mobile_https serve --directory $taskCertificateDirectory --frontend $taskFrontend --upstream $taskConnection.backend_url --port $Port
-    if ($LASTEXITCODE -ne 0) { throw "HTTPS proxy 退出，代碼 $LASTEXITCODE" }
-} finally { Pop-Location }
+    $taskLock = Enter-TinkroMobilePortLock $Port
+    Assert-TinkroMobilePortFree $Port
+    while ($true) {
+        $taskObservation = Invoke-TinkroMobileNetworkPoll -State $taskNetworkState -GetAddress { Get-TinkroMobileLanAddress } -StartGateway {
+                param($address)
+                Start-TinkroOwnedGateway -Python $taskPython -Backend $taskBackend -Frontend $taskFrontend -Directory $taskCertificateDirectory -Address $address -Port $Port -Upstream $taskConnection.backend_url -Owner $taskNetworkState
+        }
+        $taskEvent = $taskObservation.Event
+        $taskAddress = $taskObservation.Address
+        $taskEventKey = "$taskEvent|$($taskObservation.Error)"
+        if ($taskEventKey -ne $taskLastEvent) {
+            Write-TinkroMobileNetworkEvent $taskCertificateDirectory $taskEvent $taskAddress
+            if ($taskEvent -eq 'started') { Write-Host "手機用 Safari 開啟：https://${taskAddress}:$Port/mobile" }
+            elseif ($taskEvent -eq 'offline') { Write-Host '沒有可用的實體 LAN；已停止自有 gateway，等待網路恢復。' }
+            elseif ($taskEvent -eq 'probe_failed') { Write-Host '暫時無法讀取網路狀態；保留自有 gateway，5 秒後重試。' }
+            elseif ($taskEvent -eq 'start_failed') { Write-Host "手機 HTTPS 尚未可用：$($taskObservation.Error)" }
+            $taskLastEvent = $taskEventKey
+        }
+        Limit-TinkroMobileGatewayLogs $taskCertificateDirectory
+        Start-Sleep -Seconds 5
+    }
+} finally {
+    try { if ($taskNetworkState.Process) { Stop-TinkroOwnedGateway $taskNetworkState.Process } }
+    finally { if ($taskLock) { $taskLock.Dispose() } }
+}

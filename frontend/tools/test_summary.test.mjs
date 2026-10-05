@@ -29,13 +29,13 @@ test('stale guide result has one short instruction; history stays accessible but
   }
 });
 
-test('guide keeps the primary test action visible; review and troubleshooting are secondary',async()=>{
+test('guide keeps the primary test action visible and hides AI help for stale non-problem history',async()=>{
   const f=fixture();
   const html=await renderTestCard({...f,view:'actions',onDebug(){throw Error('No hardware work during render');}});
   const [visible,more]=html.split('<details class="test-more-actions">');
   assert.match(visible,/<button class="guide-primary-action" disabled=""[^>]*>連接 Pi 後測試/);
   assert.doesNotMatch(visible,/component-test-debug-action|查看本零件接線/);
-  assert.match(more,/前往除錯/);
+  assert.doesNotMatch(html,/前往除錯|請 AI 幫忙|component-test-debug-action/);
   assert.match(more,/查看本零件接線/);
 });
 

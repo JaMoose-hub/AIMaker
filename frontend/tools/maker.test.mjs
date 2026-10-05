@@ -28,7 +28,7 @@ for(const [name,url] of Object.entries({react:hooksUrl,'react/jsx-runtime':impor
   '../lib/systemText':systemTextUrl,
 })) assistantJS=assistantJS.replaceAll(JSON.stringify(name),JSON.stringify(url));
 const {MakerAssistant}=await import(moduleUrl(assistantJS));
-const resetGateURL=moduleUrl(`export let gate=async()=>true; export const setGate=value=>{gate=value}; export const prepareProjectWiringEdit=id=>gate(id);`);
+const resetGateURL=moduleUrl(`export let gate=async()=>true; export const setGate=value=>{gate=value}; export const prepareProjectWiringEdit=(...args)=>gate(...args);`);
 const resetGate=await import(resetGateURL);
 let makerAIJS=ts.transpileModule(readFileSync(new URL('../src/lib/useMakerAI.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
 for(const [name,value] of Object.entries({react:hooksUrl,'./maker':moduleUrl(outputText),'./makerMigration':moduleUrl('export const MAKER_STORAGE="boardvision.maker.v1"'),
@@ -73,6 +73,48 @@ test('actual newProject hook preserves the project when active work or backup fa
     resetGate.setGate(async()=>{checks++;return true});
     assert.equal(await useMakerAI(busy,()=>assert.fail('busy reset')).newProject(),false);
     assert.equal(checks,0);
+  }finally{globalThis.localStorage=original;}
+});
+
+test('workflow Reset checks unconfirmed work too and never authorizes automatic AI/Pi stop',async()=>{
+  const original=globalThis.localStorage;
+  try {
+    hooks.reset();const before={...m.initialMaker(),code:'# standalone'};let state=before,checks=[];
+    globalThis.localStorage={setItem:()=>assert.fail('blocked reset must not write')};
+    resetGate.setGate(async(...args)=>{checks.push(args);throw Error('hardware_work_active');});
+    assert.equal(await useMakerAI(state,update=>{state=update(state)}).newProject(),false);
+    assert.equal(state,before);assert.equal(checks[0][0],'unassigned-project');assert.equal(checks[0][2],false);
+  }finally{globalThis.localStorage=original;}
+});
+
+test('workflow Reset backs up and persists both the new project and chat pointers',async()=>{
+  const original=globalThis.localStorage;
+  try {
+    hooks.reset();const before={...m.initialMaker(),design,code:'# old'};let state=before;
+    const entries=new Map([['boardvision.assistant.v1','old-chat'],['boardvision.maker.v1',JSON.stringify(before)]]);
+    globalThis.localStorage={getItem:key=>entries.get(key)??null,setItem:(key,value)=>entries.set(key,value),removeItem:key=>entries.delete(key)};
+    resetGate.setGate(async()=>true);
+    assert.equal(await useMakerAI(state,update=>{state=update(state)}).newProject('fresh-chat'),true);
+    assert.deepEqual(JSON.parse(entries.get('boardvision.maker.v1.before-new-project')),before);
+    assert.equal(JSON.parse(entries.get('boardvision.assistant.v1.before-new-project')),'old-chat');
+    assert.equal(entries.get('boardvision.assistant.v1'),'fresh-chat');
+    assert.equal(JSON.parse(entries.get('boardvision.maker.v1')).design,null);
+    assert.equal(state.stage,'design');
+  }finally{globalThis.localStorage=original;}
+});
+
+test('workflow Reset storage failures never leave a fresh chat paired with the old project',async()=>{
+  const original=globalThis.localStorage;
+  try {
+    for(const failingKey of ['boardvision.maker.v1.before-new-project','boardvision.assistant.v1.before-new-project','boardvision.assistant.v1','boardvision.maker.v1']) {
+      hooks.reset();const before={...m.initialMaker(),design,code:'# keep'};let state=before;
+      const entries=new Map([['boardvision.assistant.v1','old-chat'],['boardvision.maker.v1',JSON.stringify(before)]]);
+      globalThis.localStorage={getItem:key=>entries.get(key)??null,setItem:(key,value)=>{if(key===failingKey)throw Error('quota');entries.set(key,value);},removeItem:key=>entries.delete(key)};
+      resetGate.setGate(async()=>true);
+      assert.equal(await useMakerAI(state,update=>{state=update(state)}).newProject('fresh-chat'),false,failingKey);
+      assert.equal(state,before);assert.equal(entries.get('boardvision.assistant.v1'),'old-chat');
+      assert.deepEqual(JSON.parse(entries.get('boardvision.maker.v1')),before);
+    }
   }finally{globalThis.localStorage=original;}
 });
 function nodes(tree){return Array.isArray(tree)?tree.flatMap(nodes):tree&&typeof tree==='object'?[tree,...nodes(tree.props?.children)]:[];}

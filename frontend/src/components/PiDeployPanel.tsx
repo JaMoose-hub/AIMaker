@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { DeploySplitLayout } from "./DeploySplitLayout";
 import { useI18n } from "../lib/i18n";
 import { deployPi, executionPending, programOwner, stopPiProgram } from "../lib/piApi";
@@ -18,7 +18,7 @@ function initialCode(): string {
   }
 }
 
-export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { project?: ProjectDesign; draft?: string; onDraftChange?: (code: string) => void; onDebug?: (evidence:NonNullable<MakerState['debug']>['deployment']) => void }) {
+export function PiDeployPanel({ project, draft, onDraftChange, onDebug, livePreview }: { project?: ProjectDesign; draft?: string; onDraftChange?: (code: string) => void; onDebug?: (evidence:NonNullable<MakerState['debug']>['deployment']) => void; livePreview?: ReactNode }) {
   const { t, locale } = useI18n();
   const tr = useMakerText();
   const [localCode, setCode] = useState(initialCode);
@@ -73,6 +73,13 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { proj
     window.requestAnimationFrame(() => editor.setSelectionRange(start + 4, start + 4));
   }
 
+  const stopAction = running ? <button type="button" disabled={pending || !programOwner(status)} onClick={() => { const owner = programOwner(status); if (owner) void pi.perform(() => stopPiProgram(owner)); }}>{tr("停止作品", "Stop project")}</button> : null;
+  const debugAction = onDebug ? <button type="button" className="workflow-secondary" onClick={diagnoseCurrent}>{tr("沒有反應？幫我檢查", "No response? Help me check")}</button> : null;
+  const runtimeInfo = <>
+    <p className="deploy-output-context">{!connected ? tr("暫時無法更新狀態；恢復連線後會重新核對。", "Status updates are unavailable. They will refresh after reconnecting.") : failed ? tr("先查看錯誤訊息，再請右側 AI 分析原因。", "Review the error, then ask the AI on the right to analyze it.") : tr("顯示 Pi 程式狀態與最近輸出。", "Shows Pi program status and recent output.")}</p>
+    <small className="deploy-version">{tr("執行版本", "Running version")}: {status?.version?.code_hash.slice(0,12) ?? tr("尚未取得", "Not available")}{status?.exit_code!=null?` · ${tr("結束代碼", "Exit code")}: ${status.exit_code}`:""}</small>
+  </>;
+
   return <section className="pi-deploy-panel" aria-label={tr("部署與執行", "Deploy & run")}>
     <div className="pi-panel-heading workflow-heading deploy-project-heading">
       <div><div className="workflow-eyebrow">{tr("03 · 部署與執行", "03 · Deploy & run")}</div>
@@ -103,20 +110,22 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug }: { proj
             onChange={(event) => updateCode(event.currentTarget.value)} onKeyDown={indent}
             spellCheck={false} autoCapitalize="off" autoCorrect="off" wrap="off" />
           <div className="pi-editor-foot"><small>{t(saved ? "pi.saved" : "pi.saveFailed")}</small><small>{t("pi.indent")}</small></div>
+          {livePreview ? <label className="assistant-code-height">{tr("程式區高度", "Editor height")}<input type="range" min={160} max={640} step={20} value={editorHeight} onChange={event => { const value = Number(event.target.value); setEditorHeight(value); try { localStorage.setItem("boardvision.code-height.v1", String(value)); } catch { /* session only */ } }} /></label> : null}
         </section>
       </div>
-      <div className="deploy-results-column">
+      <div className={`deploy-results-column${livePreview ? ' has-live-preview' : ''}`}>
+        {livePreview}
         <section className="deploy-output workflow-surface" aria-label={tr("輸出結果", "Output results")}>
           <div className="deploy-section-heading"><div><span className="workflow-eyebrow">{tr("執行監控", "RUNTIME")}</span><h3>{tr("輸出結果", "Output results")}</h3></div>
             <span className={`deploy-output-indicator ${!connected ? "neutral" : failed ? "warning" : running ? "good" : queued || transferring ? "working" : "neutral"}`}>
               {!connected ? tr("Pi 狀態待確認", "Pi status unknown") : failed ? tr("需要檢查", "Needs attention") : queued ? tr("排隊中", "Queued") : transferring ? tr("部署中", "Deploying") : running ? tr("執行中", "Running") : tr("待機", "Idle")}
             </span></div>
           <div className="pi-status-lines" role="status"><span>{t("pi.deploymentLabel")} · {t(`pi.deployment.${status?.deployment ?? "idle"}`)}</span><span>{t("pi.programLabel")} · {t(`pi.program.${!connected ? "unknown" : status?.program ?? "unknown"}`)}</span></div>
-          <label className="assistant-code-height">{tr("程式區高度", "Editor height")}<input type="range" min={160} max={640} step={20} value={editorHeight} onChange={event => { const value = Number(event.target.value); setEditorHeight(value); try { localStorage.setItem("boardvision.code-height.v1", String(value)); } catch { /* session only */ } }} /></label>
-          {running ? <button type="button" disabled={pending || !programOwner(status)} onClick={() => { const owner = programOwner(status); if (owner) void pi.perform(() => stopPiProgram(owner)); }}>{tr("停止作品", "Stop project")}</button> : null}
-          <p className="deploy-output-context">{!connected ? tr("暫時無法更新狀態；恢復連線後會重新核對。", "Status updates are unavailable. They will refresh after reconnecting.") : failed ? tr("先查看錯誤訊息，再請右側 AI 分析原因。", "Review the error, then ask the AI on the right to analyze it.") : tr("顯示 Pi 程式狀態與最近輸出。", "Shows Pi program status and recent output.")}</p>
-          <small className="deploy-version">{tr("執行版本", "Running version")}: {status?.version?.code_hash.slice(0,12) ?? tr("尚未取得", "Not available")}{status?.exit_code!=null?` · ${tr("結束代碼", "Exit code")}: ${status.exit_code}`:""}</small>
-          {onDebug ? <button type="button" className="workflow-secondary" onClick={diagnoseCurrent}>{tr("沒有反應？幫我檢查", "No response? Help me check")}</button> : null}
+          {!livePreview ? <label className="assistant-code-height">{tr("程式區高度", "Editor height")}<input type="range" min={160} max={640} step={20} value={editorHeight} onChange={event => { const value = Number(event.target.value); setEditorHeight(value); try { localStorage.setItem("boardvision.code-height.v1", String(value)); } catch { /* session only */ } }} /></label> : null}
+          {livePreview ? <div className="deploy-runtime-tools">
+            <details className="deploy-output-details"><summary>{tr("執行資訊", "Run details")}</summary>{runtimeInfo}</details>
+            {stopAction}{debugAction}
+          </div> : <>{stopAction}{runtimeInfo}{debugAction}</>}
           {networkError ? <p className="pi-error" role="alert">{t("pi.networkError")}</p> : null}
           {error ? <pre className="pi-error" role="alert">{error}</pre> : null}
           <div className="pi-console-heading"><span>{t("pi.output")}</span><small>{t("pi.outputLimit")}</small></div>

@@ -1,11 +1,357 @@
 """RTC negotiation/ownership test doubles never bind ports or start a camera."""
 import asyncio
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
 import app.mobile_rtc as rtc
+
+
+class DiagnosticPC:
+    connectionState = "connected"
+    iceConnectionState = "completed"
+    iceGatheringState = "complete"
+    signalingState = "stable"
+
+    def __init__(self):
+        self.calls = 0
+        self.receivers = []
+        self.report = {
+            "video": SimpleNamespace(type="inbound-rtp", kind="video", ssrc=123,
+                packetsReceived=2100, packetsLost=12, jitter=900),
+            "audio": SimpleNamespace(type="inbound-rtp", kind="audio", ssrc=456,
+                packetsReceived=999, packetsLost=1, jitter=48),
+            "transport": SimpleNamespace(type="transport", id="dtls-one", packetsReceived=2200,
+                packetsSent=500, bytesReceived=1700000, bytesSent=85000, iceRole="controlled", dtlsState="connected"),
+        }
+
+    async def getStats(self):
+        self.calls += 1
+        return self.report
+
+    def getReceivers(self):
+        return self.receivers
+
+
+def diagnostic_service():
+    now = [100.]
+
+    async def unexpected(*_):
+        raise AssertionError("diagnostics must not publish or process frames")
+
+    service = rtc.MobileRTC(unexpected, unexpected, clock=lambda: now[0], wall=lambda: 1700000000+now[0])
+    pc = DiagnosticPC()
+    frame = SimpleNamespace(width=1080, height=1920)
+    stream = rtc.Stream(3, publisher=pc, track=SimpleNamespace(total=30, latest=(frame, 30, 99.5, 1700000099.5)))
+    stream.codecs[pc] = "video/H264"
+    service.streams["phone"] = stream
+    return service, stream, pc, now
+
+
+def test_diagnostics_reads_rtp_during_decoded_stall_without_updating_stream():
+    service, stream, pc, now = diagnostic_service()
+    before = vars(stream).copy(), vars(stream.track).copy(), deepcopy(pc.report)
+
+    async def scenario():
+        first = await service.diagnostics("phone", 3)
+        assert first["decoded"] == dict(seq=30, received_at=1700000099.5, age_ms=500., fresh=True, video_size=[1080, 1920])
+        assert first["connection_state"] == "connected" and first["ice_connection_state"] == "completed"
+        assert first["stats_available"] is True
+        assert first["inbound_rtp"] == [dict(ssrc=123, packets_received=2100, packets_lost=12,
+            jitter_raw=900, jitter_raw_unit="rtp_timestamp_units", clock_rate_hz=90000, jitter_ms=10.)]
+        assert first["transports"][0]["bytes_received"] == 1700000
+        now[0] += 8
+        pc.report["video"].packetsReceived += 100
+        # Duplicate/reordered packets can make the cumulative lost counter negative.
+        pc.report["video"].packetsLost = -2
+        second = await service.diagnostics("phone", 3)
+        assert second["decoded"]["seq"] == 30 and second["decoded"]["age_ms"] == 8500
+        assert second["decoded"]["fresh"] is False
+        assert second["inbound_rtp"][0]["packets_received"] == 2200
+        assert second["inbound_rtp"][0]["packets_lost"] == -2
+        assert pc.calls == 2
+        assert vars(stream) == before[0] and vars(stream.track) == before[1]
+        assert pc.report["transport"] == before[2]["transport"]
+        assert service.generations == {} and service.lifecycle_locks == {}
+    asyncio.run(scenario())
+
+
+def test_diagnostics_no_publisher_or_no_retained_frame_does_not_imply_live():
+    service, stream, pc, _ = diagnostic_service()
+    stream.track.latest = None
+    stream.publisher = None
+    result = asyncio.run(service.diagnostics("phone", 3))
+    assert result["stats_available"] is False and result["inbound_rtp"] == []
+    assert result["decoded"] == dict(seq=30, received_at=None, age_ms=None, fresh=False, video_size=None)
+    assert result["connection_state"] is None and pc.calls == 0
+
+
+@pytest.mark.parametrize("replace", ["generation", "publisher", "closing"])
+def test_diagnostics_rejects_late_stats_from_retired_owner(replace):
+    service, stream, pc, _ = diagnostic_service()
+
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed():
+            entered.set()
+            await release.wait()
+            return pc.report
+
+        pc.getStats = delayed
+        task = asyncio.create_task(service.diagnostics("phone", 3))
+        await entered.wait()
+        if replace == "generation":
+            service.streams["phone"] = rtc.Stream(4)
+        elif replace == "publisher":
+            stream.publisher = DiagnosticPC()
+        else:
+            stream.closing = True
+        release.set()
+        with pytest.raises(HTTPException) as error:
+            await task
+        assert error.value.status_code == 409
+    asyncio.run(scenario())
+
+
+def test_diagnostics_wrong_generation_is_rejected_before_reading_stats():
+    service, _, pc, _ = diagnostic_service()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(service.diagnostics("phone", 2))
+    assert error.value.status_code == 409 and pc.calls == 0
+
+
+def test_diagnostics_stats_failure_retains_age_and_unknown_clock_is_not_guessed():
+    service, stream, pc, _ = diagnostic_service()
+    stream.codecs[pc] = "video/unknown"
+    result = asyncio.run(service.diagnostics("phone", 3))
+    assert result["inbound_rtp"][0]["jitter_raw"] == 900
+    assert result["inbound_rtp"][0]["jitter_ms"] is None
+    assert result["inbound_rtp"][0]["clock_rate_hz"] is None
+
+    async def failed():
+        raise RuntimeError("private details must not appear in response")
+
+    pc.getStats = failed
+    result = asyncio.run(service.diagnostics("phone", 3))
+    assert result["stats_available"] is False and result["stats_error"] == "RuntimeError"
+    assert result["decoded"]["seq"] == 30 and result["decoded"]["age_ms"] == 500
+
+
+def test_remb_diagnostics_reads_real_estimator_fields_without_advancing_it(monkeypatch):
+    from aiortc.rate import RemoteBitrateEstimator
+
+    monkeypatch.setattr(rtc.aiortc, "__version__", "1.15.0")
+    estimator = RemoteBitrateEstimator()
+    receiver = SimpleNamespace(track=SimpleNamespace(kind="video"), _RTCRtpReceiver__remote_bitrate_estimator=estimator)
+    pc = DiagnosticPC()
+    pc.receivers = [receiver]
+    before = deepcopy(vars(estimator.rate_control))
+    initial = rtc._receiver_remb_diagnostics(pc)
+    assert initial["available"] is True
+    assert initial["receivers"][0]["initialized"] is False
+    # The constructor's 30 Mbps value is NOT an initialized estimate.
+    assert initial["receivers"][0]["bitrate_bps"] is None
+    assert vars(estimator.rate_control) == before
+
+    def cannot_call(*_):
+        raise AssertionError("diagnostics must not advance the estimator")
+
+    estimator.add = estimator.incoming_bitrate.rate = estimator.rate_control.update = cannot_call
+    estimator.rate_control.current_bitrate_initialized = True
+    estimator.rate_control.current_bitrate = 7800000
+    estimator.last_update_ms = 2208988800000 + 1700000000123
+    before = deepcopy(vars(estimator.rate_control))
+    value = rtc._receiver_remb_diagnostics(pc)
+    assert value["receivers"][0] == dict(receiver_index=0, initialized=True, bitrate_bps=7800000,
+        last_update_ntp_ms=3908988800123, last_update_at=1700000000.123)
+    assert vars(estimator.rate_control) == before and estimator.last_update_ms == 3908988800123
+
+
+def test_remb_diagnostics_unsupported_version_and_layout_are_explicit(monkeypatch):
+    pc = DiagnosticPC()
+    monkeypatch.setattr(rtc.aiortc, "__version__", "2.0.0")
+    result = rtc._receiver_remb_diagnostics(pc)
+    assert result["available"] is False and result["reason"] == "unsupported_aiortc_version"
+    monkeypatch.setattr(rtc.aiortc, "__version__", "1.15.0")
+    pc.receivers = [SimpleNamespace(track=SimpleNamespace(kind="video"))]
+    result = rtc._receiver_remb_diagnostics(pc)
+    assert result["available"] is False and result["reason"] == "unsupported_estimator_layout"
+
+
+def test_diagnostics_jitter_buffer_occupancy_is_readonly_and_explicitly_current(monkeypatch):
+    from aiortc.jitterbuffer import JitterBuffer
+    from queue import Queue
+
+    monkeypatch.setattr(rtc.aiortc, "__version__", "1.15.0")
+    buffer = JitterBuffer(capacity=128, is_video=True)
+    for seq in range(120, 126):
+        buffer.add(SimpleNamespace(sequence_number=seq, timestamp=90000))
+    queue = Queue()
+    queue.put("already queued encoded frame")
+    pc = DiagnosticPC()
+    receiver = SimpleNamespace(track=SimpleNamespace(kind="video"),
+        _RTCRtpReceiver__jitter_buffer=buffer, _RTCRtpReceiver__decoder_queue=queue,
+        _RTCRtpReceiver__decoder_thread=SimpleNamespace(is_alive=lambda: True))
+    pc.receivers = [receiver]
+    before = buffer._origin, tuple(buffer._packets)
+    value = rtc._receiver_buffer_diagnostics(pc)
+    assert value["available"] is True
+    assert value["receivers"] == [dict(receiver_index=0, capacity_packets=128, pending_packets=6,
+        pending_timestamps=1, largest_pending_timestamp_packets=6, decoder_queue_frames=1, decoder_thread_alive=True)]
+    assert (buffer._origin, tuple(buffer._packets)) == before and queue.qsize() == 1
+    monkeypatch.setattr(rtc.aiortc, "__version__", "2.0.0")
+    value = rtc._receiver_buffer_diagnostics(pc)
+    assert value["available"] is False and value["reason"] == "unsupported_aiortc_version"
+    monkeypatch.setattr(rtc.aiortc, "__version__", "1.15.0")
+    receiver._RTCRtpReceiver__jitter_buffer = object()
+    value = rtc._receiver_buffer_diagnostics(pc)
+    assert value["available"] is False and value["reason"] == "unsupported_buffer_layout"
+
+
+def fu_a_packets(start=100, count=200, timestamp=90000):
+    from aiortc.rtp import RtpPacket
+    from aiortc.codecs.h264 import h264_depayload
+
+    packets = []
+    for index in range(count):
+        packet = RtpPacket(payload_type=96, sequence_number=(start+index) % 65536, timestamp=timestamp, ssrc=7)
+        packet.marker = int(index == count-1)
+        packet.payload = bytes([0x7c, 0x05 | (0x80 if index == 0 else 0) | (0x40 if index == count-1 else 0)]) + bytes([index % 251+1])*1198
+        packet._data = h264_depayload(packet.payload)
+        packets.append(packet)
+    return packets
+
+
+@pytest.mark.parametrize("start", [100, 65500])
+def test_phone_512_reconstructs_large_fu_a_nal_where_stock_128_evicts_start(start):
+    from aiortc.jitterbuffer import JitterBuffer
+
+    packets = fu_a_packets(start)
+    expected = b"".join(packet._data for packet in packets)
+    following = fu_a_packets(start+200, 1, 93000)[0]
+    outputs = []
+    for buffer in (JitterBuffer(128, is_video=True), rtc.MobilePublisherJitterBuffer()):
+        flags, frames = 0, []
+        for packet in packets+[following]:
+            pli, frame = buffer.add(packet)
+            flags += pli
+            if frame is not None:
+                frames.append(frame.data)
+        outputs.append((flags, frames))
+    assert len(expected) == 239605 and expected.startswith(b"\x00\x00\x00\x01\x65")
+    assert outputs[0][0] == 1 and outputs[0][1] != [expected]
+    assert not outputs[0][1][0].startswith(b"\x00\x00\x00\x01\x65")
+    assert outputs[1] == (0, [expected])
+    assert buffer.telemetry()["max_timestamp_packet_arrivals"] == 200
+    assert buffer.telemetry()["capacity_overflows"] == 0
+
+
+def test_phone_buffer_missing_packet_waits_for_retransmission_not_invented_image():
+    buffer = rtc.MobilePublisherJitterBuffer()
+    packets = fu_a_packets()
+    for packet in packets[:50]+packets[51:]+fu_a_packets(300, 1, 93000):
+        _, frame = buffer.add(packet)
+        assert frame is None
+    # Larger capacity cannot synthesize the missing slice; this explicit late
+    # packet (as with successful RTX) is what allows complete reconstruction.
+    _, frame = buffer.add(packets[50])
+    assert frame.data == b"".join(packet._data for packet in packets)
+
+
+def test_buffer_telemetry_is_bounded_and_does_not_change_stock_overflow_behavior():
+    from aiortc.jitterbuffer import JitterBuffer
+
+    stock, observed = JitterBuffer(128, is_video=True), rtc.MobilePublisherJitterBuffer(128)
+    packets = fu_a_packets()+fu_a_packets(300, 1, 93000)
+    packets += fu_a_packets(301, 1, 93000)  # another arrival for that timestamp
+    for index in range(20):
+        packets += fu_a_packets(302+index, 1, 96000+index*3000)
+    for packet in packets:
+        pli1, frame1 = stock.add(packet)
+        pli2, frame2 = observed.add(packet)
+        assert pli1 == pli2
+        assert (None if frame1 is None else (frame1.timestamp, frame1.data)) == (None if frame2 is None else (frame2.timestamp, frame2.data))
+    telemetry = observed.telemetry()
+    assert telemetry["packet_arrivals"] == len(packets)
+    assert telemetry["capacity_overflows"] == telemetry["pli_flags"] == 1
+    assert telemetry["max_timestamp_packet_arrivals"] == 200
+    assert len(observed._arrival_counts) == 8
+    assert all(type(count) is int for count in observed._arrival_counts.values())
+
+
+def unused_video_receiver():
+    from aiortc.jitterbuffer import JitterBuffer
+
+    return SimpleNamespace(_RTCRtpReceiver__kind="video", _RTCRtpReceiver__started=False,
+        _RTCRtpReceiver__decoder_thread=None,
+        _RTCRtpReceiver__jitter_buffer=JitterBuffer(128, is_video=True))
+
+
+@pytest.mark.parametrize("condition", ["version", "started", "thread", "packet", "origin", "audio", "capacity"])
+def test_publisher_buffer_guard_never_overwrites_active_or_unknown_receiver(monkeypatch, condition):
+    from aiortc.jitterbuffer import JitterBuffer
+
+    monkeypatch.setattr(rtc.aiortc, "__version__", "1.15.0")
+    receiver = unused_video_receiver()
+    if condition == "version":
+        monkeypatch.setattr(rtc.aiortc, "__version__", "1.16.0")
+    elif condition == "started":
+        receiver._RTCRtpReceiver__started = True
+    elif condition == "thread":
+        receiver._RTCRtpReceiver__decoder_thread = object()
+    elif condition == "packet":
+        receiver._RTCRtpReceiver__jitter_buffer._packets[0] = object()
+    elif condition == "origin":
+        receiver._RTCRtpReceiver__jitter_buffer._origin = 0
+    elif condition == "audio":
+        receiver._RTCRtpReceiver__kind = "audio"
+    elif condition == "capacity":
+        receiver._RTCRtpReceiver__jitter_buffer = JitterBuffer(256, is_video=True)
+    original = receiver._RTCRtpReceiver__jitter_buffer
+    policy = rtc.configure_publisher_buffer(receiver)
+    assert policy["applied"] is False and policy["reason"]
+    assert receiver._RTCRtpReceiver__jitter_buffer is original
+
+
+def test_only_publisher_buffer_is_installed_before_remote_description(fake_rtc, monkeypatch):
+    service, _, _ = fake_rtc
+    monkeypatch.setattr(rtc.aiortc, "__version__", "1.15.0")
+    original_add, original_remote = PC.addTransceiver, PC.setRemoteDescription
+    negotiation = []
+
+    def add(self, kind, direction):
+        transceiver = original_add(self, kind, direction)
+        transceiver.receiver = unused_video_receiver()
+        return transceiver
+
+    async def remote(self, description):
+        transceiver = self.transceivers[0]
+        negotiation.append((transceiver.direction, transceiver.receiver._RTCRtpReceiver__jitter_buffer.capacity))
+        await original_remote(self, description)
+
+    monkeypatch.setattr(PC, "addTransceiver", add)
+    monkeypatch.setattr(PC, "setRemoteDescription", remote)
+
+    async def scenario():
+        generation = await service.start("phone")
+        await service.offer("phone", "sdp", "offer", "publisher", generation)
+        await service.offer("phone", "sdp", "offer", "viewer", generation)
+        assert negotiation == [("recvonly", 512), ("sendonly", 128)]
+        stream = service.streams["phone"]
+        assert stream.publisher_buffer_policy["applied"] is True
+        receiver = stream.publisher.transceivers[0].receiver
+        receiver.track = SimpleNamespace(kind="video")
+        stream.publisher.getReceivers = lambda: [receiver]
+        telemetry = rtc._receiver_buffer_diagnostics(stream.publisher)["receivers"][0]["telemetry"]
+        assert telemetry["pli_flags"] == telemetry["packet_arrivals"] == 0
+        buffer = receiver._RTCRtpReceiver__jitter_buffer
+        assert rtc.configure_publisher_buffer(receiver)["reason"] == "already_configured"
+        assert receiver._RTCRtpReceiver__jitter_buffer is buffer
+        await service.close_all()
+    asyncio.run(scenario())
 
 
 class Track:

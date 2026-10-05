@@ -64,7 +64,7 @@ async function fixture(run) {
         mergeBrowserSession: (_, next) => next, mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false,
         browserMediaReference: () => ({ asset_ids: [] }), browserAttachment: async selected => ({ id: 'attachment', upload_id: 'upload', file: selected, name: selected.name,
             filename: selected.name, type: 'image', mime: selected.type, size: 100, width: 1080, height: 1920 }) };
-    const { useMobileBrowser } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser,
+    const { useMobileBrowser } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },
         './mobile': { mobileVideoFresh: () => false }, './mobileViewerStats': { mobileMeasurementFresh: () => false },
         './mobileBrowserRtc': { idleBrowserRtc: () => ({ stats: {}, stream: null }), BrowserPublisher: class { async stop() {} stopLocal() {} } }, './wiringReview': reviewDomain,
         './assistantAnalysis': load('../src/lib/assistantAnalysis.ts') });

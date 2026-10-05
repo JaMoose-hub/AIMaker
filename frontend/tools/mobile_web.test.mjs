@@ -19,6 +19,11 @@ const view=load('../src/lib/mobileWebView.ts',{'./photoWiring':photo});
 const history=load('../src/lib/assistantHistory.ts');
 const localCapture=load('../src/lib/mobileBrowserCapture.ts');
 const wiringReview=load('../src/lib/wiringReview.ts');
+const browserTree=ts.createSourceFile('useMobileBrowser.ts',readFileSync(new URL('../src/lib/useMobileBrowser.ts',import.meta.url),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+const flowFunction=browserTree.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='mobileWiringPhotoFlow');
+assert.ok(flowFunction,'UI fixtures must use the current shared-question eligibility guard');
+const flowCode=ts.transpileModule(flowFunction.getText(browserTree).replace(/^export\s+/,''),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+const mobileWiringPhotoFlow=new Function(`${flowCode}; return mobileWiringPhotoFlow;`)();
 const WiringPhotoSequence = props => React.createElement('div', {className:'fixture-photo-sequence', ...props});
 const FramingGuide = () => React.createElement('svg');
 function capture(){
@@ -87,10 +92,11 @@ function components(locale='en',reactOverrides={},captureOverrides={},assetHook=
   return load('../src/components/MobileWebApp.tsx',{
     react:{...React,useLayoutEffect(){},...reactOverrides},'react/jsx-runtime':jsx,'../lib/i18n':{useI18n:()=>({locale})},
     '../lib/mobile':mobile,'../lib/mobileWebView':view,'../lib/assistantHistory':history,'../lib/mobileBrowserCapture':{...localCapture,...captureOverrides},'../lib/useMobileBrowser':{useMobileBrowser:workspace,useMobileAssetUrl:assetHook,
-      mobileTestHelpOffer:()=>null,mobileWiringPhotoFlow:()=>null},
+      mobileTestHelpOffer:()=>null,mobileWiringPhotoFlow},
     '../lib/wiringReview':wiringReview,'./WiringPhotoSequence':{WiringPhotoSequence},'./WiringReviewCard':{FramingGuide},'./wiringReview.css':{},'../mobileWeb.css':{},
     './AssistantAnalysisTime':{AssistantAnalysisTime:()=>null},
     './WiringChatMessage':{WiringCaptureFraming:()=>null},
+    './PhoneCameraAutoTune':{PhoneCameraAutoTune:()=>null},
   });
 }
 
@@ -117,44 +123,51 @@ function photoRound(overrides={}) {
     slots:{pi_side_a:null,pi_side_b:null,component_header:null},observations:[],results:[],reviews:{},missing_roles:['pi_side_a','pi_side_b','component_header'],no_progress_count:0,...overrides};
 }
 
-test('paired phone photo dialogue captures the requested native-camera view without GPIO tickets or sending chat',async()=>{
-  const h=hookHarness(),calls=[],review=photoRound();const {MobileWiringPhotoDialogue}=components('en',h.hooks);
-  const w={...workspace(),wiringReview:review,wiringCanAct:true,wiringReviewBusy:false,wiringReviewError:'',uploadWiringPhoto:async(...args)=>calls.push(['upload',...args]),
-    beginCapture(){throw Error('Side photographs must not require a GPIO pose ticket');},send(){throw Error('A photograph must not send an AI question automatically');}};
-  const render=()=>{h.reset();return MobileWiringPhotoDialogue({w});};
-  let tree=render();const input=treeNodes(tree).find(node=>node.type==='input'&&node.props.type==='file');input.ref.current={click:()=>calls.push(['camera'])};
-  assert.equal(input.props.capture,'environment');assert.equal(input.props.accept,'image/*');
-  const sequence=treeNodes(tree).find(node=>node.type===WiringPhotoSequence);assert.equal(sequence.props.captureReady,true);
-  sequence.props.onCapture('pi_side_b');assert.deepEqual(calls,[['camera']]);
-  const file={name:'pi-other-side.jpg'};const event={target:{files:[file],value:'native-photo'}};input.props.onChange(event);await nextTurn();
-  assert.equal(event.target.value,'');assert.deepEqual(calls,[['camera'],['upload',file,'pi_side_b',review]]);
-  sequence.props.onCapture('component_header');input.props.onChange({target:{files:[],value:''}});await nextTurn();assert.equal(calls.length,3,'cancelling the camera does not submit an action');
+function photoQuestion(review,role='pi_side_a') {
+  return {id:'photo-question',role:'assistant',epoch:1,round:3,wiring_flow:{kind:'photo_request',flow_id:'flow-1',review_id:review.id,
+    revision:review.revision,round:review.round,component_id:review.component_id,role,current:true,can_act:true,actions:['capture']}};
+}
+function photoWorkspace(review) {
+  const w=workspace();return {...w,session:{...w.session,context:{...w.session.context,round:3}},wiringReview:review,wiringCanAct:true,wiringReviewBusy:false,wiringReviewError:''};
+}
+
+test('paired phone shared question captures each requested native-camera view without GPIO tickets or ordinary chat',async()=>{
+  for(const role of ['pi_side_a','pi_side_b','component_header']) {
+    const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review,role),request={message_id:message.id,flow_id:'flow-1',role,review};
+    const {MobileWiringChatActions}=components('en',h.hooks);
+    const w={...photoWorkspace(review),prepareWiringChatPhoto(question){assert.equal(question,message);return request;},uploadWiringChatPhoto:async(...args)=>calls.push(['upload',...args]),
+      beginCapture(){throw Error('Side photographs must not require a GPIO pose ticket');},send(){throw Error('A photograph must not send an ordinary AI question');}};
+    h.reset();const tree=MobileWiringChatActions({w,message}),input=treeNodes(tree).find(node=>node.type==='input'&&node.props.type==='file');
+    input.ref.current={click:()=>calls.push(['camera'])};assert.equal(input.props.capture,'environment');assert.equal(input.props.accept,'image/*');
+    const button=treeNodes(tree).find(node=>node.type==='button');assert.equal(button.props.disabled,false);button.props.onClick();
+    const file={name:`${role}.jpg`},event={target:{files:[file],value:'native-photo'}};input.props.onChange(event);await nextTurn();
+    assert.equal(event.target.value,'');assert.deepEqual(calls,[['camera'],['upload',file,request]]);
+    button.props.onClick();input.props.onChange({target:{files:[],value:''}});await nextTurn();assert.equal(calls.length,3,'cancelling the camera does not submit');
+    input.props.onChange({target:{files:[file],value:'late'}});assert.equal(calls.length,3,'an input change without an explicit request cannot submit');
+  }
 });
 
-test('photo acceptance and analyse bind the exact round revision and never record wiring confirmation',async()=>{
-  const h=hookHarness(),calls=[],slot={role:'pi_side_a',capture_id:'capture-a',sha256:'hash-a',image_url:'/api/mobile/wiring-review/photos/capture-a',size:[1920,1080],crop:null,available:true};
-  const review=photoRound({slots:{pi_side_a:slot,pi_side_b:null,component_header:null}});
-  const {MobileWiringPhotoDialogue}=components('en',h.hooks,{},(api,path)=>({url:path?'blob:protected-photo':null,error:'',retry(){}}));
-  const w={...workspace(),wiringReview:review,wiringCanAct:true,wiringReviewBusy:false,wiringReviewError:'',wiringReviewAction:async action=>calls.push(action)};
-  h.reset();const tree=MobileWiringPhotoDialogue({w}),sequence=treeNodes(tree).find(node=>node.type===WiringPhotoSequence);
-  assert.equal(sequence.props.review.slots.pi_side_a.image_url,'blob:protected-photo');
-  await sequence.props.onAccept('pi_side_a',slot);sequence.props.onAnalyse();await nextTurn();
-  assert.deepEqual(calls,[{op:'accept_photo',role:'pi_side_a',capture_id:'capture-a',sha256:'hash-a',review_id:'review-1',revision:7},{op:'analyse',review_id:'review-1',revision:7}]);
-  assert.ok(calls.every(action=>!['review','changed','start_trial'].includes(action.op)));
-  assert.equal(treeNodes(tree).filter(node=>node.type==='button'&&String(node.props.children).includes('confirm wiring')).length,0);
+test('shared photo retry stays bound to its question and offers no manual confirmation or analysis panel',async()=>{
+  const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review),{MobileWiringChatActions}=components('en',h.hooks);
+  const w={...photoWorkspace(review),pendingWiringPhoto:{dialogue:{message_id:message.id},attachment:{progress:.5}},
+    retryWiringPhoto:async()=>calls.push('retry'),refresh:async()=>calls.push('refresh'),discardWiringPhoto:()=>calls.push('discard')};
+  h.reset();const tree=MobileWiringChatActions({w,message});const buttons=treeNodes(tree).filter(node=>node.type==='button');
+  buttons.find(node=>node.props.children==='Retry this photo').props.onClick();await nextTurn();assert.deepEqual(calls,['retry']);
+  const html=renderToStaticMarkup(tree);assert.match(html,/Photo delivery is not confirmed/);assert.doesNotMatch(html,/confirm wiring|Analyse|fixture-photo-sequence/);
+  h.reset();const other=MobileWiringChatActions({w,message:{...message,id:'another-question'}});
+  assert.doesNotMatch(renderToStaticMarkup(other),/Retry this photo|Remove pending photo/);
 });
 
-test('phone photo round changes disable captures and analysis while preserving observational results',()=>{
-  const h=hookHarness(),calls=[],review=photoRound();const {MobileWiringPhotoDialogue}=components('en',h.hooks);
-  const w={...workspace(),wiringReview:review,wiringCanAct:false,wiringReviewBusy:false,wiringReviewError:'',uploadWiringPhoto:()=>calls.push('upload')};
-  const render=()=>{h.reset();return MobileWiringPhotoDialogue({w});};
-  let tree=render();const sequence=treeNodes(tree).find(node=>node.type===WiringPhotoSequence);
-  assert.equal(sequence.props.disabled,true);sequence.props.onCapture('pi_side_a');assert.deepEqual(calls,[]);
-  w.wiringCanAct=true;w.session={...w.session,available_context:{context_id:'new-project'}};tree=render();
-  assert.equal(treeNodes(tree).find(node=>node.type===WiringPhotoSequence).props.disabled,true);
-  w.wiringReview=photoRound({status:'ready',results:[{wire_id:'trig',expected:{component_pin:'TRIG',physical_pin:11,bcm:17},comparison:'ambiguous',pi_candidates:[],component_candidates:[],next_step:'Trace the wire by hand.'}]});
-  tree=render();const html=renderToStaticMarkup(tree);assert.match(html,/Multiple candidates; color alone cannot identify/);assert.match(html,/No usable Pi observation; this does not mean unplugged/);
-  assert.match(html,/personally confirm each wire/);assert.equal(treeNodes(tree).some(node=>node.type===WiringPhotoSequence),false);
+test('phone round and workspace changes make old shared photo questions inert',()=>{
+  const review=photoRound(),message=photoQuestion(review);
+  for(const change of [w=>{w.wiringCanAct=false;},w=>{w.session.available_context={context_id:'new-project'};},w=>{w.wiringReview={...review,revision:8};},w=>{w.conversation={...w.conversation,context_epoch:2};}]) {
+    const h=hookHarness(),calls=[],{MobileWiringChatActions}=components('en',h.hooks),w={...photoWorkspace(review),prepareWiringChatPhoto:()=>calls.push('prepare')};
+    change(w);h.reset();const tree=MobileWiringChatActions({w,message});assert.equal(treeNodes(tree).filter(node=>node.type==='button').length,0);assert.deepEqual(calls,[]);
+  }
+  for(const busy of ['busy','wiringReviewBusy']) {
+    const h=hookHarness(),{MobileWiringChatActions}=components('en',h.hooks),w=photoWorkspace(review);w[busy]=true;
+    h.reset();assert.equal(treeNodes(MobileWiringChatActions({w,message})).find(node=>node.type==='button').props.disabled,true);
+  }
 });
 
 test('unlocked portrait and horizontal debug photos preserve native JPEG dimensions and become chat attachments without GPIO tickets',async()=>{

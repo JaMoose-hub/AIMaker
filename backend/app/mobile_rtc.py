@@ -5,6 +5,7 @@ import asyncio
 from collections import OrderedDict
 from fractions import Fraction
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -18,18 +19,171 @@ try:
     from aiortc.codecs.h264 import H264Encoder
     from aiortc.contrib.media import MediaRelay
     from aiortc.mediastreams import MediaStreamError
+    from aiortc.jitterbuffer import JitterBuffer
     from aiortc.sdp import SessionDescription as SdpDescription
     from av import VideoFrame
 except ImportError:  # Keep unrelated desktop capabilities available.
     RTCPeerConnection = None
     MediaStreamTrack = object
     H264Encoder = object
+    JitterBuffer = object
 
 
 logger = logging.getLogger(__name__)
 BITRATE_PROFILES = {3000, 8000, 12000}
 VIDEO_COLOR_FIELDS = ("color_range", "colorspace", "color_primaries", "color_trc")
 PEER_CLOSE_TIMEOUT = 5.
+PUBLISHER_JITTER_CAPACITY = 512
+
+
+class MobilePublisherJitterBuffer(JitterBuffer):
+    """Larger per-phone packet budget with unchanged aiortc frame assembly.
+
+    Telemetry keeps eight timestamp/count pairs, never duplicate packet data.
+    Arrival counts include duplicates/retransmissions that reach this buffer;
+    they are not unique packets or the size of a complete encoded frame.
+    """
+    def __init__(self, capacity=PUBLISHER_JITTER_CAPACITY):
+        super().__init__(capacity=capacity, prefetch=0, is_video=True)
+        self.packet_arrivals = self.pli_flags = self.capacity_overflows = 0
+        self.max_timestamp_packet_arrivals = 0  # lifetime high-water, with eight timestamps counted at once
+        self._arrival_counts = OrderedDict()
+
+    def add(self, packet):
+        self.packet_arrivals += 1
+        count = self._arrival_counts.get(packet.timestamp, 0)+1
+        self._arrival_counts[packet.timestamp] = count
+        self._arrival_counts.move_to_end(packet.timestamp)
+        if len(self._arrival_counts) > 8:
+            self._arrival_counts.popitem(last=False)
+        self.max_timestamp_packet_arrivals = max(self.max_timestamp_packet_arrivals, count)
+        pli, frame = super().add(packet)
+        self.pli_flags += int(pli)
+        return pli, frame
+
+    def smart_remove(self, count):
+        self.capacity_overflows += 1
+        return super().smart_remove(count)
+
+    def telemetry(self):
+        return dict(packet_arrivals=self.packet_arrivals, pli_flags=self.pli_flags,
+            capacity_overflows=self.capacity_overflows,
+            max_timestamp_packet_arrivals=self.max_timestamp_packet_arrivals,
+            timestamp_window=8, includes_duplicate_arrivals=True)
+
+
+def configure_publisher_buffer(receiver):
+    """Install only on a verified, unused aiortc 1.15 video receiver."""
+    version = str(getattr(globals().get("aiortc"), "__version__", "unknown"))
+    policy = dict(applied=False, requested_capacity_packets=PUBLISHER_JITTER_CAPACITY,
+                  capacity_packets=None, reason=None, aiortc_version=version)
+    if version.split(".")[:2] != ["1", "15"]:
+        policy["reason"] = "unsupported_aiortc_version"
+        return policy
+    buffer = getattr(receiver, "_RTCRtpReceiver__jitter_buffer", None)
+    policy["capacity_packets"] = _diagnostic_number(getattr(buffer, "_capacity", None))
+    if (getattr(receiver, "_RTCRtpReceiver__kind", None) != "video"
+            or getattr(receiver, "_RTCRtpReceiver__started", None) is not False
+            or getattr(receiver, "_RTCRtpReceiver__decoder_thread", None) is not None):
+        policy["reason"] = "receiver_active_or_unsupported_layout"
+        return policy
+    if isinstance(buffer, MobilePublisherJitterBuffer):
+        policy.update(applied=True, reason="already_configured")
+        return policy
+    if (type(buffer) is not JitterBuffer or buffer._capacity != 128
+            or buffer._is_video is not True or buffer._prefetch != 0
+            or buffer._origin is not None or len(buffer._packets) != 128
+            or any(packet is not None for packet in buffer._packets)):
+        policy["reason"] = "buffer_active_or_unsupported_layout"
+        return policy
+    receiver._RTCRtpReceiver__jitter_buffer = MobilePublisherJitterBuffer()
+    policy.update(applied=True, capacity_packets=PUBLISHER_JITTER_CAPACITY)
+    return policy
+
+
+def _diagnostic_number(value):
+    return value if type(value) in (int, float) and math.isfinite(value) else None
+
+
+def _receiver_remb_diagnostics(pc):
+    """Read the inspected aiortc layout only; never advance its rate estimator.
+
+    RateCounter.rate(), for example, expires buckets and is NOT a readonly query.
+    This reports the last estimator result, not an observed outgoing REMB packet.
+    """
+    version = str(getattr(globals().get("aiortc"), "__version__", "unknown"))
+    result = dict(available=False, reason=None, aiortc_version=version,
+                  source="receiver_estimator_last_result", receivers=[])
+    if version.split(".")[:2] != ["1", "15"]:
+        result["reason"] = "unsupported_aiortc_version"
+        return result
+    if pc is None:
+        result["reason"] = "publisher_unavailable"
+        return result
+    try:
+        for index, receiver in enumerate(pc.getReceivers()):
+            if getattr(getattr(receiver, "track", None), "kind", None) != "video":
+                continue
+            estimator = getattr(receiver, "_RTCRtpReceiver__remote_bitrate_estimator", None)
+            rate = getattr(estimator, "rate_control", None)
+            initialized = getattr(rate, "current_bitrate_initialized", None)
+            bitrate = _diagnostic_number(getattr(rate, "current_bitrate", None))
+            if type(initialized) is not bool or bitrate is None or not hasattr(estimator, "last_update_ms"):
+                result["reason"] = "unsupported_estimator_layout"
+                continue
+            updated = _diagnostic_number(estimator.last_update_ms)
+            result["receivers"].append(dict(receiver_index=index, initialized=initialized,
+                bitrate_bps=bitrate if initialized else None,
+                # aiortc.clock.current_ms is milliseconds since the NTP epoch.
+                last_update_ntp_ms=updated, last_update_at=(updated-2208988800000)/1000 if updated is not None else None))
+        result["available"] = bool(result["receivers"])
+        if not result["available"] and result["reason"] is None:
+            result["reason"] = "video_receiver_unavailable"
+    except Exception:
+        result["reason"] = "unsupported_estimator_layout"
+    return result
+
+
+def _receiver_buffer_diagnostics(pc):
+    """Current queue occupancy, not an eviction counter or historical maximum."""
+    version = str(getattr(globals().get("aiortc"), "__version__", "unknown"))
+    result = dict(available=False, reason=None, aiortc_version=version, receivers=[])
+    if version.split(".")[:2] != ["1", "15"]:
+        result["reason"] = "unsupported_aiortc_version"
+        return result
+    if pc is None:
+        result["reason"] = "publisher_unavailable"
+        return result
+    try:
+        for index, receiver in enumerate(pc.getReceivers()):
+            if getattr(getattr(receiver, "track", None), "kind", None) != "video":
+                continue
+            buffer = getattr(receiver, "_RTCRtpReceiver__jitter_buffer", None)
+            capacity, packets = getattr(buffer, "_capacity", None), getattr(buffer, "_packets", None)
+            if type(capacity) is not int or not 0 < capacity <= 65536 or not isinstance(packets, (list, tuple)) or len(packets) != capacity:
+                result["reason"] = "unsupported_buffer_layout"
+                continue
+            timestamps = {}
+            for packet in packets:
+                if packet is not None:
+                    timestamp = packet.timestamp
+                    timestamps[timestamp] = timestamps.get(timestamp, 0)+1
+            queue = getattr(receiver, "_RTCRtpReceiver__decoder_queue", None)
+            thread = getattr(receiver, "_RTCRtpReceiver__decoder_thread", None)
+            value = dict(receiver_index=index, capacity_packets=capacity,
+                pending_packets=sum(timestamps.values()), pending_timestamps=len(timestamps),
+                largest_pending_timestamp_packets=max(timestamps.values(), default=0),
+                decoder_queue_frames=queue.qsize() if queue is not None else None,
+                decoder_thread_alive=thread.is_alive() if thread is not None else None)
+            if isinstance(buffer, MobilePublisherJitterBuffer):
+                value["telemetry"] = buffer.telemetry()
+            result["receivers"].append(value)
+        result["available"] = bool(result["receivers"])
+        if not result["available"] and result["reason"] is None:
+            result["reason"] = "video_receiver_unavailable"
+    except Exception:
+        result["reason"] = "unsupported_buffer_layout"
+    return result
 
 
 class MobileH264Encoder(H264Encoder):
@@ -311,6 +465,7 @@ class Stream:
     bitrate_kbps: int = 8000
     sender_metrics: dict = field(default_factory=dict)
     close_tasks: dict = field(default_factory=dict)
+    publisher_buffer_policy: dict = field(default_factory=lambda: dict(applied=False, reason="publisher_not_negotiated"))
 
 
 class MobileRTC:
@@ -345,6 +500,61 @@ class MobileRTC:
         if stream is None or stream.generation != generation or stream.closing:
             raise HTTPException(409, "mobile_stream_generation_changed")
         return stream
+
+    async def diagnostics(self, sid, generation, max_age=1.5):
+        """On-demand transport counters, independent of decoded-frame callbacks.
+
+        This does not sample pixels, publish a session snapshot, refresh a lease,
+        or change the estimator / encoder. All counts are cumulative; callers
+        must compare matching generations and SSRCs to calculate interval rates.
+        """
+        stream = self.current(sid, generation)
+        pc = stream.publisher
+        report, error = {}, None
+        if pc is not None:
+            try:
+                report = await asyncio.wait_for(pc.getStats(), timeout=1.)
+            except Exception as exc:
+                # Keep last decoded age and connection diagnostics available even
+                # if this optional stats API is unsupported or temporarily fails.
+                error = type(exc).__name__
+        if self.current(sid, generation) is not stream or stream.publisher is not pc:
+            raise HTTPException(409, "mobile_stream_generation_changed")
+        codec = stream.codecs.get(pc)
+        clock_rate = 90000 if codec in {"video/H264", "video/VP8"} else None
+        inbound, transports = [], []
+        for stat in report.values():
+            if getattr(stat, "type", None) == "inbound-rtp" and getattr(stat, "kind", None) == "video":
+                jitter = _diagnostic_number(getattr(stat, "jitter", None))
+                inbound.append(dict(ssrc=getattr(stat, "ssrc", None),
+                    packets_received=_diagnostic_number(getattr(stat, "packetsReceived", None)),
+                    packets_lost=_diagnostic_number(getattr(stat, "packetsLost", None)),
+                    jitter_raw=jitter, jitter_raw_unit="rtp_timestamp_units", clock_rate_hz=clock_rate,
+                    jitter_ms=jitter*1000/clock_rate if jitter is not None and clock_rate else None))
+            elif getattr(stat, "type", None) == "transport":
+                transports.append(dict(id=getattr(stat, "id", None),
+                    packets_received=_diagnostic_number(getattr(stat, "packetsReceived", None)),
+                    packets_sent=_diagnostic_number(getattr(stat, "packetsSent", None)),
+                    bytes_received=_diagnostic_number(getattr(stat, "bytesReceived", None)),
+                    bytes_sent=_diagnostic_number(getattr(stat, "bytesSent", None)),
+                    ice_role=getattr(stat, "iceRole", None), dtls_state=getattr(stat, "dtlsState", None)))
+        track = stream.track
+        latest = track.latest if track is not None else None
+        now = self.clock()
+        age = (now-latest[2])*1000 if latest is not None else None
+        return dict(generation=generation, sampled_at=self.wall(), codec=codec,
+            stats_available=pc is not None and error is None, stats_error=error,
+            connection_state=getattr(pc, "connectionState", None),
+            ice_connection_state=getattr(pc, "iceConnectionState", None),
+            ice_gathering_state=getattr(pc, "iceGatheringState", None),
+            signaling_state=getattr(pc, "signalingState", None),
+            inbound_rtp=inbound, transports=transports,
+            decoded=dict(seq=track.total if track is not None else 0,
+                received_at=latest[3] if latest is not None else None,
+                age_ms=age, fresh=age is not None and 0 <= age <= max_age*1000,
+                video_size=[latest[0].width, latest[0].height] if latest is not None else None),
+            remb_estimator=_receiver_remb_diagnostics(pc), receiver_buffers=_receiver_buffer_diagnostics(pc),
+            publisher_buffer_policy=dict(stream.publisher_buffer_policy))
 
     def capture_frame(self, sid, generation, max_age=1.5):
         """Freeze actual incoming pixels on the same loop as relay conversions.
@@ -430,6 +640,11 @@ class MobileRTC:
         try:
             transceiver = pc.addTransceiver("video", direction="recvonly" if role == "publisher" else "sendonly")
             prefer_h264(transceiver, role)
+            if role == "publisher":
+                stream.publisher_buffer_policy = configure_publisher_buffer(getattr(transceiver, "receiver", None))
+                if not stream.publisher_buffer_policy["applied"]:
+                    logger.warning("Mobile publisher jitter buffer fallback generation=%d reason=%s",
+                                   generation, stream.publisher_buffer_policy["reason"])
             await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=type))
             if role == "viewer":
                 proxy = stream.relay.subscribe(stream.track, buffered=False)
@@ -492,6 +707,7 @@ class MobileRTC:
         except asyncio.CancelledError:
             raise
         except Exception:
+            logger.exception("Mobile video sampling failed")
             if self.streams.get(sid) is stream:
                 await self.on_state(sid, stream.generation, "disconnected")
         finally:

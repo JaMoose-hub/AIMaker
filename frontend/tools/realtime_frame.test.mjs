@@ -232,3 +232,213 @@ test("supported pins can coexist with partial tracking without implying full vis
   p.detection.pose_quality = { outline_only: true, reason: "pin_region_changed" };
   assert.deepEqual(trackingNotices(p), [{ id: "raspberry-pi-5", key: "camera.trackingPartial" }]);
 });
+
+const { outputText: decodeText } = ts.transpileModule(readFileSync(new URL("../src/lib/trackingImageDecode.ts", import.meta.url), "utf8"), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
+});
+const { decodePhoneTrackingImage } = await import(`data:text/javascript;base64,${Buffer.from(decodeText).toString("base64")}`);
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+function fakeDecoder(t, outcomes) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  const images = [];
+  globalThis.Image = class {
+    src = "";
+    cleared = 0;
+    calls = 0;
+    constructor() { images.push(this); }
+    decode() {
+      this.calls++;
+      const next = outcomes.shift();
+      return typeof next === "function" ? next() : next;
+    }
+    removeAttribute(name) {
+      assert.equal(name, "src");
+      this.src = "";
+      this.cleared++;
+    }
+  };
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, "Image", original);
+    else delete globalThis.Image;
+  });
+  return images;
+}
+const turn = () => new Promise(resolve => setImmediate(resolve));
+
+test("phone decode keeps the successful image cache and removes its abort listener", async (t) => {
+  const images = fakeDecoder(t, [Promise.resolve()]);
+  const controller = new AbortController();
+  const remove = t.mock.method(controller.signal, "removeEventListener");
+  await decodePhoneTrackingImage("data:image/jpeg;base64,current", controller.signal, 100);
+  assert.equal(images[0].src, "data:image/jpeg;base64,current");
+  assert.equal(images[0].cleared, 0);
+  assert.equal(remove.mock.callCount(), 1);
+  controller.abort();
+  assert.equal(images[0].cleared, 0); // Completion has released cancellation ownership.
+});
+
+test("a hung phone decoder expires and the next fresh image can decode", async (t) => {
+  const old = deferred();
+  const images = fakeDecoder(t, [old.promise, Promise.resolve()]);
+  await assert.rejects(decodePhoneTrackingImage("data:image/jpeg;base64,stuck", new AbortController().signal, 10),
+    error => error.name === "TimeoutError");
+  assert.equal(images[0].cleared, 1);
+  await decodePhoneTrackingImage("data:image/jpeg;base64,recovered", new AbortController().signal, 100);
+  old.resolve();
+  await turn();
+  assert.equal(images[0].src, "");
+  assert.equal(images[1].src, "data:image/jpeg;base64,recovered");
+});
+
+test("phone decode cancellation settles immediately and handles a late decoder rejection", async (t) => {
+  const pending = deferred();
+  const images = fakeDecoder(t, [pending.promise]);
+  const controller = new AbortController();
+  const result = decodePhoneTrackingImage("data:image/jpeg;base64,old", controller.signal, 100);
+  const rejected = assert.rejects(result, error => error.name === "AbortError");
+  controller.abort();
+  await rejected;
+  pending.reject(new Error("decoder rejected after cancellation"));
+  await turn(); // An unhandled late rejection fails the node test runner.
+  assert.equal(images[0].src, "");
+  assert.equal(images[0].cleared, 1);
+});
+
+test("an already-cancelled phone decode never starts the decoder", async (t) => {
+  const images = fakeDecoder(t, []);
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(decodePhoneTrackingImage("data:image/jpeg;base64,old", controller.signal),
+    error => error.name === "AbortError");
+  assert.equal(images[0].calls, 0);
+  assert.equal(images[0].src, "");
+});
+
+test("phone decoder failures release the image and preserve the original error", async (t) => {
+  const failed = new Error("corrupt JPEG");
+  const images = fakeDecoder(t, [() => Promise.reject(failed), () => { throw failed; }]);
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(decodePhoneTrackingImage("data:image/jpeg;base64,bad", new AbortController().signal, 100),
+      error => error === failed);
+    assert.equal(images[i].cleared, 1);
+  }
+});
+
+/** Run the actual hook's effect without mounting the full App or touching a camera. */
+function trackingHookHarness(t, sourceKey, responses) {
+  const globals = new Map(["window", "fetch"].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  const timers = new Set();
+  const intervals = new Set();
+  const updates = [];
+  const stateWrites = [];
+  let effect, requests = 0, closed = 0, cleanup;
+  const delivered = deferred();
+  globalThis.window = {
+    setTimeout(callback, ms) {
+      // Keep the real pipeline ordering while avoiding a 1-second test delay.
+      const id = setTimeout(() => { timers.delete(id); callback(); }, ms === 1000 ? 20 : ms === 500 ? 1 : ms);
+      timers.add(id);
+      return id;
+    },
+    clearTimeout(id) { clearTimeout(id); timers.delete(id); },
+    setInterval(callback, ms) { const id = setInterval(callback, ms); intervals.add(id); return id; },
+    clearInterval(id) { clearInterval(id); intervals.delete(id); },
+  };
+  globalThis.fetch = async () => {
+    requests++;
+    const next = responses.shift();
+    return next ? { status: 200, ok: true, json: async () => next } : { status: 204, ok: true };
+  };
+  const compiled = ts.transpileModule(readFileSync(new URL("../src/lib/useRealtimeTracking.ts", import.meta.url), "utf8"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const exports = {};
+  const dependencies = {
+    react: {
+      useEffect(callback) { effect = callback; },
+      useState(initial) {
+        let value = initial;
+        return [value, next => { value = typeof next === "function" ? next(value) : next; stateWrites.push(value); }];
+      },
+    },
+    "./realtimeFrame": { acceptTrackingFrame, trackingCursor, trackingDisplayFrame },
+    "./trackingImageDecode": { decodePhoneTrackingImage },
+    "./motionDisplayStore": { openMotionDisplay: () => ({
+      update(next) { updates.push(next); if (next) delivered.resolve(next); },
+      close() { closed++; },
+    }) },
+  };
+  new Function("require", "exports", compiled)(name => {
+    assert.ok(name in dependencies, `unexpected production dependency ${name}`);
+    return dependencies[name];
+  }, exports);
+  exports.useRealtimeTracking(true, "raspberry-pi-5", 1, 30, sourceKey);
+  cleanup = effect();
+  const dispose = () => { if (cleanup) { const run = cleanup; cleanup = null; run(); } };
+  t.after(() => {
+    dispose();
+    for (const id of timers) clearTimeout(id);
+    for (const id of intervals) clearInterval(id);
+    for (const [name, original] of globals) {
+      if (original) Object.defineProperty(globalThis, name, original);
+      else delete globalThis[name];
+    }
+  });
+  return { updates, stateWrites, delivered: delivered.promise, dispose,
+    get requests() { return requests; }, get closed() { return closed; },
+    get timerCount() { return timers.size + intervals.size; } };
+}
+
+test("actual phone tracking loop retries a hung decode and publishes only the recovered frame", { timeout: 2000 }, async (t) => {
+  const stale = deferred();
+  const images = fakeDecoder(t, [stale.promise, Promise.resolve()]);
+  const fresh = { ...packet(), seq: 3, image: "data:image/jpeg;base64,fresh" };
+  const harness = trackingHookHarness(t, "phone:own-session", [packet(), fresh]);
+  const shown = await harness.delivered;
+  assert.equal(shown.seq, 3);
+  assert.equal(shown.image, fresh.image);
+  assert.equal(shown.sourceKey, "phone:own-session");
+  assert.equal(harness.requests, 2);
+  assert.equal(images[0].cleared, 1);
+  assert.deepEqual(harness.updates.filter(Boolean).map(frame => frame.seq), [3]);
+  stale.reject(new Error("late abandoned decode"));
+  await turn();
+  assert.deepEqual(harness.updates.filter(Boolean).map(frame => frame.seq), [3]);
+  harness.dispose();
+  assert.equal(harness.timerCount, 0);
+});
+
+test("actual phone tracking cleanup aborts pending decode without reviving state or polling", async (t) => {
+  const old = deferred();
+  const images = fakeDecoder(t, [old.promise]);
+  const harness = trackingHookHarness(t, "phone:old-session", [packet()]);
+  await turn();
+  assert.equal(images[0].calls, 1);
+  const before = harness.stateWrites.length;
+  harness.dispose();
+  old.resolve();
+  await turn();
+  assert.equal(harness.requests, 1);
+  assert.equal(harness.closed, 1);
+  assert.equal(harness.stateWrites.length, before);
+  assert.deepEqual(harness.updates, []);
+  assert.equal(harness.timerCount, 0);
+  assert.equal(images[0].cleared, 1);
+});
+
+test("the standard webcam tracking branch retains its original decoder ownership", async (t) => {
+  const pending = deferred();
+  const images = fakeDecoder(t, [pending.promise]);
+  const harness = trackingHookHarness(t, "standard", [packet()]);
+  await turn();
+  harness.dispose();
+  pending.resolve();
+  await turn();
+  assert.equal(images[0].cleared, 0); // The phone-only cancellation helper was not called.
+  assert.equal(harness.requests, 1);
+  assert.deepEqual(harness.updates, []);
+});

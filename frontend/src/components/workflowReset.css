@@ -1,0 +1,52 @@
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls .workflow-reset-trigger {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box;
+  width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0;
+  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--control-bg);
+  color: var(--text-dim); box-shadow: none; cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+.workflow-reset-trigger svg { display: block; flex: none; transition: transform 160ms ease; }
+.app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls .workflow-reset-trigger:is(:hover, :focus-visible, [aria-expanded="true"]):not(:disabled) {
+  color: var(--brand-link); border-color: var(--line-blue); background: var(--surface-blue);
+}
+.workflow-reset-trigger:not(:disabled):hover svg { transform: rotate(-18deg); }
+.workflow-reset-trigger:focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+.workflow-reset-trigger:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 960px) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls .workflow-reset-trigger {
+    width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app.tinkro-theme:not(.display-mode-active) .maker-header-integrated .maker-header-controls .workflow-reset-trigger,
+  .workflow-reset-trigger svg { transition: none; }
+  .workflow-reset-trigger:not(:disabled):hover svg { transform: none; }
+}
+.workflow-reset-dialog {
+  width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box;
+  padding: 0; overflow: auto; border: 1px solid var(--line-strong); border-radius: 14px;
+  color: var(--ink-primary); background: var(--surface-card); box-shadow: var(--shadow-popover);
+}
+.workflow-reset-dialog::backdrop { background: rgb(0 0 0 / 48%); backdrop-filter: blur(3px); }
+.workflow-reset-content { padding: 24px; }
+.workflow-reset-eyebrow { color: var(--brand-link); font-size: 10px; letter-spacing: .14em; }
+.workflow-reset-content h2 { margin: 10px 0; font-size: 21px; }
+.workflow-reset-content p { margin: 10px 0; color: var(--ink-secondary); font-size: 13px; line-height: 1.65; }
+.workflow-reset-scope { display: grid; gap: 12px; margin: 20px 0; padding: 16px; border: 1px solid var(--line-default); border-radius: 8px; background: var(--surface-subtle); }
+.workflow-reset-scope div { display: grid; grid-template-columns: 76px 1fr; gap: 12px; font-size: 12px; line-height: 1.6; }
+.workflow-reset-scope dt { color: var(--ink-primary); font-weight: 600; }
+.workflow-reset-scope dd { margin: 0; color: var(--ink-secondary); }
+.workflow-reset-content .workflow-reset-safety { font-size: 12px; }
+.workflow-reset-content .workflow-reset-error { padding: 10px; border-radius: 6px; background: var(--surface-warning); color: var(--status-warn); }
+.workflow-reset-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.workflow-reset-actions button {
+  padding: 9px 14px; border: 1px solid var(--line-strong); border-radius: 7px; box-shadow: none;
+  background: var(--surface-card); color: var(--ink-primary); font: inherit; font-size: 12px; cursor: pointer;
+}
+.app.tinkro-theme .workflow-reset-actions .workflow-reset-confirm:not(:disabled) { color: var(--brand-link); background: var(--surface-blue); border-color: var(--line-blue); }
+.workflow-reset-dialog :focus-visible { outline: 2px solid var(--brand-link); outline-offset: 3px; }
+.workflow-reset-actions button:disabled { opacity: .5; cursor: wait; }
+@media (max-width: 520px) {
+  .workflow-reset-content { padding: 18px; }
+  .workflow-reset-scope div { grid-template-columns: 64px 1fr; gap: 8px; }
+}

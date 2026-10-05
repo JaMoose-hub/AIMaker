@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 
 const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
-const panels=['phone','pi','settings'];
+const panels=['phone','pi','settings','reset'];
 function harness() {
   let context,currentKey,cursor;
   const states=new Map();

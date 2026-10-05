@@ -11,7 +11,7 @@ cd C:\Project\PnP\board-vision
 # 先完成 backend 的 uv sync 與 frontend 的 npm run build。
 # 保留現有 8100 後端；更新程式時由原終端關閉後再啟動，避免重複相機。
 .\scripts\setup-mobile-web-https.ps1
-.\scripts\start-mobile-web.ps1
+pwsh -File .\scripts\start-mobile-web.ps1
 ```
 
 `setup-mobile-web-https.ps1` 自動找有 gateway 的 Wi-Fi IPv4；也可明確指定：
@@ -47,7 +47,11 @@ Safari 相機需要可信任 HTTPS；目前 `http://192.168.50.141:8100` 可以�
 
 也可下載 `http://192.168.50.141:8100/api/mobile/web-ca` 的 DER 證書。HTTPS gateway 另提供 `/mobile-ca.crt`、`/mobile-ca.mobileconfig`，但尚未信任 CA 時，先使用上述 HTTP 下載入口。
 
-Wi-Fi IP 改變時重新執行 setup，重啟 gateway。工具沿用同一 CA，只更新含新 IP 的葉憑證，所以不需每次重新安裝 CA。刪除 CA 或更換筆電後則必須重新安裝新的公開 CA。測試結束可在 iPhone 的「VPN 與裝置管理」刪除此描述檔。
+`start-mobile-web.ps1` 需要 PowerShell 7，執行期間每 5 秒偵測實體 Wi-Fi IP（其次為實體 Ethernet），連續兩次相同才啟動或更新 HTTPS gateway。換 Wi-Fi 時保留同一 CA，只更新新 IP 的伺服器憑證與 `connection.json`，不用重新執行 setup 或在手機重裝 CA。暫時斷網時停止自有 gateway，恢復網路後重新啟動；不重啟 8100 後端或相機。
+
+筆電「連接手機」面板每 5 秒重新讀取可用網址；換 IP 或 HTTPS 尚未就緒時先隱藏舊 QR，新網址可用後自動建立新配對碼。兩台需在同一 Wi-Fi，請掃目前筆電畫面上的新碼；保存過的舊 QR 圖片不會自動更新。相同 IP 不會反覆建立新碼，手動指定入口仍可使用。更新前端後需重新整理桌面頁面。驗證紀錄見 [換 Wi-Fi 與 QR 更新 QA](qa/mobile-network-qr-2026-10-05.md)。
+
+刪除 CA 或更換筆電後則必須重新安裝新的公開 CA。測試結束可在 iPhone 的「VPN 與裝置管理」刪除此描述檔。
 
 ## 配對與使用
 

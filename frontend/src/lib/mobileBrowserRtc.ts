@@ -17,6 +17,8 @@ export function preferBrowserH264(peer: Pick<RTCPeerConnection, 'getTransceivers
     return applied;
 }
 export interface BrowserRtcStats {
+    /** Local receipt time of a new counter-based measurement, not a cache replay. */
+    measuredAtMs?: number;
     captureFps?: number;
     sendFps?: number;
     bitrateKbps?: number;
@@ -25,13 +27,35 @@ export interface BrowserRtcStats {
     rttMs?: number;
     qualityLimitationReason?: string;
     codec?: string;
+    encodeFps?: number;
     encodeMs?: number;
+    framesEncoded?: number;
+    framesSent?: number;
+    sampleIntervalMs?: number;
+    nackCountDelta?: number;
+    pliCountDelta?: number;
+    retransmittedPacketsDelta?: number;
+    retransmittedBytesDelta?: number;
+    targetBitrateKbps?: number;
     appliedBitrateKbps?: number;
     parameterStatus?: 'accepted' | 'limited' | 'unsupported';
 }
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 export const browserBitrateKbps = (value?: number) => [3000, 8000, 12000].includes(value ?? 0) ? value! : 8000;
-export interface PublisherStatsSample { id: string; timestamp: number; frames?: number; bytes?: number; encodeTime?: number }
+export interface PublisherStatsSample {
+    id: string;
+    timestamp: number;
+    framesSent?: number;
+    framesEncoded?: number;
+    bytes?: number;
+    encodeTime?: number;
+    nackCount?: number;
+    pliCount?: number;
+    retransmittedPackets?: number;
+    retransmittedBytes?: number;
+}
+const publisherDelta = (current: number | undefined, previous: number | undefined) =>
+    finite(current) && finite(previous) && current >= previous ? current - previous : undefined;
 /** Counter resets and unsupported counters are not zero-FPS measurements. */
 export function readBrowserPublisherStats(report: RTCStatsReport, previous: PublisherStatsSample | null): { stats: BrowserRtcStats; sample: PublisherStatsSample | null } {
     const stats: BrowserRtcStats = {};
@@ -39,7 +63,7 @@ export function readBrowserPublisherStats(report: RTCStatsReport, previous: Publ
     let staleSample = false;
     report.forEach(entry => {
         if (entry.type === 'media-source' && entry.kind === 'video' && finite(entry.framesPerSecond)) stats.captureFps = entry.framesPerSecond;
-        if (entry.type !== 'outbound-rtp' || entry.isRemote || (entry.kind !== 'video' && entry.mediaType !== 'video')) return;
+        if (entry.type !== 'outbound-rtp' || entry.isRemote || (entry.kind !== 'video' && entry.mediaType !== 'video') || !finite(entry.timestamp)) return;
         if (finite(entry.frameWidth) && entry.frameWidth > 0) stats.width = entry.frameWidth;
         if (finite(entry.frameHeight) && entry.frameHeight > 0) stats.height = entry.frameHeight;
         if (typeof entry.qualityLimitationReason === 'string') stats.qualityLimitationReason = entry.qualityLimitationReason;
@@ -47,24 +71,46 @@ export function readBrowserPublisherStats(report: RTCStatsReport, previous: Publ
         if (typeof codec?.mimeType === 'string') stats.codec = codec.mimeType;
         const transport = report.get(entry.transportId), pair = report.get(transport?.selectedCandidatePairId);
         if (pair?.state === 'succeeded' && finite(pair.currentRoundTripTime)) stats.rttMs = pair.currentRoundTripTime * 1000;
-        const frames = finite(entry.framesSent) ? entry.framesSent : finite(entry.framesEncoded) ? entry.framesEncoded : undefined;
-        const current: PublisherStatsSample = { id: `${entry.id}:${entry.ssrc ?? ''}`, timestamp: entry.timestamp, frames,
-            bytes: finite(entry.bytesSent) ? entry.bytesSent : undefined, encodeTime: finite(entry.totalEncodeTime) ? entry.totalEncodeTime : undefined };
+        const current: PublisherStatsSample = { id: `${entry.id}:${entry.ssrc ?? ''}`, timestamp: entry.timestamp,
+            framesSent: finite(entry.framesSent) ? entry.framesSent : undefined,
+            framesEncoded: finite(entry.framesEncoded) ? entry.framesEncoded : undefined,
+            bytes: finite(entry.bytesSent) ? entry.bytesSent : undefined,
+            encodeTime: finite(entry.totalEncodeTime) ? entry.totalEncodeTime : undefined,
+            nackCount: finite(entry.nackCount) ? entry.nackCount : undefined,
+            pliCount: finite(entry.pliCount) ? entry.pliCount : undefined,
+            retransmittedPackets: finite(entry.retransmittedPacketsSent) ? entry.retransmittedPacketsSent : undefined,
+            retransmittedBytes: finite(entry.retransmittedBytesSent) ? entry.retransmittedBytesSent : undefined };
         if (previous?.id === current.id && current.timestamp <= previous.timestamp) {
             // A cached report's arrival is not a new camera/transport measurement.
             // Keep its baseline so a reset clock can recover on the next advance.
-            sample = current;
+            sample = current.timestamp === previous.timestamp ? previous : current;
             staleSample = true;
             return;
         }
+        stats.framesSent = current.framesSent;
+        stats.framesEncoded = current.framesEncoded;
+        if (finite(entry.targetBitrate)) stats.targetBitrateKbps = entry.targetBitrate / 1000;
         if (previous?.id === current.id && current.timestamp > previous.timestamp) {
-            const seconds = (current.timestamp - previous.timestamp) / 1000;
-            if (current.frames !== undefined && previous.frames !== undefined && current.frames >= previous.frames) stats.sendFps = (current.frames - previous.frames) / seconds;
-            if (current.bytes !== undefined && previous.bytes !== undefined && current.bytes >= previous.bytes) stats.bitrateKbps = (current.bytes - previous.bytes) * 8 / seconds / 1000;
-            if (current.encodeTime !== undefined && previous.encodeTime !== undefined && current.encodeTime >= previous.encodeTime && current.frames !== undefined && previous.frames !== undefined && current.frames > previous.frames)
-                stats.encodeMs = (current.encodeTime - previous.encodeTime) * 1000 / (current.frames - previous.frames);
+            stats.sampleIntervalMs = current.timestamp - previous.timestamp;
+            const seconds = stats.sampleIntervalMs / 1000;
+            const sent = publisherDelta(current.framesSent, previous.framesSent);
+            const encoded = publisherDelta(current.framesEncoded, previous.framesEncoded);
+            const bytes = publisherDelta(current.bytes, previous.bytes);
+            const encodeTime = publisherDelta(current.encodeTime, previous.encodeTime);
+            if (sent !== undefined) stats.sendFps = sent / seconds;
+            if (encoded !== undefined) stats.encodeFps = encoded / seconds;
+            if (bytes !== undefined) stats.bitrateKbps = bytes * 8 / seconds / 1000;
+            if (encodeTime !== undefined && encoded !== undefined && encoded > 0) stats.encodeMs = encodeTime * 1000 / encoded;
+            stats.nackCountDelta = publisherDelta(current.nackCount, previous.nackCount);
+            stats.pliCountDelta = publisherDelta(current.pliCount, previous.pliCount);
+            stats.retransmittedPacketsDelta = publisherDelta(current.retransmittedPackets, previous.retransmittedPackets);
+            stats.retransmittedBytesDelta = publisherDelta(current.retransmittedBytes, previous.retransmittedBytes);
         }
-        if (stats.sendFps === undefined && finite(entry.framesPerSecond)) stats.sendFps = entry.framesPerSecond;
+        // outbound framesPerSecond describes encoding, not transmission. Never
+        // substitute it for sent-frame counters or bridge an encoder reset.
+        const encoderReset = previous?.id === current.id && current.framesEncoded !== undefined
+            && previous.framesEncoded !== undefined && current.framesEncoded < previous.framesEncoded;
+        if (stats.encodeFps === undefined && !encoderReset && finite(entry.framesPerSecond)) stats.encodeFps = entry.framesPerSecond;
         sample = current;
     });
     return { stats: staleSample ? {} : stats, sample };
@@ -260,6 +306,8 @@ export class BrowserPublisher {
     private abort: AbortController | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
     private state = idleBrowserRtc();
+    private bitrateCeiling = 8000;
+    private bitrateFlight = false;
     constructor(private api: MobileBrowserApi, private changed: (state: BrowserRtcState) => void, private deps: PublisherDependencies = { getUserMedia: c => navigator.mediaDevices.getUserMedia(c), makePeer: () => new RTCPeerConnection({ iceServers: [] }) }) { }
     async start(options: BrowserStreamOptions = {}) {
         const intent = ++this.sourceChangeIntent;
@@ -284,6 +332,7 @@ export class BrowserPublisher {
     private emit(state: BrowserRtcState) { this.state = state; this.changed(state); }
     private async open(options: BrowserStreamOptions) {
         this.stopLocal();
+        this.bitrateCeiling = browserBitrateKbps(options.bitrateKbps);
         const serial = this.serial, abort = new AbortController();
         this.abort = abort;
         this.emit({ ...idleBrowserRtc(), status: '連接後置相機…' });
@@ -427,13 +476,21 @@ export class BrowserPublisher {
                     return;
                 const measured = readBrowserPublisherStats(report, previous);
                 previous = measured.sample;
-                const stats = { ...measured.stats, appliedBitrateKbps: this.state.stats.appliedBitrateKbps, parameterStatus: this.state.stats.parameterStatus };
+                const stats = { ...measured.stats, ...(measured.stats.sampleIntervalMs ? { measuredAtMs: Date.now() } : {}),
+                    appliedBitrateKbps: this.state.stats.appliedBitrateKbps, parameterStatus: this.state.stats.parameterStatus };
                 this.emit({ ...this.state, settings: this.media?.getVideoTracks()[0]?.getSettings() ?? null, stats, frame: this.landscape?.readFrame() });
                 if (!reporting && Date.now() - reportedAt >= 3000 && Object.keys(measured.stats).length) {
                     reportedAt = Date.now(); reporting = true;
                     void this.api.request('stream/metrics', { method: 'POST', signal, timeoutMs: 2500,
                         body: { generation, capture_fps: stats.captureFps, send_fps: stats.sendFps, send_bitrate_kbps: stats.bitrateKbps,
-                            width: stats.width, height: stats.height, rtt_ms: stats.rttMs, quality_limitation_reason: stats.qualityLimitationReason } })
+                            width: stats.width, height: stats.height, rtt_ms: stats.rttMs, quality_limitation_reason: stats.qualityLimitationReason,
+                            encode_fps: stats.encodeFps ?? null, encode_ms: stats.encodeMs ?? null,
+                            frames_encoded: stats.framesEncoded ?? null, frames_sent: stats.framesSent ?? null,
+                            sample_interval_ms: stats.sampleIntervalMs ?? null,
+                            nack_count_delta: stats.nackCountDelta ?? null, pli_count_delta: stats.pliCountDelta ?? null,
+                            retransmitted_packets_delta: stats.retransmittedPacketsDelta ?? null,
+                            retransmitted_bytes_delta: stats.retransmittedBytesDelta ?? null,
+                            target_bitrate_kbps: stats.targetBitrateKbps ?? null } })
                         .catch(() => undefined).finally(() => { reporting = false; });
                 }
             }
@@ -445,6 +502,45 @@ export class BrowserPublisher {
                 this.timer = setTimeout(() => void poll(), 1000);
         };
         void poll();
+    }
+    private liveSender(stream: MediaStream) {
+        if (stream !== this.media || !this.state.publishing || this.peer?.connectionState !== 'connected') return null;
+        const track = stream.getVideoTracks()[0];
+        return track?.readyState === 'live' ? this.peer.getSenders?.().find(sender => sender.track === track) ?? null : null;
+    }
+    readLiveBitrate(stream: MediaStream): number | null {
+        try {
+            const value = this.liveSender(stream)?.getParameters().encodings?.[0]?.maxBitrate;
+            return finite(value) && value > 0 ? value / 1000 : null;
+        } catch { return null; }
+    }
+    /** Only change the existing sender, with readback and rollback; no new peer. */
+    async adjustLiveBitrate(stream: MediaStream, bitrateKbps: number, signal?: AbortSignal): Promise<number> {
+        const sender = this.liveSender(stream), serial = this.serial;
+        if (!sender) throw Error('phone_tune_source_changed');
+        if (this.bitrateFlight || !finite(bitrateKbps) || bitrateKbps < 100 || bitrateKbps > this.bitrateCeiling) throw Error('phone_tune_unsupported');
+        const before = this.readLiveBitrate(stream);
+        if (before === null) throw Error('phone_tune_unsupported');
+        const current = () => serial === this.serial && this.liveSender(stream) === sender;
+        const cancel = () => { if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError'); if (!current()) throw Error('phone_tune_source_changed'); };
+        cancel(); this.bitrateFlight = true;
+        let attempted = false;
+        try {
+            const parameters = sender.getParameters(); parameters.encodings[0].maxBitrate = bitrateKbps * 1000;
+            attempted = true; await sender.setParameters(parameters); cancel();
+            if (this.readLiveBitrate(stream) !== bitrateKbps) throw Error('phone_tune_unsupported');
+            this.emit({ ...this.state, stats: { ...this.state.stats, appliedBitrateKbps: bitrateKbps, parameterStatus: 'accepted' } });
+            return bitrateKbps;
+        } catch (cause) {
+            if (attempted && current()) {
+                try {
+                    const parameters = sender.getParameters(); parameters.encodings[0].maxBitrate = before * 1000;
+                    await sender.setParameters(parameters);
+                    if (current() && this.readLiveBitrate(stream) !== before) throw Error('readback');
+                } catch { throw Error('phone_tune_restore_failed'); }
+            }
+            throw cause;
+        } finally { this.bitrateFlight = false; }
     }
     stopLocal() {
         this.sourceChangeIntent++;

@@ -16,15 +16,15 @@ const properties=(selector,media)=>{
   return result;
 };
 
-test('desktop workflow groups intrinsic-width steps beside the brand without stretching',()=>{
+test('desktop workflow spreads three steps across a bounded centered header group',()=>{
   const media='(min-width: 961px)';
   const nav=properties(scope+' .maker-header-main .maker-nav',media);
-  assert.equal(nav.display,'flex');
-  assert.equal(nav.flex,'0 0 auto','do not fill the entire header with equal steps');
-  assert.equal(nav['flex-wrap'],'nowrap');
-  assert.equal(nav.gap,'clamp(16px, 2vw, 28px)');
+  assert.equal(nav.display,'grid');
+  assert.equal(nav.flex,'1 1 0');
+  assert.equal(nav['max-width'],'560px','spread the steps without consuming the utility controls');
+  assert.equal(nav['margin-inline'],'auto');
+  assert.equal(nav.gap,'28px');
   const button=properties(scope+' .maker-header-main .maker-nav button',media);
-  assert.equal(button.flex,'0 0 auto','active highlight follows the label width');
   assert.equal(button['white-space'],'nowrap');
   assert.equal(properties(scope+' .maker-header-main',media).gap,'32px');
   assert.equal(properties(scope+' .maker-header-integrated',null)['grid-template-columns'],'minmax(0, 1fr) auto','tools stay in the right-hand column');

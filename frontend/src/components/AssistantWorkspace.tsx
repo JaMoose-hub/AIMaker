@@ -19,7 +19,7 @@ export function AssistantWorkspace({ children, assistant, latestReply = "", open
   const [seenReply, setSeenReply] = useState("");
   const unread = Boolean(latestReply && latestReply !== seenReply);
   const toggleLabel = aiOpen ? tr("收合 AI 對話", "Collapse AI conversation")
-    : unread ? tr("展開 AI 對話，有新回覆", "Open AI conversation, new reply") : tr("展開 AI 對話", "Open AI conversation");
+    : unread ? tr("Ask AI：展開 AI 對話，有新回覆", "Ask AI: Open AI conversation, new reply") : tr("Ask AI：展開 AI 對話", "Ask AI: Open AI conversation");
   useEffect(() => {
     const query = window.matchMedia("(max-width: 1099px)");
     const change = () => setMobile(query.matches);
@@ -64,7 +64,7 @@ export function AssistantWorkspace({ children, assistant, latestReply = "", open
             </svg>
           </span>
           {!aiOpen && unread ? <span className="assistant-orb-unread" aria-hidden="true" /> : null}
-          <span className="assistant-orb-label" aria-hidden="true">AI</span>
+          <span className="assistant-orb-label" aria-hidden="true">Ask AI</span>
         </button>
         <div id="assistant-chat-content" className="assistant-chat-content">{assistant}</div>
       </aside>

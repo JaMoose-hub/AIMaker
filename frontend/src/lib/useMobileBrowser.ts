@@ -3,6 +3,7 @@ import { acceptMobileCapture, mobileVideoAgeMs, mobileVideoFresh } from './mobil
 import { mobileMeasurementFresh, mobileReconnectEligible, mobileReconnectWaitMs, restartMobileStream } from './mobileViewerStats';
 import { MobileBrowserApi, browserAttachment, browserLease, browserMediaReference, browserUuid, closeBrowserSession, emptyBrowserDraft, expiredBrowserSession, loadBrowserDraft, loadBrowserPairing, mergeBrowserConversation, mergeBrowserSession, mobileBrowserDraftKey, pairMobileBrowser, sameBrowserPairing, saveBrowserDraft, saveBrowserPairing, validateBrowserAttachments, type AssistantConversation, type BrowserAttachment, type BrowserCaptureJob, type BrowserDraft, type BrowserOutbox, type BrowserPairing, type BrowserSession, type CaptureTicket, type MobileCapture, } from './mobileBrowser';
 import { BrowserPublisher, browserCaptureHandoff, idleBrowserRtc, type BrowserStreamOptions } from './mobileBrowserRtc';
+import { usePhoneCameraTune } from './usePhoneCameraTune';
 import { boundWiringAction, type WiringPhotoRole, type WiringReviewAction, type WiringReviewState } from './wiringReview';
 import type { AssistantMessage, AssistantTestHelpOffer } from './assistant';
 import { assistantModelRunning, assistantWiringAnalysis } from './assistantAnalysis';
@@ -121,6 +122,7 @@ export function useMobileBrowser() {
     const attachmentFlight = useRef<object | null>(null);
     const startedStream = useRef<{ owner: number; session: string; context: string; generation: number; startedAt: number } | null>(null);
     const [streamBusy, setStreamBusy] = useState(false);
+    const captureFlight = useRef(false);
     const [capture, setCapture] = useState<MobileCapture | null>(null), [captureError, setCaptureError] = useState('');
     const [wiringSnapshot, setWiringSnapshot] = useState<MobileWiringSnapshot>({ review: null, can_act: false });
     const wiringSnapshotRef = useRef(wiringSnapshot); wiringSnapshotRef.current = wiringSnapshot;
@@ -826,7 +828,7 @@ export function useMobileBrowser() {
     };
     const retry = async (id: string) => { const item = draftRef.current.outbox.find(o => o.id === id); if (item)
         await deliver(item); };
-    const startStream = async (options: BrowserStreamOptions = {}, automatic = false) => { if (!api || !publisher.current || streamFlight.current !== null)
+    const startStream = async (options: BrowserStreamOptions = {}, automatic = false) => { if (!api || !publisher.current || streamFlight.current !== null || captureFlight.current || cameraTune.isRunning?.())
         return; if (!secureContext || !navigator.mediaDevices?.getUserMedia) {
         setError('Safari 相機需要 HTTPS，請由桌面的 HTTPS 手機連結開啟。');
         return;
@@ -879,12 +881,13 @@ export function useMobileBrowser() {
         void startStream(streamOptions.current, true);
     }, [clock, session?.session_id, session?.context_id, session?.stream.generation, busy, streamBusy, rtc.publishing]);
     const beginCapture = async (options: { keepStreaming?: boolean } = {}): Promise<CaptureTicket | null> => {
-        if (!api || !publisher.current || !rtc.publishing || busy || streamFlight.current !== null || !sessionRef.current?.stream.can_capture || lease.current.deadline <= performance.now()) {
+        if (!api || !publisher.current || !rtc.publishing || busy || captureFlight.current || cameraTune.isRunning?.() || streamFlight.current !== null || !sessionRef.current?.stream.can_capture || lease.current.deadline <= performance.now()) {
             setError('請等畫面穩定並顯示可拍照，再拍攝正式照片。');
             return null;
         }
         const serial = owner.current, key = workspaceKey.current, contextId = sessionRef.current.context_id;
         const current = () => serial === owner.current && key === workspaceKey.current && contextId === sessionRef.current?.context_id;
+        captureFlight.current = true;
         setBusy(true);
         setError('');
         try {
@@ -902,6 +905,7 @@ export function useMobileBrowser() {
             return null;
         }
         finally {
+            captureFlight.current = false;
             if (current()) setBusy(false);
         }
     };
@@ -1006,15 +1010,22 @@ export function useMobileBrowser() {
     const currentRtc = mobileMeasurementFresh(rtcMeasurement.current.at, clock) ? rtc : { ...rtc,
         stats: { appliedBitrateKbps: rtc.stats.appliedBitrateKbps, parameterStatus: rtc.stats.parameterStatus } };
     const receiveFresh = mobileVideoFresh(session?.stream);
+    const cameraTune = usePhoneCameraTune({ stream: currentRtc.stream,
+        scope: `${session?.session_id ?? ''}:${session?.context_id ?? ''}:${currentRtc.generation ?? ''}`,
+        busy: busy || streamBusy || wiringReviewBusy || Boolean(captureTicket || workspace.captureJob),
+        blocked: () => captureFlight.current || streamFlight.current !== null || Boolean(ticketRef.current || draftRef.current.captureJob), stats: currentRtc.stats,
+        readBitrate: stream => publisher.current?.readLiveBitrate(stream) ?? null,
+        adjustBitrate: (stream, value, signal) => publisher.current?.adjustLiveBitrate(stream, value, signal) ?? Promise.reject(Error('phone_tune_source_changed')) });
     return { pairing, api, session, conversation, capture, captureImageUrl: image.url, imageError: captureError || image.error,
         wiringReview: wiringSnapshot.review, wiringComponentLabel: wiringSnapshot.component_label, wiringCanAct: wiringSnapshot.can_act,
         wiringReviewBusy, wiringReviewError, pendingWiringPhoto, wiringReviewAction, uploadWiringPhoto, retryWiringPhoto, discardWiringPhoto, refreshWiringReview,
         prepareWiringChatPhoto, uploadWiringChatPhoto,
         testHelpAction, testHelpPendingMessageId, testHelpError,
         draft: workspace.text, setDraft, attachments: workspace.attachments, outbox: workspace.outbox, captureTicket, captureJob: workspace.captureJob,
-        busy: busy || streamBusy, chatSendBlocked, wiringAnalysis: assistantWiringAnalysis(conversation), error, connected, ready, secureContext, rtc: currentRtc,
+        busy: busy || streamBusy || cameraTune.busy, chatSendBlocked: chatSendBlocked || cameraTune.busy,
+        cameraTune, wiringAnalysis: assistantWiringAnalysis(conversation), error, connected, ready, secureContext, rtc: currentRtc,
         previewFresh: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && lease.current.deadline > clock,
-        canCapture: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && !!session?.stream.can_capture && lease.current.deadline > clock && !busy && !streamBusy, inheritedMediaLabel,
+        canCapture: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && !!session?.stream.can_capture && lease.current.deadline > clock && !busy && !streamBusy && !cameraTune.busy, inheritedMediaLabel,
         pair, disconnect, join, send, retry, removeOutbox, removeAttachment, addFiles, startStream, stopStream, beginCapture, finishCapture, cancelCapture, retryCapture, discardCapture, openCapture, selectWire, older, refresh,
         retryCaptureImage: () => { setCaptureAttempt(n => n + 1); image.retry(); } };
 }

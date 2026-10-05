@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>GPIO 照片標記 POC</title>
+<style>
+:root{--bg:#f2f5f8;--card:#fff;--ink:#182c3e;--muted:#607487;--line:#dce5ec;--blue:#176bdd;--blue-soft:#edf4ff;--amber:#b57108;--amber-soft:#fff8e8;--red:#bf3f48;--radius:18px}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Segoe UI","Microsoft JhengHei",sans-serif}button,input,select{font:inherit}button{cursor:pointer;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);padding:8px 12px;line-height:1.4}button:hover{background:#f4f8fc;border-color:#b7cbe0}button:disabled{cursor:default;opacity:.45}.primary{background:var(--blue);border-color:var(--blue);color:#fff}.primary:hover{background:#115bc1;color:#fff}.danger{color:var(--red)}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #80b7ff;outline-offset:2px}input[type="text"],input[type="number"],select{width:100%;border:1px solid #c9d7e3;border-radius:9px;background:#fff;padding:7px 9px;color:var(--ink)}input[type="checkbox"]{accent-color:var(--blue);width:16px;height:16px;flex-shrink:0}h1,h2,h3,p{margin:0}h1{font-size:25px;letter-spacing:.2px}h2{font-size:17px}h3{font-size:14px}header{max-width:1800px;margin:auto;padding:24px 28px 15px}.topline{display:flex;justify-content:space-between;align-items:center;gap:20px}.eyebrow{font-size:12px;font-weight:700;color:var(--blue);letter-spacing:1px;margin-bottom:3px}.subtitle{color:var(--muted);margin-top:5px;font-size:14px}.pill{display:inline-flex;align-items:center;gap:6px;border-radius:100px;padding:5px 11px;font-size:12px;font-weight:600;background:var(--blue-soft);color:#245fa9;white-space:nowrap}.pill:before{content:"";width:6px;height:6px;border-radius:50%;background:#4389e2}.notice{margin-top:15px;padding:10px 14px;border:1px solid #eed9ac;background:var(--amber-soft);border-radius:11px;color:#75531b;font-size:13px}.layout{max-width:1800px;margin:auto;padding:0 28px 28px;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:start}.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 3px 14px #15314f04;overflow:hidden}.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}.card-head small{color:var(--muted);font-size:12px}.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--line)}.toolbar label,.check{display:flex;align-items:center;gap:6px;font-size:13px}.view-select{max-width:240px}.canvas-stage{min-height:340px;height:min(72vh,960px);display:flex;align-items:center;justify-content:center;background:#e8edf2;padding:12px;overflow:hidden;position:relative}.canvas-stage canvas{display:block;max-width:100%;max-height:100%;width:auto;height:auto;touch-action:none;cursor:crosshair;box-shadow:0 2px 18px #17354f20}.empty{color:var(--muted);padding:32px;text-align:center}.below{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 18px;color:var(--muted);font-size:12px}.exports{padding:14px 18px;display:flex;gap:9px;flex-wrap:wrap;border-top:1px solid var(--line)}.sidebar{display:flex;flex-direction:column;gap:16px}.crop-stage{padding:12px;background:#eef2f5;display:flex;align-items:center;justify-content:center;min-height:200px}.crop-stage canvas{max-width:100%;height:auto;max-height:290px;width:auto;display:block}.crop-stage canvas[hidden]{display:none}.crop-meta{padding:10px 16px;color:var(--muted);font-size:12px}.crop-controls{padding:0 16px 12px;display:flex;align-items:center;gap:10px}.crop-controls label{font-size:12px;color:var(--muted);white-space:nowrap}.crop-controls input{flex:1;min-width:0;accent-color:var(--blue)}.swatch-row{display:flex;align-items:center;gap:10px;padding:13px 16px;border-top:1px solid var(--line)}.swatch{height:34px;width:34px;flex:none;border-radius:9px;border:1px solid #bfccd7;background:repeating-linear-gradient(45deg,#dae2e9 0 5px,#fff 5px 10px)}.swatch-title{font-size:13px;font-weight:600}.swatch-note{font-size:11px;color:var(--muted)}.marker-list{padding:10px 12px;display:flex;gap:7px;flex-wrap:wrap;min-height:58px}.marker-button{padding:6px 10px;font-size:12px}.marker-button.selected{border-color:var(--blue);background:var(--blue-soft);color:#145fc4}.marker-button.reviewed:after{content:" ✓";color:#1d886b}.editor{padding:0 16px 16px}.grid-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field label{display:block;margin-bottom:4px;font-size:12px;color:var(--muted)}.field.wide{grid-column:1/-1}.review{margin:12px 0;font-size:12px}.editor-actions{display:flex;justify-content:space-between;gap:8px}.editor-meta{font-size:11px;color:var(--muted);margin:9px 0}.instructions{padding:16px 18px;font-size:13px;color:var(--muted)}.instructions ol{margin:7px 0 12px;padding-left:21px}.instructions li{margin:5px 0}.instructions strong{color:var(--ink)}.status{min-height:23px;font-size:12px;color:var(--muted)}.status.error{color:var(--red)}.hidden{display:none!important}.file-input{display:none}.footer-note{padding:0 2px;color:var(--muted);font-size:11px}.hint-label{color:var(--amber)}@media(min-width:1600px){.layout{grid-template-columns:minmax(0,1fr) 440px}}@media(max-width:1050px){.layout{grid-template-columns:minmax(0,1fr) 350px;padding:0 18px 20px;gap:12px}header{padding:20px 18px 14px}.canvas-stage{height:68vh}}@media(max-width:780px){.layout{display:flex;flex-direction:column}.main,.sidebar{width:100%}.canvas-stage{height:62vh;min-height:300px}.topline{align-items:flex-start}.pill{display:none}.sidebar{display:grid;grid-template-columns:1fr}.toolbar{gap:9px}.view-select{max-width:none;flex-basis:100%}.card-head{padding:13px 15px}h1{font-size:22px}.exports button{flex:1 1 42%}}
+</style>
+</head>
+<body>
+<header>
+  <div class="topline"><div><div class="eyebrow">BOARD VISION · PHOTO POC</div><h1 id="pageHeading">先預標位置，再逐點核對</h1><p class="subtitle">原圖、位置標記與接頭局部一起比較。先檢查預標點，需要時拖曳微調，再匯出 AI 判讀素材。</p></div><span class="pill">本機運作 · 頁面不呼叫 AI</span></div>
+  <div class="notice"><strong>預標位置與腳號仍待核對。</strong> 位置 ID 指向接頭附近的區域；出線口標記不等於 GPIO 插入點。候選 Pin 需要另外確認。局部色票只描述像素，無法證明線接到哪一腳。</div>
+  <p id="cloudRunInfo" class="subtitle hidden"></p>
+</header>
+<main class="layout">
+  <section class="main card">
+    <div class="card-head"><div><h2>照片與預標位置</h2><small id="imageInfo">載入原始照片中…</small></div><button id="resetBtn" title="還原此頁最初的預標位置">還原預標</button></div>
+    <div class="toolbar">
+      <select id="viewSelect" class="view-select" aria-label="切換照片"></select>
+      <label><input type="checkbox" id="overlayToggle" checked>顯示標記</label>
+      <label><input type="checkbox" id="textToggle" checked>顯示文字</label>
+      <label class="hint-label" id="hintLabel"><input type="checkbox" id="hintToggle">參考腳位投影</label>
+    </div>
+    <div class="canvas-stage" id="canvasStage"><canvas id="mainCanvas" aria-label="可點選與拖曳位置標記的原始照片"></canvas><div class="empty" id="mainEmpty">正在解碼照片…</div></div>
+    <div class="below"><span>點空白處新增 · 點標記選取 · 拖曳標記移動</span><span id="pointerInfo">座標使用原圖像素</span></div>
+    <div class="exports"><button id="exportPng" class="primary">匯出 AI 素材 PNG</button><button id="exportCrop">匯出未調色局部 PNG</button><button id="exportJson">匯出標記 JSON</button><button id="importJson">匯入標記 JSON</button><button id="exportPrompt">下載 AI 提示詞</button></div>
+    <div class="below"><span id="status" class="status" role="status" aria-live="polite">照片不會傳到外部，也不會修改原始檔案。</span></div>
+  </section>
+  <aside class="sidebar">
+    <section class="card">
+      <div class="card-head"><h2>接頭局部 · 同圖像素</h2><small id="cropId">請選一個位置</small></div>
+      <div class="crop-stage"><canvas id="cropCanvas" hidden aria-label="未加標記且未調色的原圖局部"></canvas><div class="empty" id="cropEmpty">選取位置後，這裡顯示原圖裁切。</div></div>
+      <div class="crop-meta" id="cropInfo">裁切不調色、不銳化；顯示放大不會增加影像細節。</div>
+      <div class="crop-controls"><label for="cropSize">範圍</label><input id="cropSize" type="range" min="180" max="1000" step="20" value="400"><span id="cropSizeText">400 px</span></div>
+      <div class="swatch-row"><span id="swatch" class="swatch"></span><div><div class="swatch-title" id="colorTitle">局部像素色票：尚未取樣</div><div class="swatch-note" id="colorInfo">從未加標記的原圖取樣；混色區域回報未知。</div></div></div>
+      <div id="cloudColorRow" class="swatch-row hidden"><span id="cloudSwatch" class="swatch"></span><div><div class="swatch-title" id="cloudColorTitle"></div><div class="swatch-note" id="cloudColorInfo"></div><div class="swatch-note" id="cloudEvidence"></div></div></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>位置清單與編輯</h2><small id="markerCount">0 個位置</small></div>
+      <div id="markerList" class="marker-list"></div>
+      <div class="editor hidden" id="editor">
+        <div class="grid-fields">
+          <div class="field"><label for="markerId">位置 ID</label><input id="markerId" type="text" maxlength="24" autocomplete="off"></div>
+          <div class="field"><label for="physicalPin">候選實體 Pin（1–40）</label><input id="physicalPin" type="number" min="1" max="40" step="1" placeholder="尚未指定"></div>
+          <div class="field"><label for="markerX">原圖 X</label><input id="markerX" type="number" min="0" step="1"></div>
+          <div class="field"><label for="markerY">原圖 Y</label><input id="markerY" type="number" min="0" step="1"></div>
+        </div>
+        <label class="check review"><input id="reviewed" type="checkbox">我已人工核對這個實體腳號</label>
+        <div class="editor-meta" id="markerMeta"></div>
+        <div class="editor-actions"><button id="clearPin">清除候選腳號</button><button id="deleteMarker" class="danger">刪除此位置</button></div>
+      </div>
+      <div class="empty hidden" id="editorEmpty">點照片空白處新增位置。</div>
+    </section>
+    <section class="card instructions">
+      <h3>怎麼用這個 POC</h3>
+      <p id="prelabelInfo">正在載入預標資訊…</p>
+      <ol><li>選擇照片，檢查預標點是否位於<strong>可見的接頭出線口</strong>；需要時拖曳微調或新增。</li><li>用局部原圖查看線色；需要時調整裁切範圍。</li><li>知道腳號才填候選 Pin；核對方向與兩排後再勾選人工核對。</li><li id="exportHelp">匯出素材與提示詞，一起交給雲端 AI，要求每個位置回報證據或未知。</li></ol>
+      <p>編輯保留在目前頁面；需要保存時，請<strong>匯出標記 JSON</strong>，下次開啟後再匯入。</p>
+      <p>不同照片即使用相同 ID，也<strong>不會自動視為同一條線</strong>。黃色十字只是幾何參考，預設隱藏；它不表示該腳有接線。</p>
+    </section>
+    <p class="footer-note">照片依原始色彩設定統一為 sRGB；原始檔另行保留。此頁提供預標編輯與像素色票，不會自動用 AI 分析新照片，也未量測辨識準確率。</p>
+  </aside>
+</main>
+<input type="file" id="jsonFile" class="file-input" accept=".json,application/json">
+<script>
+"use strict";
+const initial = __POC_DATA__;
+const $ = id => document.getElementById(id);
+const mainCanvas = $("mainCanvas"), mainCtx = mainCanvas.getContext("2d");
+const cropCanvas = $("cropCanvas"), cropCtx = cropCanvas.getContext("2d");
+const sampleCanvas = document.createElement("canvas"), sampleCtx = sampleCanvas.getContext("2d", {willReadFrequently:true});
+const bitmapCache = new Map();
+const clone = value => JSON.parse(JSON.stringify(value));
+const palette = {red:"紅色",orange:"橘色",yellow:"黃色",green:"綠色",blue:"藍色",purple:"紫色",pink:"粉紅色",brown:"棕色",black:"黑色",white:"白色",gray:"灰色",multicolor:"多色",other:"其他顏色",unknown:"未知／混色"};
+const wirePalette = {red:"#df343e",orange:"#f47b20",yellow:"#efc719",green:"#008d68",blue:"#166ad7",purple:"#8748b7",pink:"#e769a9",brown:"#855533",black:"#22252a",white:"#ffffff",gray:"#7b8794",multicolor:"#61717f",other:"#61717f",unknown:"#7b8794"};
+const visibilityNames = {clear:"清楚可見",partial:"部分遮擋",uncertain:"不確定"};
+const sourceNames = {cloud_vision_joint:"雲端判讀候選",ai_visual_prelabel:"AI 照片預標",assistant_visual_prelabel:"AI 照片預標",user_added:"使用者新增",user_moved:"使用者移動",demo_seed:"示範位置",json_import:"JSON 匯入"};
+const sourceLabel = source => sourceNames[source] || "匯入位置（"+String(source||"未知來源")+"）";
+const isAiPrelabel = marker => marker.source==="ai_visual_prelabel" || marker.source==="assistant_visual_prelabel";
+const hasCloudObservation = marker => !!marker.cloud_observation;
+const seed = clone(initial);
+const hasPreparedAiPrelabels = () => seed.images.some(img=>(img.markers||[]).some(isAiPrelabel));
+const hasPreparedCloudObservations = () => seed.images.some(img=>(img.markers||[]).some(hasCloudObservation));
+let state = clone(initial), currentIndex = 0, selectedId = null, pointerDrag = null;
+let ready = false;
+const imageState = () => state.images[currentIndex];
+const bitmap = () => bitmapCache.get(imageState().id);
+const selected = () => imageState().markers.find(m => m.id === selectedId) || null;
+const bound = (value,min,max) => Math.min(max,Math.max(min,value));
+const integer = value => typeof value === "number" && Number.isFinite(value) && Number.isInteger(value);
+function notify(message,error=false){$("status").textContent=message;$("status").classList.toggle("error",error);}
+function safeFileName(value){return String(value).replace(/[^A-Za-z0-9_-]/g,"_").slice(0,60)||"photo";}
+function saveBlob(blob,name){const a=document.createElement("a"),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+function pngDownload(canvas,name){canvas.toBlob(blob=>{if(blob){saveBlob(blob,name);notify("已匯出 "+name);}else notify("PNG 匯出失敗。",true);},"image/png");}
+function ensureCloudObservation(value,img,id){
+  if(value==null)return null;
+  if(typeof value!=="object"||Array.isArray(value)||!Object.hasOwn(wirePalette,value.wire_color)||!Object.hasOwn(visibilityNames,value.visibility))throw new Error("位置 "+id+" 的雲端線色或可見性格式錯誤。");
+  if(typeof value.evidence!=="string"||!value.evidence.length||value.evidence.length>1000||typeof value.model!=="string"||!value.model.length||value.model.length>150||typeof value.effort!=="string"||!value.effort.length||value.effort.length>20)throw new Error("位置 "+id+" 的雲端證據、模型或推理設定格式錯誤。");
+  let roi=null;
+  if(value.wire_roi!=null){
+    const r=value.wire_roi;
+    if(typeof r!=="object"||Array.isArray(r)||![r.x_min,r.y_min,r.x_max,r.y_max].every(n=>typeof n==="number"&&Number.isFinite(n))||r.x_min<0||r.y_min<0||r.x_max>=img.width||r.y_max>=img.height||r.x_min>=r.x_max||r.y_min>=r.y_max)throw new Error("位置 "+id+" 的線材區域無效或超出原圖。");
+    roi={x_min:r.x_min,y_min:r.y_min,x_max:r.x_max,y_max:r.y_max};
+  }
+  return {wire_color:value.wire_color,visibility:value.visibility,wire_roi:roi,evidence:value.evidence,model:value.model,effort:value.effort};
+}
+function ensureMarkerShape(marker,img,allowReviewed){
+  if(!marker || typeof marker!=="object" || !/^[A-Za-z0-9_-]{1,24}$/.test(marker.id||""))throw new Error("位置 ID 必須是 1–24 個英文字母、數字、底線或連字號。");
+  if(typeof marker.x!=="number" || !Number.isFinite(marker.x) || marker.x<0 || marker.x>=img.width || typeof marker.y!=="number" || !Number.isFinite(marker.y) || marker.y<0 || marker.y>=img.height)throw new Error("位置 "+marker.id+" 的座標無效或超出原圖。");
+  if(marker.physical_pin!==null && marker.physical_pin!==undefined && (!integer(marker.physical_pin)||marker.physical_pin<1||marker.physical_pin>40))throw new Error("位置 "+marker.id+" 的實體 Pin 必須是 1–40 的整數或 null。");
+  const pin=marker.physical_pin==null?null:marker.physical_pin;
+  if(marker.reviewed!==undefined&&typeof marker.reviewed!=="boolean")throw new Error("位置 "+marker.id+" 的人工核對旗標必須是布林值。");
+  if(marker.reviewed===true&&pin===null)throw new Error("位置 "+marker.id+" 的人工核對旗標需要有效的實體 Pin。");
+  const cloud=ensureCloudObservation(marker.cloud_observation,img,marker.id);
+  if(marker.source==="cloud_vision_joint"&&!cloud)throw new Error("位置 "+marker.id+" 缺少雲端聯合判讀資料。");
+  return {id:marker.id,x:marker.x,y:marker.y,physical_pin:pin,reviewed:allowReviewed&&marker.reviewed===true&&pin!==null,source:typeof marker.source==="string"?marker.source.slice(0,60):"json_import",sample_color:null,...(cloud?{cloud_observation:cloud}:{})};
+}
+function normalizeInitial(data){
+  if(!data || data.version!==1 || !Array.isArray(data.images) || !data.images.length)throw new Error("沒有可用的 POC 照片。");
+  const imageIds=new Set();
+  data.images.forEach(img=>{
+    if(!img || typeof img.id!=="string" || imageIds.has(img.id)||!integer(img.width)||!integer(img.height)||img.width<1||img.height<1||typeof img.sha256!=="string")throw new Error("POC 照片資訊格式錯誤。");
+    imageIds.add(img.id);
+    if(typeof img.data_url!=="string" || !/^data:image\/(png|jpeg);base64,/.test(img.data_url))throw new Error("POC 只接受內嵌 PNG／JPEG 原圖。");
+    if(!Array.isArray(img.markers))img.markers=[];
+    if(img.markers.length>40)throw new Error("每張照片最多接受 40 個標記。");
+    const ids=new Set();img.markers=img.markers.map(m=>{const item=ensureMarkerShape(m,img,false);if(ids.has(item.id))throw new Error("同一照片的位置 ID 不可重複。");ids.add(item.id);return item;});
+    if(!Array.isArray(img.pin_hints))img.pin_hints=[];
+    img.pin_hints=img.pin_hints.filter(h=>h&&Number.isFinite(h.x)&&Number.isFinite(h.y)&&h.x>=0&&h.y>=0&&h.x<img.width&&h.y<img.height&&integer(h.physical_pin)&&h.physical_pin>=1&&h.physical_pin<=40).map(h=>({...h,verified:false}));
+  });
+  return data;
+}
+function pixelColor(r,g,b){
+  r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min,s=max===0?0:d/max;
+  if(max<.17)return "black";if(s<.16)return max>.82?"white":"gray";
+  if(s<.28||max<.28)return "unknown";
+  let h=0;if(d){if(max===r)h=((g-b)/d)%6;else if(max===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360;}
+  if(h<15||h>=345)return "red";if(h<40)return "orange";if(h<72)return "yellow";if(h<175)return "green";if(h<265)return "blue";return "purple";
+}
+function sampleColor(marker,img=imageState()){
+  const source=bitmapCache.get(img.id);if(!source)return null;
+  const radius=Math.max(3,Math.round(Math.min(img.width,img.height)*.002)),x=Math.max(0,Math.round(marker.x)-radius),y=Math.max(0,Math.round(marker.y)-radius);
+  const right=Math.min(img.width,Math.round(marker.x)+radius+1),bottom=Math.min(img.height,Math.round(marker.y)+radius+1);
+  sampleCanvas.width=right-x;sampleCanvas.height=bottom-y;
+  sampleCtx.drawImage(source,x,y,sampleCanvas.width,sampleCanvas.height,0,0,sampleCanvas.width,sampleCanvas.height);
+  const pixels=sampleCtx.getImageData(0,0,sampleCanvas.width,sampleCanvas.height).data, buckets={};let count=0;
+  for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]<128)continue;const name=pixelColor(pixels[i],pixels[i+1],pixels[i+2]);if(!buckets[name])buckets[name]={count:0,r:0,g:0,b:0};const item=buckets[name];item.count++;item.r+=pixels[i];item.g+=pixels[i+1];item.b+=pixels[i+2];count++;}
+  const ranked=Object.entries(buckets).sort((a,b)=>b[1].count-a[1].count);if(!count||!ranked.length)return {name:"unknown",label:palette.unknown,rgb:null,support:0,sample_rect:{x,y,width:sampleCanvas.width,height:sampleCanvas.height}};
+  const [dominant,bucket]=ranked[0],support=bucket.count/count;
+  const name=support>=.60?dominant:"unknown";
+  return {name,label:palette[name],rgb:name==="unknown"?null:[Math.round(bucket.r/bucket.count),Math.round(bucket.g/bucket.count),Math.round(bucket.b/bucket.count)],support:Number(support.toFixed(3)),sample_rect:{x,y,width:sampleCanvas.width,height:sampleCanvas.height},method:"local_hsv_bucket",meaning:"local_pixel_share_not_wire_identity_or_probability"};
+}
+function drawMarkers(ctx,img,options={}){
+  const scale=Math.max(1,img.width/1400),displayScale=Number.isFinite(options.displayScale)&&options.displayScale>0?options.displayScale:null;
+  const minimum=cssPixels=>displayScale?cssPixels/displayScale:0;
+  const radius=Math.max(9*scale,minimum(5)),line=Math.max(2.3*scale,minimum(1.2)),font=Math.max(20*scale,minimum(14));
+  const pad=Math.max(7*scale,minimum(4)),labelH=font+Math.max(14*scale,minimum(8)),margin=Math.max(3*scale,minimum(1));
+  const occupied=[],labelGap=Math.max(8*scale,minimum(4));
+  function labelPosition(marker,width){
+    const offset=Math.max(24*scale,minimum(11)),preferredTop=marker.y-Math.max(34*scale,minimum(22));
+    const lefts=[marker.x+offset,marker.x-width-offset,marker.x-width/2];
+    const candidates=[];
+    for(let row=0;row<9;row++)for(const direction of row===0?[0]:[-1,1])for(const left of lefts){
+      const box={x:bound(left,margin,Math.max(margin,img.width-width-margin)),y:bound(preferredTop+direction*row*(labelH+labelGap),margin,Math.max(margin,img.height-labelH-margin)),width,height:labelH};
+      let penalty=0;
+      for(const other of occupied){const overlapX=Math.max(0,Math.min(box.x+box.width+labelGap,other.x+other.width)-Math.max(box.x-labelGap,other.x)),overlapY=Math.max(0,Math.min(box.y+box.height+labelGap,other.y+other.height)-Math.max(box.y-labelGap,other.y));penalty+=overlapX*overlapY;}
+      for(const point of img.markers){const dx=point.x-bound(point.x,box.x,box.x+box.width),dy=point.y-bound(point.y,box.y,box.y+box.height);if(Math.hypot(dx,dy)<radius+labelGap)penalty+=(radius+labelGap)**2;}
+      const distance=Math.hypot(marker.x-bound(marker.x,box.x,box.x+box.width),marker.y-bound(marker.y,box.y,box.y+box.height));
+      candidates.push({box,penalty,distance});
+    }
+    candidates.sort((a,b)=>a.penalty-b.penalty||a.distance-b.distance);const box=candidates[0].box;occupied.push(box);return box;
+  }
+  if(options.hints)for(const hint of img.pin_hints||[]){const cross=Math.max(6*scale,minimum(3)),offset=Math.max(8*scale,minimum(5));ctx.save();ctx.strokeStyle="#ffca28";ctx.lineWidth=Math.max(2*scale,minimum(1.2));ctx.beginPath();ctx.moveTo(hint.x-cross,hint.y);ctx.lineTo(hint.x+cross,hint.y);ctx.moveTo(hint.x,hint.y-cross);ctx.lineTo(hint.x,hint.y+cross);ctx.stroke();if(options.text){ctx.font=`${Math.max(14*scale,minimum(14))}px sans-serif`;ctx.fillStyle="#8b5a00";ctx.fillText(String(hint.physical_pin),hint.x+offset,hint.y-offset);}ctx.restore();}
+  for(const marker of img.markers){
+    const active=options.selection&&marker.id===selectedId,cloud=marker.cloud_observation;
+    const color=cloud?wirePalette[cloud.wire_color]:(active?"#ed4c4b":"#0879ed"),unknown=cloud?.wire_color==="unknown";
+    const outline=cloud?.wire_color==="white"?"#26394a":"#fff",textColor=cloud?.wire_color==="white"?"#26394a":color;
+    ctx.save();
+    if(active&&cloud){ctx.lineWidth=line*1.5;ctx.strokeStyle="#fff";ctx.beginPath();ctx.arc(marker.x,marker.y,radius+Math.max(7*scale,minimum(4)),0,Math.PI*2);ctx.stroke();ctx.lineWidth=line;ctx.strokeStyle="#1d405c";ctx.beginPath();ctx.arc(marker.x,marker.y,radius+Math.max(7*scale,minimum(4)),0,Math.PI*2);ctx.stroke();}
+    ctx.lineWidth=line;ctx.strokeStyle=outline;ctx.beginPath();ctx.arc(marker.x,marker.y,radius+Math.max(1.3*scale,minimum(.8)),0,Math.PI*2);ctx.stroke();ctx.strokeStyle=color;
+    if(unknown)ctx.setLineDash([Math.max(5*scale,minimum(3)),Math.max(4*scale,minimum(2))]);
+    ctx.beginPath();ctx.arc(marker.x,marker.y,radius,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=color;ctx.beginPath();ctx.arc(marker.x,marker.y,Math.max(2.3*scale,minimum(1.5)),0,Math.PI*2);ctx.fill();
+    if(options.text){const label=marker.id+(cloud?" · "+palette[cloud.wire_color]:"")+(marker.physical_pin!==null?` · Pin ${marker.physical_pin}${marker.reviewed?" [人工核對]":" [候選]"}`:"");ctx.font=`600 ${font}px "Segoe UI","Microsoft JhengHei",sans-serif`;const textWidth=ctx.measureText(label).width,box=labelPosition(marker,textWidth+pad*2),left=box.x,top=box.y;const endX=bound(marker.x,left,left+box.width),endY=bound(marker.y,top,top+labelH),angle=Math.atan2(endY-marker.y,endX-marker.x);ctx.strokeStyle=textColor;ctx.beginPath();ctx.moveTo(marker.x+Math.cos(angle)*radius,marker.y+Math.sin(angle)*radius);ctx.lineTo(endX,endY);ctx.stroke();ctx.fillStyle="rgba(255,255,255,.94)";ctx.fillRect(left,top,box.width,labelH);ctx.fillStyle=textColor;ctx.fillText(label,left+pad,top+font+Math.max(2*scale,minimum(1)));}
+    ctx.restore();
+  }
+}
+function renderMain(){if(!ready)return;const img=imageState();mainCanvas.width=img.width;mainCanvas.height=img.height;mainCtx.drawImage(bitmap(),0,0);const displayScale=mainCanvas.getBoundingClientRect().width/img.width;if($("overlayToggle").checked)drawMarkers(mainCtx,img,{hints:$("hintToggle").checked,text:$("textToggle").checked,selection:true,displayScale});else if($("hintToggle").checked)drawMarkers(mainCtx,{...img,markers:[]},{hints:true,text:$("textToggle").checked,displayScale});$("imageInfo").textContent=`${img.name} · ${img.width} × ${img.height} px · sRGB 色彩管理`;$("hintLabel").classList.toggle("hidden",!img.pin_hints.length);$("hintToggle").disabled=!img.pin_hints.length;}
+let resizeFrame=null;window.addEventListener("resize",()=>{if(resizeFrame!==null)cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{resizeFrame=null;renderMain();});});
+function cropRect(marker,img=imageState()){const size=Number($("cropSize").value),width=Math.min(size,img.width),height=Math.min(size,img.height);return {x:bound(Math.round(marker.x)-Math.floor(width/2),0,img.width-width),y:bound(Math.round(marker.y)-Math.floor(height/2),0,img.height-height),width,height};}
+function renderCrop(){
+  const marker=selected();$("cropCanvas").hidden=!marker;$("cropEmpty").classList.toggle("hidden",!!marker);$("cropId").textContent=marker?"位置 "+marker.id:"請選一個位置";$("cropSizeText").textContent=$("cropSize").value+" px";
+  const cloud=marker?.cloud_observation;$("cloudColorRow").classList.toggle("hidden",!cloud);
+  if(cloud){$("cloudSwatch").style.background=wirePalette[cloud.wire_color];$("cloudColorTitle").textContent="雲端線色觀察："+palette[cloud.wire_color];$("cloudColorInfo").textContent=`${visibilityNames[cloud.visibility]} · ${cloud.model} / ${cloud.effort}`+(marker.source==="user_moved"?" · 位置已移動，原始判讀需重新核對":" · 模型候選，尚未人工核對");$("cloudEvidence").textContent="照片證據："+cloud.evidence;}
+  if(!marker){$("cropInfo").textContent="裁切不調色、不銳化；顯示放大不會增加影像細節。";$("colorTitle").textContent="局部像素色票：尚未取樣";$("colorInfo").textContent="從未加標記的原圖取樣；混色區域回報未知。";$("swatch").style.background="";return;}
+  const rect=cropRect(marker);cropCanvas.width=rect.width;cropCanvas.height=rect.height;cropCtx.drawImage(bitmap(),rect.x,rect.y,rect.width,rect.height,0,0,rect.width,rect.height);
+  $("cropInfo").textContent=`原圖裁切 X ${rect.x} / Y ${rect.y} · ${rect.width} × ${rect.height} px；沒有標記或調色。`;
+  const color=sampleColor(marker);marker.sample_color=color;$("colorTitle").textContent="局部像素色票："+color.label;$("colorInfo").textContent=`${color.sample_rect.width} × ${color.sample_rect.height} px 取樣，主要色群 ${Math.round(color.support*100)}%。取樣可能含黑接頭或陰影；這是像素占比，不是線色、腳號或連線正確率。`;$("swatch").style.background=color.rgb?`rgb(${color.rgb.join(",")})`:"";
+}
+function renderList(){
+  const img=imageState(),container=$("markerList"),prelabels=img.markers.filter(isAiPrelabel).length,cloudCount=img.markers.filter(hasCloudObservation).length,original=seed.images.find(item=>item.id===img.id),originalCount=(original?.markers||[]).filter(isAiPrelabel).length,originalCloudCount=(original?.markers||[]).filter(hasCloudObservation).length;container.replaceChildren();$("markerCount").textContent=img.markers.length+" 個位置"+(cloudCount?" · "+cloudCount+" 個雲端候選":prelabels?" · "+prelabels+" 個 AI 預標":"");
+  $("prelabelInfo").textContent=originalCloudCount?`雲端模型已在開頁前，從原圖聯合判讀 ${originalCloudCount} 個接頭位置與線色。標記使用模型回傳的線色，未知顯示灰色虛線；選取時增加外圈。雲端觀察與本機像素色票分開顯示，腳號仍待核對。這個離線頁面不會再次呼叫 AI。`:originalCount?`這張照片先由 AI 助理查看照片，預標 ${originalCount} 個可見的接頭出線口。目前保留 ${prelabels} 個 AI 預標位置；你可以檢查與微調。預標在開啟此頁前已完成，這個離線頁面不會自動用 AI 分析新照片。`:"此頁載入已有的位置資料，提供本機編輯與像素色票；不會自動用 AI 分析新照片。";
+  for(const marker of img.markers){const button=document.createElement("button");button.type="button";button.className="marker-button";button.classList.toggle("selected",marker.id===selectedId);button.classList.toggle("reviewed",marker.reviewed&&marker.physical_pin!==null);button.textContent=marker.id+(marker.physical_pin===null?"":" · Pin "+marker.physical_pin);button.title=marker.reviewed&&marker.physical_pin!==null?"人工核對腳號":"尚未人工核對腳號";button.addEventListener("click",()=>{selectedId=marker.id;render();});container.appendChild(button);}
+}
+function renderEditor(){const marker=selected();$("editor").classList.toggle("hidden",!marker);$("editorEmpty").classList.toggle("hidden",!!marker);if(!marker)return;$("markerId").value=marker.id;$("physicalPin").value=marker.physical_pin===null?"":marker.physical_pin;$("markerX").value=Math.round(marker.x);$("markerY").value=Math.round(marker.y);$("markerX").max=imageState().width-1;$("markerY").max=imageState().height-1;$("reviewed").checked=marker.reviewed&&marker.physical_pin!==null;$("reviewed").disabled=marker.physical_pin===null;$("markerMeta").textContent=(marker.reviewed&&marker.physical_pin!==null?"人工核對腳號":"腳號尚未核實")+" · 位置來源："+sourceLabel(marker.source);}
+function render(){renderMain();renderCrop();renderList();renderEditor();$("exportCrop").disabled=!selected();}
+function nextId(){const ids=new Set(imageState().markers.map(m=>m.id));for(let n=0;n<26;n++){const id=String.fromCharCode(65+n);if(!ids.has(id))return id;}let n=1;while(ids.has("M"+n))n++;return "M"+n;}
+function pointAt(event){const rect=mainCanvas.getBoundingClientRect();return {x:bound((event.clientX-rect.left)*mainCanvas.width/rect.width,0,mainCanvas.width-1),y:bound((event.clientY-rect.top)*mainCanvas.height/rect.height,0,mainCanvas.height-1),scale:rect.width/mainCanvas.width};}
+function nearest(point){let answer=null,best=Infinity;for(const marker of imageState().markers){const distance=Math.hypot(marker.x-point.x,marker.y-point.y)*point.scale;if(distance<24&&distance<best){answer=marker;best=distance;}}return answer;}
+mainCanvas.addEventListener("pointerdown",event=>{if(!ready||event.button!==0)return;const point=pointAt(event);let marker=nearest(point);if(!marker){if(imageState().markers.length>=40){notify("每張照片最多 40 個位置；請先刪除不需要的標記。",true);return;}marker={id:nextId(),x:Math.round(point.x),y:Math.round(point.y),physical_pin:null,reviewed:false,source:"user_added",sample_color:null};imageState().markers.push(marker);$("overlayToggle").checked=true;notify("已新增位置 "+marker.id+"；尚未指定或核實腳號。");}selectedId=marker.id;pointerDrag={id:marker.id,offsetX:marker.x-point.x,offsetY:marker.y-point.y,startX:event.clientX,startY:event.clientY,moved:false};mainCanvas.setPointerCapture(event.pointerId);render();});
+mainCanvas.addEventListener("pointermove",event=>{if(!ready)return;const point=pointAt(event);$("pointerInfo").textContent=`原圖 X ${Math.round(point.x)} / Y ${Math.round(point.y)}`;if(!pointerDrag)return;if(!pointerDrag.moved&&Math.hypot(event.clientX-pointerDrag.startX,event.clientY-pointerDrag.startY)<3)return;pointerDrag.moved=true;const marker=selected();if(marker){marker.x=Math.round(bound(point.x+pointerDrag.offsetX,0,imageState().width-1));marker.y=Math.round(bound(point.y+pointerDrag.offsetY,0,imageState().height-1));marker.reviewed=false;marker.source="user_moved";renderMain();renderCrop();renderEditor();}});
+function endDrag(){if(pointerDrag&&pointerDrag.moved)notify("位置已移動；腳號需重新人工核對。");pointerDrag=null;if(ready)renderList();}
+mainCanvas.addEventListener("pointerup",endDrag);mainCanvas.addEventListener("pointercancel",endDrag);
+$("viewSelect").addEventListener("change",()=>{currentIndex=Number($("viewSelect").value);selectedId=imageState().markers[0]?.id||null;pointerDrag=null;render();notify("已切換照片。不同照片的同名位置不會自動配對。");});
+["overlayToggle","textToggle","hintToggle"].forEach(id=>$(id).addEventListener("change",()=>{renderMain();if(id==="hintToggle"&&$(id).checked)notify("黃色十字是未核實的幾何投影，不代表接線判定。");}));
+$("cropSize").addEventListener("input",renderCrop);
+$("markerId").addEventListener("change",()=>{const marker=selected();if(!marker)return;const id=$("markerId").value.trim();if(!/^[A-Za-z0-9_-]{1,24}$/.test(id)||imageState().markers.some(m=>m!==marker&&m.id===id)){notify("位置 ID 必須唯一，並使用 1–24 個英文字母、數字、底線或連字號。",true);renderEditor();return;}marker.id=id;selectedId=id;render();});
+$("physicalPin").addEventListener("change",()=>{const marker=selected();if(!marker)return;const value=$("physicalPin").value.trim(),pin=value===""?null:Number(value);if(pin!==null&&(!integer(pin)||pin<1||pin>40)){notify("候選實體 Pin 請輸入 1–40 的整數。",true);renderEditor();return;}marker.physical_pin=pin;marker.reviewed=false;render();notify("候選腳號已更新；尚未人工核對。");});
+["markerX","markerY"].forEach(id=>$(id).addEventListener("change",()=>{const marker=selected();if(!marker)return;const key=id==="markerX"?"x":"y",max=key==="x"?imageState().width-1:imageState().height-1,value=Number($(id).value);if($(id).value.trim()===""||!integer(value)||value<0||value>max){notify("座標必須是原圖範圍內的整數。",true);renderEditor();return;}marker[key]=value;marker.reviewed=false;marker.source="user_moved";render();}));
+$("reviewed").addEventListener("change",()=>{const marker=selected();if(!marker)return;marker.reviewed=$("reviewed").checked&&marker.physical_pin!==null;render();notify(marker.reviewed?"已記錄你人工核對的腳號；線色與連線仍需照片證據。":"已清除人工核對旗標。");});
+$("clearPin").addEventListener("click",()=>{const marker=selected();if(marker){marker.physical_pin=null;marker.reviewed=false;render();}});
+$("deleteMarker").addEventListener("click",()=>{const id=selectedId;imageState().markers=imageState().markers.filter(m=>m.id!==id);selectedId=imageState().markers[0]?.id||null;render();notify("已刪除位置 "+id+"。");});
+$("resetBtn").addEventListener("click",()=>{state=normalizeInitial(clone(seed));currentIndex=0;selectedId=imageState().markers[0]?.id||null;$("viewSelect").value="0";$("overlayToggle").checked=true;$("textToggle").checked=true;$("hintToggle").checked=false;$("cropSize").value="400";render();notify("已還原最初的預標位置；全部腳號尚未核實。");});
+function exportedData(){return {version:1,...(state.cloud_run?{cloud_run:clone(state.cloud_run)}:{}),images:state.images.map(img=>({id:img.id,name:img.name,width:img.width,height:img.height,sha256:img.sha256,color_management:img.color_management,coordinate_system:img.coordinate_system,annotation_method:img.annotation_method,runtime_prelabel_inference:false,markers:img.markers.map(marker=>({...marker,sample_color:sampleColor(marker,img)})),pin_hints:clone(img.pin_hints||[])})),notes:{coordinate_space:"exif_transposed_srgb_pixels",pin_numbers:"physical_header_pin_not_BCM",color_sample:"local_pixels_only_not_verified_connection",cloud_observation:"model_photo_observation_not_human_verified_or_local_pixel_swatch",cross_view_same_id:"does_not_imply_same_wire",prelabel_source:hasPreparedCloudObservations()?"cloud_joint_localization_and_color_before_page_load":hasPreparedAiPrelabels()?"assistant_visual_photo_review_before_page_load":"existing_position_dataset",prelabels:"location_candidates_not_verified_gpio_insertions",ai_inference_performed:false,ai_inference_scope:"this_offline_page_only",new_photos_automatically_ai_analyzed:false}};}
+$("exportJson").addEventListener("click",()=>{saveBlob(new Blob([JSON.stringify(exportedData(),null,2)],{type:"application/json;charset=utf-8"}),"gpio-photo-markers.json");notify("已匯出全部照片的標記 JSON；包含原圖 SHA-256 與尺寸。");});
+$("importJson").addEventListener("click",()=>{$("jsonFile").value="";$("jsonFile").click();});
+$("jsonFile").addEventListener("change",async()=>{
+  const file=$("jsonFile").files[0];if(!file)return;
+  try{
+    if(file.size>5*1024*1024)throw new Error("JSON 檔超過 5 MB。請使用本頁匯出的標記 JSON。");
+    const data=JSON.parse(await file.text());if(!data||data.version!==1||!Array.isArray(data.images)||data.images.length!==state.images.length)throw new Error("JSON 版本或照片數量與此頁不符。");
+    const replacements=new Map();
+    for(const incoming of data.images){
+      const img=state.images.find(item=>item.id===incoming.id);if(!img||replacements.has(incoming.id))throw new Error("JSON 包含未知或重複的照片 ID。");
+      if(incoming.sha256!==img.sha256||incoming.width!==img.width||incoming.height!==img.height)throw new Error("照片 "+img.name+" 的 SHA-256 或尺寸不符，已拒絕錯圖標記。");
+      if(!Array.isArray(incoming.markers)||incoming.markers.length>40)throw new Error("標記清單無效或超過 40 個位置。");
+      const ids=new Set(),markers=incoming.markers.map(m=>{const marker=ensureMarkerShape(m,img,true);if(ids.has(marker.id))throw new Error("同一照片的位置 ID 不可重複。");ids.add(marker.id);return marker;});
+      if(incoming.pin_hints!==undefined&&!Array.isArray(incoming.pin_hints))throw new Error("參考腳位投影格式錯誤。");
+      for(const hint of incoming.pin_hints||[]){if(!hint||typeof hint.x!=="number"||!Number.isFinite(hint.x)||hint.x<0||hint.x>=img.width||typeof hint.y!=="number"||!Number.isFinite(hint.y)||hint.y<0||hint.y>=img.height||!integer(hint.physical_pin)||hint.physical_pin<1||hint.physical_pin>40)throw new Error("參考投影含無效腳號或超界座標。");}
+      replacements.set(img.id,markers);
+    }
+    for(const img of state.images)img.markers=replacements.get(img.id);
+    selectedId=imageState().markers[0]?.id||null;render();notify("已匯入標記；原圖 SHA-256 與尺寸均相符。局部色票已重新從原圖計算。");
+  }catch(error){notify("匯入失敗："+error.message,true);}
+});
+$("exportCrop").addEventListener("click",()=>{const marker=selected();if(marker)pngDownload(cropCanvas,`${safeFileName(imageState().id)}-${safeFileName(marker.id)}-raw-crop.png`);});
+function textOn(ctx,text,x,y,font=22,color="#20354a"){ctx.fillStyle=color;ctx.font=`${font}px "Segoe UI","Microsoft JhengHei",sans-serif`;ctx.fillText(text,x,y);}
+$("exportPng").addEventListener("click",()=>{
+  const img=imageState(),marker=selected(),panelW=Math.min(img.width,1600),panelH=Math.round(img.height*panelW/img.width),gap=32,headerH=124,titleH=54;
+  const rect=marker?cropRect(marker,img):null,cropH=rect?rect.height+titleH+60:70;
+  const bundle=document.createElement("canvas");bundle.width=panelW*2+gap*3;bundle.height=headerH+titleH+panelH+gap+cropH;
+  const ctx=bundle.getContext("2d");ctx.fillStyle="#f4f7fa";ctx.fillRect(0,0,bundle.width,bundle.height);textOn(ctx,"GPIO 照片判讀素材 · "+img.name,gap,40,27);textOn(ctx,`${img.markers.length} 個位置 ID 是定位提示；Pin 是候選或人工輸入資料。預標點不等於已確認的 GPIO 插入點。`,gap,77,20);textOn(ctx,(hasPreparedCloudObservations()?"標記色來自雲端候選判讀，開頁前已完成；":hasPreparedAiPrelabels()?"AI 照片預標已在開頁前完成；":"")+"頁面未呼叫 AI。局部保留原圖像素，未調色、未銳化。",gap,108,18,"#607487");
+  textOn(ctx,"1 · 原圖概覽",gap,headerH+35);textOn(ctx,"2 · 同一照片的位置標記",panelW+gap*2,headerH+35);
+  const top=headerH+titleH;ctx.drawImage(bitmap(),gap,top,panelW,panelH);
+  const annotated=document.createElement("canvas");annotated.width=img.width;annotated.height=img.height;const actx=annotated.getContext("2d");actx.drawImage(bitmap(),0,0);drawMarkers(actx,img,{text:true,hints:$("hintToggle").checked,selection:false});ctx.drawImage(annotated,panelW+gap*2,top,panelW,panelH);
+  const cropTop=top+panelH+gap;if(rect){textOn(ctx,"3 · 位置 "+marker.id+" 的未調色原圖局部（不含標記）",gap,cropTop+32);ctx.drawImage(bitmap(),rect.x,rect.y,rect.width,rect.height,gap,cropTop+titleH,rect.width,rect.height);textOn(ctx,`原圖 X ${rect.x} / Y ${rect.y} · ${rect.width} × ${rect.height} px`,gap+rect.width+24,cropTop+titleH+30,19,"#607487");textOn(ctx,"局部色票不等於連線判定；遮擋或看不清應回報未知。",gap+rect.width+24,cropTop+titleH+65,19,"#607487");}else{textOn(ctx,"未選取局部位置；請以原圖與標記圖逐點回報證據或未知。",gap,cropTop+32,20);}
+  pngDownload(bundle,`${safeFileName(img.id)}-ai-material.png`);
+});
+$("exportPrompt").addEventListener("click",()=>{
+  const img=imageState();const positions=img.markers.map(marker=>({position_id:marker.id,x:marker.x,y:marker.y,position_source:marker.source,candidate_physical_pin:marker.physical_pin,human_reviewed_pin:marker.reviewed&&marker.physical_pin!==null,...(marker.cloud_observation?{prior_cloud_observation:clone(marker.cloud_observation),prior_observation_is_unverified:true}:{})}));
+  let prompt=`請判讀提供的 Raspberry Pi GPIO 照片。素材包含原圖概覽、同一照片的位置標記，以及選取位置的未調色原圖局部。\n\n位置 ID 只指向照片區域。ai_visual_prelabel 表示 AI 助理在開啟此頁前查看照片，預標可見的接頭出線口；user_added／user_moved 表示使用者新增或移動。出線口與 GPIO 實際插入點不同，所有預標都是待核對的定位候選，不能當成腳號答案。候選實體 Pin 與人工核對旗標也可能錯誤，請與照片直接可觀察到的證據分開。不要把 candidate、expected、標記文字、幾何投影或線色慣例當成 observed truth。黃色十字（如有）只是未核實的參考投影，不代表該腳有接線。\n\n請逐個位置回傳：position_id、observed_wire_color、insertion_visible、observed_physical_pin、supporting_evidence、unknown_reason。只根據原圖像素判讀線色與實際插入點。若無法由可見腳位、板子方向及排針起點確認實體腳號，observed_physical_pin 請回傳 null 並說明原因。插入點被遮擋時不要按最近距離猜測；看不清就回報未知。不要用局部色票推論導通或兩端連線。不同照片即使用相同位置 ID，也不能直接推定為同一條線。\n\n照片：${img.name}\n尺寸：${img.width} × ${img.height} 原圖像素\nSHA-256：${img.sha256}\n位置資料（僅為定位與候選 metadata，不是答案）：\n${JSON.stringify(positions,null,2)}\n\n此離線頁面未呼叫雲端 AI，也未量測辨識準確率。AI 照片預標於開頁前完成。請輸出你的觀察與證據，不沿用先前對話的接線猜測。\n`;
+  if(hasPreparedCloudObservations())prompt="這份資料包含先前雲端模型聯合判讀的定位與線色候選。cloud_vision_joint 表示開頁前已完成的雲端照片判讀；prior_cloud_observation 是尚未人工核實的歷史候選。標記顏色只是先前模型回傳的線色，不是新的照片證據。請獨立查看原圖，回報你自己的觀察；不要直接複製先前線色、座標或證據。使用者移動位置後，歷史線色觀察可能不再適用。\n\n"+prompt;
+  saveBlob(new Blob([prompt],{type:"text/plain;charset=utf-8"}),`${safeFileName(img.id)}-ai-prompt.txt`);notify("已下載提示詞；其中的候選腳號與照片觀察有明確區分。");
+});
+async function start(){
+  try{state=normalizeInitial(state);const select=$("viewSelect");state.images.forEach((img,index)=>{const option=document.createElement("option");option.value=String(index);option.textContent=img.name;select.appendChild(option);});
+    await Promise.all(state.images.map(img=>new Promise((resolve,reject)=>{const source=new Image();source.onload=()=>{if(source.naturalWidth!==img.width||source.naturalHeight!==img.height){reject(new Error("照片解碼尺寸與標記資訊不符："+img.name));return;}bitmapCache.set(img.id,source);resolve();};source.onerror=()=>reject(new Error("原圖無法解碼："+img.name));source.src=img.data_url;})));
+    ready=true;$("mainEmpty").classList.add("hidden");selectedId=imageState().markers[0]?.id||null;
+    const prelabelCount=state.images.reduce((count,img)=>count+img.markers.filter(isAiPrelabel).length,0),cloudCount=state.images.reduce((count,img)=>count+img.markers.filter(hasCloudObservation).length,0);
+    $("pageHeading").textContent=cloudCount?"雲端已判讀位置與線色":prelabelCount?"AI 已先標出可見出線口":"先標出位置，再逐點核對";
+    if(cloudCount){$("exportHelp").textContent="核對雲端候選與照片證據；匯出 JSON 保存結果。素材 PNG 可供再次判讀，標記色不是人工確認答案。";const run=state.cloud_run;if(run&&typeof run.model==="string"&&typeof run.effort==="string"){$("cloudRunInfo").classList.remove("hidden");$("cloudRunInfo").textContent=`本次模型：${run.model} · 推理設定：${run.effort}`+(typeof run.cloud_request_ms==="number"&&Number.isFinite(run.cloud_request_ms)&&run.cloud_request_ms>=0?` · 雲端請求 ${(run.cloud_request_ms/1000).toFixed(2)} 秒`:"")+(run.one_request===true?" · 兩張照片合併一次請求":"");}}
+    render();notify((cloudCount?`已載入 ${state.images.length} 張照片、${cloudCount} 個雲端位置與線色候選；`:prelabelCount?`已載入 ${state.images.length} 張照片、${prelabelCount} 個 AI 照片預標；`:"位置資料已載入；")+"腳號尚未核實。可直接點選、拖曳或新增位置。");
+  }catch(error){$("mainCanvas").classList.add("hidden");$("mainEmpty").textContent=error.message;document.querySelectorAll("button,input,select").forEach(el=>{el.disabled=true;});notify("載入失敗："+error.message,true);}
+}
+start();
+</script>
+</body>
+</html>

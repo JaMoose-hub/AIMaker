@@ -66,7 +66,7 @@ test('returning from a wiring conversation diagram preserves its focus until an 
 
 test('exact TFT confirmation never substitutes another active run or offers a new test',async()=>{
   const design=designFor(['mrd-tf240-8p-cs']);const session={...confirmed(design),componentIndex:0};
-  const run={id:'new-run',project_id:design.id,component_id:'mrd-tf240-8p-cs',guide_key:componentTests.componentTestKey(design,session,'mrd-tf240-8p-cs'),
+  const run={id:'new-run',project_id:design.id,revision:design.revision,component_id:'mrd-tf240-8p-cs',guide_key:componentTests.componentTestKey(design,session,'mrd-tf240-8p-cs'),
     reserved:true,outcome:'awaiting_confirmation',phase:'awaiting_visual',created_at:1,options:['1111','2222'],samples:{},logs:[]};
   const tests={status:{connected:true,active:run,results:[run]},pending:false,error:null};
   const wrong=await renderTestCard({design,session,tests,runId:'old-run'});

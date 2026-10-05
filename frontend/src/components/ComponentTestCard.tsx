@@ -168,7 +168,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     </> : null}
     {showControls ? <><div className="test-actions">
       {!tests.status.connected && !compactActions ? <small>{tr("請使用上方「連線 Pi」", "Use Connect Pi at the top")}</small> : null}
-      {!runId && complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} title={!tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
+      {!runId && session.phase !== "prepare" && complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} title={!tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
       {compactActions ? debugAction : null}
       {canAct && phase === "awaiting_stop_consent" ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, "stop_project")}>{tr("確認停止原作品，開始測試", "Stop original project and test")}</button> : null}
       {canAct && (phase === "awaiting_near" || phase === "awaiting_far") ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, phase === "awaiting_near" ? "near" : "far")}>{tr("準備好了，取樣 5 秒", "Ready · sample for 5 seconds")}</button> : null}
@@ -179,7 +179,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
       <div className="test-code-options">{run.options.map(code => <label key={code}><input type="radio" name={`test-code-${run.id}`} checked={choice.runId === run.id && choice.code === code}
         onChange={() => setChoice(c => ({runId:run.id,code,normal:c.runId === run.id && c.normal}))} />{code}</label>)}</div>
       <label><input type="checkbox" checked={choice.runId === run.id && choice.normal} onChange={event => setChoice(c => ({runId:run.id,code:c.runId === run.id ? c.code : "",normal:event.target.checked}))} />{tr("紅、綠、藍三色正常", "Red, green and blue were normal")}</label>
-      <button disabled={choice.runId !== run.id || !choice.code || !choice.normal} onClick={() => void tests.action(run, "visual", {code:choice.code,appearance:"normal"})}>{tr("確認顯示結果", "Confirm display result")}</button>
+      <button className="guide-primary-action" disabled={choice.runId !== run.id || !choice.code || !choice.normal} onClick={() => void tests.action(run, "visual", {code:choice.code,appearance:"normal"})}>{tr("確認顯示結果", "Confirm display result")}</button>
       <div className="test-actions">{([['black','全黑','Black screen'],['white','白屏','White screen'],['abnormal','亂碼／顏色異常','Abnormal image/colors']] as const).map(([appearance,zh,en]) => <button key={appearance} onClick={() => void tests.action(run,"visual",{appearance})}>{tr(zh,en)}</button>)}</div>
     </fieldset> : null}
     {compactActions && view !== "dock" ? <details className="test-more-actions"><summary>{tr("其他操作", "More actions")}</summary><div>

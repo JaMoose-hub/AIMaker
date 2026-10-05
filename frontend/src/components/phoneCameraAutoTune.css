@@ -1,0 +1,9 @@
+.mw-auto-tune { border: 1px solid var(--mw-line); border-radius: var(--radius-card); padding: 10px 12px; background: var(--mw-subtle); }
+.mw-auto-tune-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mw-auto-tune-trigger { min-height: 44px; padding: 8px 12px; font-size: 12px !important; color: var(--mw-accent); }
+.mw-auto-tune-trigger > span { font-size: 17px; }
+.mw-auto-tune-feedback { display: grid; gap: 5px; margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--mw-secondary); }
+.mw-auto-tune-feedback .mw-quiet { justify-content: flex-start; padding: 6px 0; text-align: left; font-size: 11px; }
+.mw-auto-tune[aria-busy="true"] .mw-auto-tune-trigger > span { animation: mw-tune-pulse 1.4s ease-in-out infinite; }
+@keyframes mw-tune-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .mw-auto-tune[aria-busy="true"] .mw-auto-tune-trigger > span { animation: none; } }

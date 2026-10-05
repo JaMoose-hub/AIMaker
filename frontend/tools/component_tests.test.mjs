@@ -50,7 +50,7 @@ test('guide keeps physical screen instructions left and run-bound confirmation c
   assert.equal((actions.match(/type="radio"/g)||[]).length,4);
   assert.match(actions,/name="test-code-run-1"/);
   assert.match(actions,/停止本次測試/);
-  assert.match(actions,/<button disabled="">確認顯示結果/);
+  assert.match(actions,/<button class="guide-primary-action" disabled="">確認顯示結果/);
 });
 
 test('compact test phases expose distance samples and keep raw telemetry in closed details',async()=>{
@@ -257,7 +257,7 @@ test('a live or disconnected test retains stop controls even before wiring or af
   const design=designFor(['hc-sr04','mrd-tf240-8p-cs']),finished=complete(design);
   for(const overrides of [{}, {reason:'connection_lost'}, {project_id:'other',component_id:'mrd-tf240-8p-cs'}]) {
     const tests=state(runFor(design,finished,{reserved:true,outcome:'running',...overrides}));
-    for(const session of [maker.emptyGuide(),maker.restartProjectGuide(finished)]) {
+    for(const session of [maker.emptyGuide(),maker.restartProjectGuide(finished),{...finished,phase:'prepare',index:0,restored:true}]) {
       const html=await renderGuide({design,session,tests});
       assert.ok(html.includes('component-test-card') && html.includes('停止本次測試'));
       assert.ok(!html.includes('>重新測試 HC-SR04+') && !html.includes('>測試 HC-SR04+'));
@@ -361,7 +361,7 @@ test('TFT completed process is awaiting visual confirmation, with colors, option
   assert.ok(html.includes('等待使用者確認'));
   assert.equal((html.match(/type="radio"/g)||[]).length,4);
   assert.ok(html.includes('type="checkbox"'));
-  assert.ok(html.includes('<button disabled="">確認顯示結果'));
+  assert.ok(html.includes('<button class="guide-primary-action" disabled="">確認顯示結果'));
   for(const text of ['全黑','白屏','亂碼／顏色異常','停止本次測試']) assert.ok(html.includes(text));
   assert.ok(!html.includes('class="test-outcome passed"'));
   assert.ok(html.includes('沒看到請勿猜選'));
@@ -495,12 +495,16 @@ test('saved pass is labelled history and changed wiring is not passed',async()=>
   assert.ok(!html.includes('class="test-outcome passed"'));
 });
 
-test('refresh with completed wires keeps test/result navigation instead of asking to wire again',async()=>{
+test('refresh with completed wires opens preparation without auto-skipping to test/result navigation',async()=>{
   const design=designFor(),session={...complete(design),phase:'prepare',index:0,restored:true};
-  const html=await renderGuide({design,session});
-  assert.ok(!html.includes('guide-prepare-message'));
-  assert.ok(html.includes('稍後測試，前往部署'));
-  assert.ok(html.includes('測試 HC-SR04+'));
+  const tests=state(runFor(design,session,{outcome:'passed'})),before=structuredClone(tests);
+  const html=await renderGuide({design,session,tests});
+  assert.ok(html.includes('guide-prepare-message'));
+  assert.ok(html.includes('開始接線 →'));
+  assert.ok(!html.includes('稍後測試，前往部署'));
+  assert.ok(!html.includes('component-test-card'));
+  assert.deepEqual(tests,before,'opening preparation must not invalidate historical tests');
+  assert.ok((await renderGuide({design,session:{...session,phase:'review'},tests})).includes('component-test-card'));
 });
 
 test('guide no longer imports/submits photo checks, but AI design and deployment remain',()=>{

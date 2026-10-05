@@ -184,7 +184,7 @@ test("Eye uses the same real wiring overlays, guide target and highlighted pins 
     assert.equal(normal.tracking[0], realtimeEnabled);
     assert.equal(eye.tracking[1], normal.tracking[1]);
     assert.equal(eye.tracking[4], "eye");
-    assert.equal(normal.tracking[4], "standard");
+    assert.equal(normal.tracking[4], "device");
     assert.deepEqual(eye.pin.displayOffsetPx,{x:0,y:0});
   }
 });
@@ -198,7 +198,7 @@ test("Eye exit hides its image and GPIO while restore or config refresh is pendi
     ]) {
       const leaving=await renderWiringVideo({displayMode:"standard",realtimeEnabled,bodyEvidence:"current",...context});
       assert.equal(leaving.tracking[0],false);
-      assert.equal(leaving.tracking[4],"standard");
+      assert.equal(leaving.tracking[4],context.cameraSource);
       assert.match(leaving.html,/video-img hidden/);
       assert.doesNotMatch(leaving.html,/src=|data-component-id=|data-guide-connection=|data-body-component=/);
     }
@@ -249,7 +249,8 @@ test("transient tracking prompts never cover the video, but offline warning rema
     assert.match(rendered.html, /data-tracking-frame="77"/);
   }
   const offline = await renderWiringVideo({ backendDown: true, hasTarget: false });
-  assert.match(offline.html, /hint-pill offline/);
+  assert.match(offline.html, /live-camera-message[\s\S]*role="status"[\s\S]*影像服務連線中/);
+  assert.doesNotMatch(offline.html, /hint-pill offline/);
 });
 
 test("only Eye shows body-only recognition; Webcam retains original GPIO and wiring overlays", async () => {

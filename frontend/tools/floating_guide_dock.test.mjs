@@ -56,7 +56,7 @@ test('dock never collapses TFT code choices, abnormal options or stop into diagn
   const visible=beforeDetails(await renderGuide(f));
   assert.equal((visible.match(/type="radio"/g)||[]).length,4);
   assert.match(visible,/沒看到請勿猜選/);assert.match(visible,/name="test-code-dock-test"/);
-  assert.match(visible,/<button disabled="">確認顯示結果/);
+  assert.match(visible,/<button class="guide-primary-action" disabled="">確認顯示結果/);
   for(const text of ['停止本次測試','全黑','白屏','亂碼／顏色異常']) assert.ok(visible.includes(text));
 });
 test('lost or stale active tests keep Stop but disallow advancing samples',async()=>{

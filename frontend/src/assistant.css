@@ -16,7 +16,7 @@
 .assistant-workspace [hidden] { display: none !important; }
 .assistant-workspace .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .assistant-workspace :is(.unified-assistant, .assistant-demo-workspace, .assistant-mobile-tabs) button,
-.assistant-workspace :is(.assistant-collapse, .assistant-demo-entry) {
+.assistant-workspace .assistant-collapse {
   border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-card); color: var(--ink-primary);
   padding: 6px 9px; font-family: inherit; line-height: 1.4; cursor: pointer; transition: background-color 120ms, border-color 120ms;
 }
@@ -36,26 +36,30 @@
 .app.tinkro-theme:not(.display-mode-active) .assistant-workspace .assistant-collapse:focus-visible {
   background: transparent; border-color: transparent;
 }
-/* Low-gloss midnight glass with slow ambient light. Only decorative opacity
+/* Logo-blue midnight glass with a tight teal halo. Only decorative opacity
    and transforms animate; the 46px hit area and surrounding layout stay still. */
 .assistant-collapse::before {
-  content: ""; position: absolute; inset: -9px; border-radius: 50%; z-index: -1;
-  background: radial-gradient(circle, rgb(68 172 205 / 50%) 12%, rgb(63 120 187 / 32%) 42%, transparent 72%);
-  opacity: .6; pointer-events: none; animation: assistant-orb-breathe 4.6s ease-in-out infinite;
+  content: ""; position: absolute; inset: -1px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(ellipse at 28% 28%, color-mix(in srgb, var(--brand-blue) 44%, transparent), transparent 64%),
+    radial-gradient(ellipse at 72% 74%, color-mix(in srgb, var(--brand-teal) 42%, transparent), transparent 68%);
+  opacity: .45; pointer-events: none; animation: assistant-orb-breathe 4.6s ease-in-out infinite;
 }
 .assistant-collapse::after {
   content: ""; position: absolute; inset: 4px; border-radius: 50%; z-index: 1;
-  background: conic-gradient(from 150deg, transparent 62%, rgb(85 167 207 / 24%) 75%, rgb(167 237 246 / 90%) 86%, rgb(102 187 228 / 45%) 91%, transparent 98%);
-  mask-image: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
-  opacity: .7; pointer-events: none; transition: opacity 240ms ease;
+  background: conic-gradient(from 150deg, transparent 62%, color-mix(in srgb, var(--brand-blue) 40%, transparent) 75%,
+    color-mix(in srgb, var(--brand-teal) 85%, transparent) 86%, rgb(167 237 225 / 52%) 91%, transparent 98%);
+  mask-image: radial-gradient(farthest-side, transparent calc(100% - 1px), #000 calc(100% - .5px));
+  opacity: .55; pointer-events: none; transition: opacity 240ms ease;
   animation: assistant-orb-orbit 12s linear infinite;
 }
 .assistant-orb {
   position: relative; display: block; width: 36px; height: 36px; border-radius: 50%; isolation: isolate;
-  border: 1px solid rgb(124 182 209 / 48%); overflow: hidden;
-  background: radial-gradient(ellipse at 28% 18%, rgb(181 225 239 / 24%), rgb(92 164 186 / 10%) 30%, transparent 55%),
-    radial-gradient(ellipse at 74% 84%, rgb(49 81 142 / 50%), transparent 65%), linear-gradient(145deg, #203f51, #142c42 55%, #0d192e);
-  box-shadow: inset 1px 1px 2px rgb(188 228 240 / 22%), inset -3px -4px 8px rgb(3 12 27 / 52%), 0 3px 10px rgb(0 12 32 / 30%), 0 0 14px rgb(64 149 196 / 22%);
+  border: 1px solid color-mix(in srgb, var(--brand-teal) 48%, transparent); overflow: hidden;
+  background: radial-gradient(ellipse at 28% 18%, rgb(195 225 245 / 22%), transparent 48%),
+    radial-gradient(ellipse at 76% 82%, color-mix(in srgb, var(--brand-teal) 78%, transparent), transparent 67%),
+    radial-gradient(ellipse at 20% 22%, color-mix(in srgb, var(--brand-blue) 80%, transparent), transparent 66%),
+    linear-gradient(145deg, var(--brand-navy), #142745 55%, #0b182e);
+  box-shadow: inset 1px 1px 2px rgb(188 228 240 / 18%), inset -3px -4px 8px rgb(3 12 27 / 48%), 0 2px 6px rgb(0 12 32 / 30%), 0 0 7px color-mix(in srgb, var(--brand-teal) 22%, transparent);
   transition: transform 280ms ease, box-shadow 320ms ease, border-color 320ms ease; pointer-events: none;
 }
 .assistant-orb::before {
@@ -64,22 +68,23 @@
 }
 .assistant-orb-energy {
   position: absolute; inset: 3px 1px; border-radius: inherit;
-  background: conic-gradient(from 35deg, transparent 8%, rgb(119 204 218 / 75%) 28%, transparent 48%, rgb(116 157 215 / 65%) 72%, transparent 92%);
+  background: conic-gradient(from 35deg, transparent 8%, color-mix(in srgb, var(--brand-teal) 88%, transparent) 28%,
+    transparent 48%, color-mix(in srgb, var(--brand-blue) 85%, transparent) 72%, transparent 92%);
   mask-image: radial-gradient(farthest-side, transparent 61%, #000 77%, transparent 96%);
   opacity: .72; transform: rotate(-30deg) scaleY(.72);
   transition: opacity 320ms ease; pointer-events: none; animation: assistant-orb-drift 10s linear infinite;
 }
-.assistant-orb-core { position: absolute; width: 19px; height: 19px; inset: 0; margin: auto; color: #c5e3ee; filter: drop-shadow(0 0 3px rgb(123 192 213 / 38%)); transition: opacity 220ms ease, transform 280ms ease; }
+.assistant-orb-core { position: absolute; width: 19px; height: 19px; inset: 0; margin: auto; color: #eafffa; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--brand-teal) 30%, transparent)); transition: opacity 220ms ease, transform 280ms ease; }
 .assistant-orb-chevron { position: absolute; width: 18px; height: 18px; inset: 0; margin: auto; color: #efffff; opacity: 0; transition: opacity 180ms ease, transform 240ms ease; }
-.assistant-collapse:is(:hover, :focus-visible) .assistant-orb { transform: translateY(-1px) scale(1.025); border-color: rgb(151 209 229 / 72%); box-shadow: inset 1px 1px 3px rgb(201 233 245 / 30%), inset -3px -4px 8px rgb(2 15 40 / 45%), 0 3px 12px rgb(0 12 32 / 30%), 0 0 22px rgb(75 159 205 / 38%); }
+.assistant-collapse:is(:hover, :focus-visible) .assistant-orb { transform: translateY(-1px) scale(1.025); border-color: color-mix(in srgb, var(--brand-teal) 76%, white); box-shadow: inset 1px 1px 3px rgb(201 233 245 / 26%), inset -3px -4px 8px rgb(2 15 40 / 45%), 0 2px 8px rgb(0 12 32 / 30%), 0 0 10px color-mix(in srgb, var(--brand-teal) 30%, transparent); }
 .assistant-collapse:is(:hover, :focus-visible) .assistant-orb-energy { opacity: .8; }
 .assistant-collapse:is(:hover, :focus-visible)::after { opacity: 1; }
 .assistant-collapse:is(:hover, :focus-visible) .assistant-orb-core { opacity: 0; transform: scale(.75); }
 .assistant-collapse:is(:hover, :focus-visible) .assistant-orb-chevron { opacity: 1; }
 .assistant-collapse:active .assistant-orb { transform: scale(.97); }
-:root[data-theme="light"] .assistant-orb { border-color: rgb(55 114 146 / 65%); box-shadow: inset 1px 1px 2px rgb(188 228 240 / 28%), inset -3px -4px 8px rgb(2 15 40 / 40%), 0 3px 9px rgb(25 70 115 / 18%), 0 0 14px rgb(67 145 190 / 18%); }
-:root[data-theme="light"] .assistant-collapse::before { background: radial-gradient(circle, rgb(57 135 181 / 36%) 12%, rgb(68 127 191 / 22%) 42%, transparent 72%); }
-@keyframes assistant-orb-breathe { 0%, 100% { opacity: .38; transform: scale(.9); } 50% { opacity: .95; transform: scale(1.13); } }
+:root[data-theme="light"] .assistant-orb { border-color: color-mix(in srgb, var(--brand-teal) 66%, transparent); box-shadow: inset 1px 1px 2px rgb(188 228 240 / 22%), inset -3px -4px 8px rgb(2 15 40 / 40%), 0 2px 6px rgb(25 70 115 / 18%), 0 0 7px color-mix(in srgb, var(--brand-teal) 18%, transparent); }
+:root[data-theme="light"] .assistant-collapse::before { background: radial-gradient(ellipse at 28% 28%, color-mix(in srgb, var(--brand-blue) 24%, transparent), transparent 64%), radial-gradient(ellipse at 72% 74%, color-mix(in srgb, var(--brand-teal) 28%, transparent), transparent 68%); }
+@keyframes assistant-orb-breathe { 0%, 100% { opacity: .3; transform: scale(.96); } 50% { opacity: .58; transform: scale(1.04); } }
 @keyframes assistant-orb-drift { from { transform: rotate(-30deg) scaleY(.72); } to { transform: rotate(330deg) scaleY(.72); } }
 @keyframes assistant-orb-orbit { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 .assistant-orb-label { display: none; }
@@ -88,7 +93,7 @@
 .ai-collapsed .assistant-chat-surface { align-items: center; border-color: transparent; background: transparent; }
 .app.tinkro-theme:not(.display-mode-active) .assistant-workspace.ai-collapsed .assistant-collapse { position: relative; top: auto; right: auto; margin-top: 6px; }
 .ai-collapsed .assistant-orb-chevron { transform: rotate(180deg); }
-.ai-collapsed .assistant-orb-label { display: block; position: absolute; top: calc(100% + 6px); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--ink-secondary); }
+.ai-collapsed .assistant-orb-label { display: block; position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 600; letter-spacing: .03em; color: var(--ink-secondary); }
 .assistant-resizer { cursor: col-resize; touch-action: none; margin: 0 2px; border-radius: 6px; display: grid; place-items: center; }
 .assistant-resizer::before { content: ""; width: 3px; height: 48px; border-radius: 3px; background: var(--ink-muted); }
 .assistant-resizer:hover, .assistant-resizer:focus-visible { background: var(--surface-blue); }
@@ -307,8 +312,6 @@
 .app.maker-layout:not(.display-mode-active) .is-unified .assistant-wiring-stage > .compact-guide {
   position: static; transform: none; width: 100%; height: auto; min-height: 0; max-height: none; flex: none;
 }
-.assistant-demo-entry { align-self: flex-start; }
-.assistant-design-tools { display: flex; flex: none; justify-content: flex-end; padding-bottom: 8px; }
 .unified-debug-tools { flex: none; max-height: 32vh; min-height: 0; overflow: auto; border-top: 1px solid var(--line-default); }
 .unified-debug-tools .debug-page, .unified-debug-tools .debug-page-content, .unified-debug-tools .debug-chat-view, .unified-debug-tools .ai-debug-panel, .unified-debug-tools .ai-debug-conversation, .unified-debug-tools .ai-debug-chat { height: auto !important; min-height: 0 !important; overflow: visible !important; flex: none !important; }
 .unified-debug-tools :is(.debug-page, .debug-page-content, .debug-chat-view, .ai-debug-panel, .ai-debug-chat) { padding: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; }
@@ -360,6 +363,21 @@
   flex: 1 1 var(--editor-height, 200px); min-height: max(160px, var(--editor-height, 200px));
 }
 .app:not(.display-mode-active) .is-unified .maker-deploy-main .pi-console { flex: 1 1 160px; max-height: none; }
+/* Reuse the camera in a compact monitor above output; reserve room for logs. */
+.deploy-results-column.has-live-preview { display: flex; flex-direction: column; gap: 10px; }
+.deployment-live-host { flex: none; min-width: 0; }
+.deploy-results-column.has-live-preview > .deploy-output { flex: 1; min-height: 0; }
+.app:not(.display-mode-active) .is-unified .deploy-results-column.has-live-preview .deploy-output { gap: 7px; padding: 10px; }
+.deploy-results-column.has-live-preview .deploy-section-heading h3 { margin-top: 2px; font-size: 14px; }
+.deploy-results-column.has-live-preview .workflow-eyebrow { font-size: 10px; }
+.app:not(.display-mode-active) .is-unified .deploy-results-column.has-live-preview .pi-status-lines { padding: 5px 0; font-size: 11px; }
+.deploy-runtime-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
+.deploy-runtime-tools > button { padding: 5px 8px; font-size: 11px; }
+.deploy-output-details { flex: 1; min-width: 90px; font-size: 11px; color: var(--text-dim); }
+.deploy-output-details summary { padding: 5px 0; cursor: pointer; }
+.deploy-output-details[open] { flex-basis: 100%; }
+.deploy-output-details > :not(summary) { margin: 3px 0; }
+.app:not(.display-mode-active) .is-unified .maker-deploy-main .has-live-preview .pi-console { flex: 1 1 100px; height: auto; min-height: 100px; max-height: none; }
 .assistant-code-height { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .assistant-code-height input { flex: 1; max-width: 240px; }
 .assistant-project-workspace > .maker-design-stage > .maker-preview { min-height: 0; flex: 1; overflow: auto; }
@@ -445,7 +463,7 @@
 @media (prefers-reduced-motion: reduce) {
   .assistant-workspace.is-unified { transition: none; }
   .assistant-send-pending i { animation: none; }
-  .assistant-collapse::before { animation: none; opacity: .6; transform: none; }
+  .assistant-collapse::before { animation: none; opacity: .45; transform: none; }
   .assistant-collapse::after { animation: none; transition: none; opacity: .55; }
   .assistant-orb-energy { animation: none; }
   .assistant-collapse:is(:hover, :focus-visible, :active) .assistant-orb { transform: none; }

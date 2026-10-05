@@ -6,12 +6,12 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 const code=ts.transpileModule(readFileSync(new URL('../src/components/ImageViewControls.tsx',import.meta.url),'utf8'),{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
-function load(open=false){
+function load(open=false,portalTargets=[]){
   const exports={};
   new Function('require','exports','React',code)(name=>{
     if(name.endsWith('.css'))return {};
     if(name==='react')return {...React,useState:v=>[typeof v==='boolean'?open:v,()=>{}],useId:()=>':source:',useRef:v=>({current:v}),useEffect(){},useLayoutEffect(){}};
-    if(name==='react-dom')return {createPortal:node=>node};
+    if(name==='react-dom')return {createPortal:(node,target)=>{portalTargets.push(target);return node;}};
     if(name==='../lib/useMaker')return {useMakerText:()=> (zh,en)=>en};
     throw Error(name);
   },exports,React);
@@ -74,6 +74,20 @@ test('custom source popup exposes menu selection without a native select',()=>{
   assert.equal((html.match(/role="menuitemradio"/g)||[]).length,2);
   assert.equal((html.match(/aria-checked="true"/g)||[]).length,1);
   assert.match(html,/image-source-check/);
+});
+
+test('source popup stays inside native fullscreen and cleans up its fullscreen listener',()=>{
+  const previous=globalThis.document,targets=[],fullscreen={id:'preview-fullscreen'};
+  try {
+    globalThis.document={body:{},fullscreenElement:fullscreen};
+    load(true,targets).ImageSourceSelect(sourceProps);
+    assert.equal(targets[0],fullscreen);
+    globalThis.document.fullscreenElement=null;
+    load(true,targets).ImageSourceSelect(sourceProps);
+    assert.equal(targets[1],globalThis.document.body);
+    const source=readFileSync(new URL('../src/components/ImageViewControls.tsx',import.meta.url),'utf8');
+    assert.match(source,/removeEventListener\('fullscreenchange', closeMenu\)/);
+  } finally {globalThis.document=previous;}
 });
 
 test('disabled source picker has no popup or activatable source action',()=>{

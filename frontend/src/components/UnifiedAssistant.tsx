@@ -11,6 +11,8 @@ import { MakerModelMenu } from "./MakerModelMenu";
 import { MobileCompanion, MobileAttachmentCards, type MobileWorkspaceTargets } from "./MobileCompanion";
 import { WiringChatMessage, WiringReceiptStatus } from './WiringChatMessage';
 import { AssistantAnalysisTime } from './AssistantAnalysisTime';
+import { assistantProgress } from '../lib/assistantProgress';
+import { AssistantJobProgress } from './AssistantJobProgress';
 import type { WiringReviewAction, WiringReviewState } from '../lib/wiringReview';
 
 export function DemoChecklist({ record, controller, compact = false, aiReady = false }: { record: AssistantConversation; controller: AssistantController; compact?: boolean; aiReady?: boolean }) {
@@ -103,7 +105,10 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
     .map(asset => asset.filename || (asset.type === "video" ? tr("最近影片", "Recent video") : tr("最近照片", "Recent photo")));
   const aiReady = Boolean(legacy.ai?.logged_in && legacy.aiOptions.selectionValid);
   const latest = record?.messages.at(-1);
-  const chat = useChatScroll(latest ? `${record?.id}:${latest.id}` : "", true);
+  const progress = assistantProgress(record, controller.pending,
+    controller.demoOpen ? undefined : { id: state.aiJobId, phase: legacy.phase });
+  const chatKey = `${latest ? `${record?.id}:${latest.id}` : ''}:${progress?.key ?? ''}:${progress?.phase ?? ''}`;
+  const chat = useChatScroll(latest || progress ? chatKey : "", true);
   const testHelpMessage = !controller.demoOpen && testHelpFocus && testHelpMessageId
     ? record?.messages.find(message => message.id === testHelpMessageId && message.role === "assistant" && message.source === "legacy-debug"
       && message.epoch === record?.context_epoch && message.round === currentRound && message.text === testHelpText
@@ -157,6 +162,7 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
           {message.evidence_ids?.length ? <details><summary>{tr("原始照片證據", "Original photo evidence")}</summary>{message.evidence_ids.map(eid => message.session_id ? <a key={eid} href={`/api/debug/sessions/${encodeURIComponent(message.session_id)}/evidence/${encodeURIComponent(eid)}`} target="_blank" rel="noreferrer">{tr("查看照片", "View photo")} ↗</a> : null)}</details> : null}
         </article>;
         })}
+        {progress ? <AssistantJobProgress progress={progress} /> : null}
         {receiptVisible && !messages.some(message => message.id === receiptController.wiringReceiptMessageId) ? <article className="ai-debug-message is-assistant"
           data-wiring-receipt-message-id={receiptController.wiringReceiptMessageId}>
           <header><strong>Tinkro AI</strong><small>{tr('剛才的接線核對', 'Your last wiring review')}</small></header>

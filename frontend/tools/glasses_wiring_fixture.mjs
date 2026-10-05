@@ -13,8 +13,8 @@ function compile(path, replacements = {}) {
   let js = ts.transpileModule(readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  for (const [name, url] of Object.entries({ react, "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"), ...replacements }))
-    js = js.replaceAll(JSON.stringify(name), JSON.stringify(url));
+  for (const [name, url] of Object.entries({ react, "react-dom": import.meta.resolve("react-dom"), "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"), ...replacements }))
+    js = js.replaceAll(JSON.stringify(name), JSON.stringify(url)).replaceAll(`'${name}'`, JSON.stringify(url));
   return dataUrl(js);
 }
 const baseGeometry = compile("lib/geometry.ts");
@@ -36,7 +36,8 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
   extraComponents = [], componentId = "hc-sr04", targetComponentId = componentId,
   overlayComponentId = null, overlayOverview = false, captureTask = null, viewControl = null, alternateView = null, calibrateOpen = false,
   sourceChanging = false, sourceUnavailable = false, cameraIdentity = cameraSource,
-  sourceControl = null, viewNavigation = null, sourceError = '', onRetrySource = undefined } = {}) {
+  sourceControl = null, viewNavigation = null, sourceError = '', onRetrySource = undefined,
+  livePreviewHost = null, livePreviewControls = null, frameAvailable = true } = {}) {
   const detection = { type: "detection", board_id: boardId, runtime_revision: 12, frame_id: 77, ts_ms: 1000,
     tracking: searching ? "searching" : "locked", confidence: .92, video_size: [1920,1080],
     outline: searching ? null : [[100,100],[700,100],[700,600],[100,600]],
@@ -66,11 +67,17 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     "../lib/headerCountDirection":compile("lib/headerCountDirection.ts"),
     "../lib/wiringLabelLayout":compile("lib/wiringLabelLayout.ts"),
     "../lib/capabilities":compile("lib/capabilities.ts"),"../lib/useSmoothedDetection":smooth,"../lib/wsClient":ws });
-  const tracker = dataUrl(`export const calls=[]; export function useRealtimeTracking(...args){calls.push(args);return {frame:args[0]?${JSON.stringify(frame)}:null,fps:args[0]?30:0};}`);
+  const tracker = dataUrl(`export const calls=[]; export function useRealtimeTracking(...args){calls.push(args);return {frame:args[0]&&${frameAvailable}?${JSON.stringify(frame)}:null,fps:args[0]?30:0};}`);
   const guide = dataUrl(`export const calls=[];export function useGuidedPose(target,display){calls.push(target);const s=display??${JSON.stringify(snapshot)};const pose=s.componentPoses.find(p=>p.component_id===target?.componentId)??null;return {...s,pose,visualReady:!${searching}&&Boolean(pose),visualHeld:${visualHeld},visualDetection:s.detection,visualPose:pose};}`);
   const pinRecorder = dataUrl(`import {createElement} from ${JSON.stringify(react)}; import {PinOverlay as Actual} from ${JSON.stringify(pinOverlay)};
     export const calls=[]; export function PinOverlay(props){calls.push(props);return createElement(Actual,props);}`);
   const viewUrl = compile("components/VideoView.tsx", {
+    // SSR has no DOM portal target. Render its children in place in this fixture.
+    "react-dom": dataUrl("export const createPortal=child=>child;"),
+    "./DeploymentLivePreview": compile("components/DeploymentLivePreview.tsx", {
+      "../lib/useMaker": dataUrl("export const useMakerText=()=> (zh,en)=>zh;"),
+      "./deploymentLivePreview.css": dataUrl("export {};"),
+    }),
     "../lib/systemText":systemTextUrl,
     "../lib/wiringLabelLayout":labelLayout,
     "../lib/componentOverlayScope":compile("lib/componentOverlayScope.ts"),
@@ -96,6 +103,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     highlightIds:new Set(["GPIO17"]),selectedPinId:"GPIO17",onSelectPin(){},backendDown,legend:{colorVar:"--ok",label:"Selected target",count:1},
     outlineMm:[85,56],boardName:boardId,calibrateOpen,onCloseCalibrate(){},onCalibrationSuccess(){},guideTarget:target,
     viewControl,viewNavigation,alternateView,sourceChanging,sourceUnavailable,sourceControl,sourceError,onRetrySource,
+    livePreviewHost,livePreviewControls,
     opticalHudCalibration:null,onOpticalHudCalibrationComplete(){},
     overlayComponentId,overlayOverview,debugCaptureTask:captureTask,
   });
@@ -111,5 +119,5 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     };
     html=renderToStaticMarkup(element);
   } finally { console.error=report; }
-  return {html,pin:pinModule.calls[0],tracking:trackerModule.calls[0],target:guideModule.calls[0]};
+  return {html,pin:pinModule.calls[0],tracking:trackerModule.calls[0],trackingCalls:trackerModule.calls.length,target:guideModule.calls[0]};
 }

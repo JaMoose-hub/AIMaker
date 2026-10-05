@@ -52,6 +52,11 @@ export function ImageSourceSelect({ source, disabled, phoneConnected, onSelect, 
       ? tr('手機即時影像', 'Live phone video') : tr('連接手機', 'Connect your phone') },
   ];
   useEffect(() => { setOpen(false); }, [disabled, source]);
+  useEffect(() => {
+    const closeMenu = () => setOpen(false);
+    document.addEventListener('fullscreenchange', closeMenu);
+    return () => document.removeEventListener('fullscreenchange', closeMenu);
+  }, []);
   // Portal avoids clipping by the resizable video shell. It has no camera lifecycle.
   useLayoutEffect(() => {
     if (!expanded) return;
@@ -128,6 +133,6 @@ export function ImageSourceSelect({ source, disabled, phoneConnected, onSelect, 
         <span className="image-source-option-copy"><strong>{item.label}</strong><small>{item.hint}</small></span>
         {source === item.id ? <svg className="image-source-check" viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 10 3 3 7-7"/></svg> : null}
       </button>)}
-    </div>, document.body) : null}
+    </div>, document.fullscreenElement ?? document.body) : null}
   </div>;
 }

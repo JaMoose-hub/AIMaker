@@ -8,6 +8,22 @@ import { receivePhoneRecognition, type MobileRecognition } from "./mobileRecogni
 export type MobileContext = AssistantController["mobileContext"];
 export interface MobilePairing { code: string; qr_payload: string | Record<string, unknown>; expires_at: number | string; base_urls: string[]; base_url?: string; web_url?: string | null }
 export interface MobileWebConfiguration { available: boolean; base_url: string | null; web_url: string | null; certificate_profile_url: string; certificate_url: string }
+/** Normalize an explicit address without inferring it from a historical session. */
+export function mobileAddressOrigin(address: string | null | undefined): string | null {
+  try {
+    const url = new URL(address ?? "");
+    return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? url.origin : null;
+  } catch { return null; }
+}
+export function mobileWebOrigin(configuration: MobileWebConfiguration | null | undefined): string | null {
+  const origin = configuration?.available ? mobileAddressOrigin(configuration.base_url) : null;
+  return origin?.startsWith("https://") ? origin : null;
+}
+export function mobilePairingAtOrigin(pairing: MobilePairing | null, origin: string | null): boolean {
+  if (!pairing || !origin) return false;
+  const address = pairing.web_url || pairing.base_url;
+  return mobileAddressOrigin(address) === origin;
+}
 export interface MobileStream {
   active: boolean; generation: number; publisher_connected?: boolean;
   state: "finding" | "hold_still" | "locked"; can_capture: boolean; reason?: string;
@@ -32,6 +48,8 @@ export interface MobileSession {
   view: { capture_id: string | null; wire_id: string | null; revision: number };
   available_context?: { context_id: string; conversation_id?: string; title?: string } | null;
 }
+/** Status-only identity. It cannot authorize photos, wiring or a camera switch. */
+export type MobileConnection = Pick<MobileSession, "session_id" | "conversation_id" | "context_id" | "title">;
 export type MobileCapture = PhotoCapture & {
   asset_id: string; context_id: string; original_size?: [number, number]; analysis_limited?: boolean;
   capture_source?: "camera_photo" | "phone_frame" | "desktop_stream";
@@ -77,8 +95,9 @@ export function mobileModelRuntime(stream: MobileStream) {
   return { total: models.length, available: available.length, cuda: cuda.length };
 }
 
-export async function mobileRequest<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+export async function mobileRequest<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal; cache?: RequestCache } = {}): Promise<T> {
   const response = await fetch(`/api/mobile/${path}`, { method: options.method ?? "GET", signal: options.signal,
+    ...(options.cache ? { cache: options.cache } : {}),
     headers: { Accept: "application/json", ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) },
     body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   if (!response.ok) {
@@ -173,6 +192,16 @@ export function mobileStateForConversation(value: unknown, conversationId: strin
     && typeof session.context_id === "string" && session.stream && session.view ? session : undefined;
 }
 
+export function mobileConnectionFromState(value: unknown): MobileConnection | null | undefined {
+  if (!value || typeof value !== "object" || !("connection" in value)) return undefined;
+  const connection = (value as { connection: unknown }).connection;
+  if (!connection || typeof connection !== "object") return null;
+  const { session_id, conversation_id, context_id, title } = connection as Partial<MobileConnection>;
+  return typeof session_id === "string" && session_id.length > 0 && typeof conversation_id === "string" && conversation_id.length > 0
+    && typeof context_id === "string" && context_id.length > 0 && typeof title === "string"
+    ? { session_id, conversation_id, context_id, title } : null;
+}
+
 /** A slow view response must not roll back a newer phone selection. */
 export function acceptMobileView(previous: MobileSession | null, sessionId: string, view: MobileSession["view"]) {
   return previous?.session_id === sessionId && view.revision >= previous.view.revision ? { ...previous, view } : previous;
@@ -218,6 +247,9 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
   const contextRef = useRef(context); contextRef.current = context;
   const [sessionRecord, setSession] = useState<MobileSession | null>(null);
   const session = sessionRecord?.conversation_id === conversationId ? sessionRecord : null;
+  const [connectionStatus, setConnectionStatus] = useState<{ connection: MobileConnection | null | undefined; error: string }>({ connection: undefined, error: "" });
+  // Older backends provide project pairing only; never infer a foreign session from it.
+  const connection = !enabled ? null : connectionStatus.connection === undefined ? session : connectionStatus.connection;
   const pairedSession = useRef(session?.session_id ?? null);
   pairedSession.current = session?.session_id ?? null;
   const [pairing, setPairing] = useState<MobilePairing | null>(null);
@@ -227,6 +259,32 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
   const published = useRef("");
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const generation = useRef(0);
+  const [webConfiguration, setWebConfiguration] = useState<MobileWebConfiguration | null>(null);
+  const [webConfigurationError, setWebConfigurationError] = useState("");
+  const configurationSerial = useRef(0);
+  const configurationAbort = useRef<AbortController | null>(null);
+  const manualPairingOrigin = useRef<string | null>(null);
+  const refreshWebConfiguration = useCallback(async () => {
+    const epoch = generation.current, serial = ++configurationSerial.current;
+    configurationAbort.current?.abort();
+    const abort = new AbortController(); configurationAbort.current = abort;
+    const timeout = setTimeout(() => abort.abort(), 5000);
+    try {
+      const next = await mobileRequest<MobileWebConfiguration>("web-config", { signal: abort.signal, cache: "no-store" });
+      if (epoch !== generation.current || serial !== configurationSerial.current || abort.signal.aborted) return null;
+      setWebConfiguration(next); setWebConfigurationError("");
+      if (!manualPairingOrigin.current) setPairing(previous => mobilePairingAtOrigin(previous, mobileWebOrigin(next)) ? previous : null);
+      return next;
+    } catch (cause) {
+      if (epoch !== generation.current || serial !== configurationSerial.current) return null;
+      setWebConfiguration(null); setWebConfigurationError(mobileError(cause));
+      if (!manualPairingOrigin.current) setPairing(null);
+      return null;
+    } finally {
+      clearTimeout(timeout);
+      if (configurationAbort.current === abort) configurationAbort.current = null;
+    }
+  }, []);
   const publish = useCallback((force = false) => {
     const snapshot = contextRef.current;
     if (!snapshot) return Promise.reject(new Error("Workspace is not ready"));
@@ -242,6 +300,8 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
 
   useEffect(() => {
     generation.current += 1; published.current = ""; setSession(null); setPairing(null); setError("");
+    configurationSerial.current++; configurationAbort.current?.abort(); manualPairingOrigin.current = null;
+    setWebConfiguration(null); setWebConfigurationError("");
     if (!enabled || !conversationId) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -267,12 +327,16 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
       socket.onclose = () => { if (!stopped) socketTimer = setTimeout(connect, 2000); };
     };
     const poll = async () => {
-      try { accept(await mobileRequest(`desktop-session?conversation_id=${encodeURIComponent(conversationId)}`, { signal: controller.signal })); }
-      catch (cause) { if (!stopped) setError(mobileError(cause)); }
+      try {
+        const value = await mobileRequest(`desktop-session?conversation_id=${encodeURIComponent(conversationId)}`, { signal: controller.signal });
+        if (!stopped) { setConnectionStatus({ connection: mobileConnectionFromState(value), error: "" }); accept(value); }
+      }
+      catch (cause) { if (!stopped) { const message = mobileError(cause); setConnectionStatus({ connection: null, error: message }); setError(message); } }
       if (!stopped) timer = setTimeout(() => void poll(), 5000);
     };
     connect(); void poll();
-    return () => { stopped = true; controller.abort(); clearTimeout(timer); clearTimeout(socketTimer); socket?.close(); };
+    return () => { stopped = true; generation.current++; controller.abort(); configurationSerial.current++; configurationAbort.current?.abort();
+      clearTimeout(timer); clearTimeout(socketTimer); socket?.close(); };
   }, [conversationId, enabled]);
 
   useEffect(() => {
@@ -288,12 +352,21 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
     const epoch = generation.current;
     const pairedId = pairedSession.current;
     const id = contextRef.current.conversation_id;
-    setPairingBusy(true); setError("");
+    const manual = baseUrl?.trim() || null;
+    manualPairingOrigin.current = manual ? mobileAddressOrigin(manual) : null;
+    setPairing(null); setPairingBusy(true); setError("");
     try {
+      const configuration = manual ? null : await refreshWebConfiguration();
+      const chosen = manual || mobileWebOrigin(configuration);
+      if (epoch !== generation.current) return;
+      if (!chosen) throw new Error("mobile_web_https_unavailable");
       await publish(true);
       if (epoch !== generation.current) return;
-      const next = await mobileRequest<MobilePairing>("pairings", { method: "POST", body: { conversation_id: id, ...(baseUrl ? { base_url: baseUrl } : {}) } });
-      if (epoch === generation.current && pairedId === pairedSession.current) setPairing(next);
+      const next = await mobileRequest<MobilePairing>("pairings", { method: "POST", body: { conversation_id: id, base_url: chosen } });
+      // A network change during POST must not re-expose a code for the old IP.
+      const latest = manual ? null : await refreshWebConfiguration();
+      if (!manual && mobileWebOrigin(latest) !== chosen) return;
+      if (epoch === generation.current && pairedId === pairedSession.current && mobilePairingAtOrigin(next, mobileAddressOrigin(chosen))) setPairing(next);
     } catch (cause) { if (epoch === generation.current) setError(mobileError(cause)); }
     finally { pairingFlight.current = false; setPairingBusy(false); }
   }
@@ -311,5 +384,6 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
       ...(wireId ? { wire_id: wireId } : {}),
     } });
   }
-  return { session, pairing, pairingBusy, error, pair, selectView, sendPhoto, publish };
+  return { session, connection, connectionError: enabled ? connectionStatus.error : "", pairing, pairingBusy, error,
+    webConfiguration, webConfigurationError, refreshWebConfiguration, pairingManual: Boolean(manualPairingOrigin.current), pair, selectView, sendPhoto, publish };
 }

@@ -392,7 +392,7 @@ test('frozen photo review labels actual capture source and geometry dimensions w
   }
 });
 
-function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffects=false,pairing=null,error='',locale='en'}={}) {
+function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffects=false,pairing=null,error='',connection=undefined,connectionError='',locale='en',configuration={available:true,base_url:'https://fixture.test',web_url:'https://fixture.test/mobile'}}={}) {
   let cursor=0,refCursor=0,effectCursor=0,dirty=false,pending=[],captureDone;
   const values=[],refs=[],effects=[],shown=[],requests=[];
   if(!runEffects){values[7]=streamCaptureFixture();values[8]=values[7].capture_id;
@@ -405,17 +405,19 @@ function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffect
       return[values[i],value=>{const next=typeof value==='function'?value(values[i]):value;dirty||=!Object.is(next,values[i]);values[i]=next;}];},
   };
   const workspace={trigger:{id:'header'},controls:toolbar?{id:'toolbar'}:null,preview:{id:'preview'},showing:false,canShow,onShow(value){shown.push(value);workspace.showing=value;}};
-  let session=paired?{session_id:'s',base_url:'https://fixture.test',stream:{active:true,publisher_connected:true,generation:1,state:'finding'},view:{capture_id:'cap'},context_id:'ctx'}:null;
+  let session=paired?{session_id:'s',conversation_id:'chat',base_url:'https://fixture.test',stream:{active:true,publisher_connected:true,generation:1,state:'finding'},view:{capture_id:'cap'},context_id:'ctx'}:null;
   const {MobileCompanion}=load('../src/components/MobileCompanion.tsx',{
     react:hooks,'react/jsx-runtime':jsx,'react-dom':{createPortal:(children,host)=>React.createElement('qa-portal',{host},children)},
-    '../lib/useMaker':{useMakerText:()=> (zh,en)=>locale==='en'?en:zh},'../lib/mobile':{...mobile,useMobileCompanion:()=>({session,pairing,error,pairingBusy:false,
+    '../lib/useMaker':{useMakerText:()=> (zh,en)=>locale==='en'?en:zh},'../lib/mobile':{...mobile,useMobileCompanion:()=>({session,connection,connectionError,pairing,error,pairingBusy:false,
+      webConfiguration:configuration,
       pair:async(baseUrl)=>{requests.push({path:'pairings',method:'POST',baseUrl});
-        pairing={code:'591204',web_url:'https://fixture.test/mobile?code=591204',base_url:'https://fixture.test',base_urls:[],expires_at:Date.now()/1000+300};}}),
+        const origin=mobile.mobileAddressOrigin(baseUrl)||mobile.mobileWebOrigin(configuration);
+        pairing={code:'591204',web_url:origin+'/mobile?code=591204',base_url:origin,base_urls:[],expires_at:Date.now()/1000+300};}}),
       mobileRequest:async(path,options)=>{requests.push({path,...options});return path==='web-config'
-        ? {available:true,base_url:'https://fixture.test',web_url:'https://fixture.test/mobile'}
+        ? configuration
         : streamCaptureFixture({capture_id:decodeURIComponent(path.split('/').at(-1))});},
       useDesktopStreamCapture:(_session,onCapture)=>{captureDone=onCapture;return{busy:false,error:'',capture(){assert.fail('No photo operation');},retry(){assert.fail('No retry');}};}},
-    '../lib/mobileViewerStats':viewerStats,'../lib/photoWiring':photo,'./PhotoWiringPoc':{},'../mobile.css':{},
+    '../lib/mobileViewerStats':viewerStats,'../lib/photoWiring':photo,'./PhotoWiringPoc':{},'./ImageViewControls':{ImageSourceSelect:()=>null},'../mobile.css':{},
     qrcode:{toDataURL:async()=> 'data:image/png;base64,fixture'},
   });
   const render=(selection=null)=>{let tree,passes=0;do{
@@ -425,7 +427,7 @@ function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffect
     assert.ok(++passes<20,'companion effects must settle');
   }while(runEffects&&dirty);return tree;};
   const nodes=(tree,predicate)=>{const found=[];function visit(node){if(!React.isValidElement(node))return;if(predicate(node))found.push(node);React.Children.forEach(node.props.children,visit);}visit(tree);return found;};
-  return{render,nodes,workspace,shown,requests,setSession(next){if(next?.session_id!==session?.session_id)pairing=null;session=next;},capture(next){captureDone(next);},unmount(){effects.forEach(effect=>effect.cleanup?.());}};
+  return{render,nodes,workspace,shown,requests,setConfiguration(next){configuration=next;},setPairing(next){pairing=next;},setSession(next){if(next?.session_id!==session?.session_id)pairing=null;session=next;},capture(next){captureDone(next);},unmount(){effects.forEach(effect=>effect.cleanup?.());}};
 }
 
 test('restoring a saved GPIO photo never selects or opens it on refresh',t=>{
@@ -512,11 +514,11 @@ test('restored photos are passive in shared workspace; explicit attachment selec
   assert.equal(h.nodes(tree,n=>n.props.id==='mobile-companion-panel').length,0);
 });
 
-test('global phone entry shows only QR and connection status, never a second video receiver',async()=>{
+test('global phone entry shows only QR and connection status, never a second video receiver',async t=>{
   const pairing={code:'482913',web_url:'https://fixture.test/mobile?code=482913',base_url:'https://fixture.test',base_urls:[],expires_at:Date.now()/1000+300};
-  const h=companionLayoutHarness({toolbar:false,pairing});let tree=h.render();
+  const h=companionLayoutHarness({toolbar:false,pairing,runEffects:true});t.after(()=>h.unmount());let tree=h.render();
   const trigger=h.nodes(tree,n=>n.type==='qa-portal'&&n.props.host===h.workspace.trigger)[0].props.children;
-  trigger.props.onClick();await Promise.resolve();tree=h.render();const panel=h.nodes(tree,n=>n.type==='section'&&n.props.id==='mobile-companion-panel')[0];
+  trigger.props.onClick();tree=h.render();for(let i=0;i<8;i++){await Promise.resolve();tree=h.render();}const panel=h.nodes(tree,n=>n.type==='section'&&n.props.id==='mobile-companion-panel')[0];
   assert.ok(panel);assert.match(panel.props.className,/is-connection/);
   assert.equal(h.nodes(panel,n=>n.props.className==='mobile-view-tabs').length,0);
   assert.equal(h.nodes(panel,n=>n.type?.name==='MobileVideo'||n.type?.name==='MobilePhotoReview'||n.type?.name==='MobileStreamCaptureActions').length,0);
@@ -540,11 +542,12 @@ test('header opens QR from photo review without closing the existing main previe
   assert.equal(h.nodes(tree,n=>n.type==='qa-portal'&&n.props.host===h.workspace.preview).length,1);
 });
 
-test('unpaired QR keeps pairing code and setup help but no camera controls, in both languages',()=>{
+test('unpaired QR keeps pairing code and setup help but no camera controls, in both languages',async t=>{
   const pairing={code:'482913',web_url:'https://fixture.test/mobile?code=482913',base_url:'https://fixture.test',base_urls:[],expires_at:Date.now()/1000+300};
   for(const locale of ['en','zh-TW']){
-    const h=companionLayoutHarness({paired:false,pairing,locale});let tree=h.render();
+    const h=companionLayoutHarness({paired:false,pairing,locale,runEffects:true});t.after(()=>h.unmount());let tree=h.render();
     h.nodes(tree,n=>n.type==='qa-portal'&&n.props.host===h.workspace.trigger)[0].props.children.props.onClick();tree=h.render();
+    for(let i=0;i<8;i++){await Promise.resolve();tree=h.render();}
     const panel=h.nodes(tree,n=>n.props.id==='mobile-companion-panel')[0];
     assert.equal(h.nodes(panel,n=>n.type==='img').length,1);
     assert.equal(h.nodes(panel,n=>n.props.className==='mobile-pairing-code')[0].props.children,'482913');
@@ -564,6 +567,34 @@ test('connection polling failure is unknown rather than a stale green connected 
   assert.match(renderToStaticMarkup(panel),/Connection status unavailable|Network unavailable/);
 });
 
+test('a connected phone on another project stays green without granting photo or stream actions',()=>{
+  for(const locale of ['en','zh-TW']) {
+    const connection={session_id:'old-phone',conversation_id:'old-project',context_id:'old-context',title:'Old project'};
+    const h=companionLayoutHarness({paired:false,connection,locale});let tree=h.render();
+    const trigger=h.nodes(tree,n=>n.type==='qa-portal'&&n.props.host===h.workspace.trigger)[0].props.children;
+    assert.equal(trigger.props['data-connected'],true);
+    assert.equal(trigger.props['aria-label'],locale==='en'?'Phone connected, current project not synced':'手機已連接，尚未同步目前作品');
+    trigger.props.onClick();tree=h.render();
+    const panel=h.nodes(tree,n=>n.props.id==='mobile-companion-panel')[0];
+    assert.equal(h.nodes(panel,n=>n.props.className==='mobile-pairing-status')[0].props['data-connected'],true);
+    assert.equal(h.nodes(panel,n=>n.props.className==='mobile-project-sync').length,1);
+    assert.equal(h.nodes(tree,n=>n.type==='button'&&n.props.children===(locale==='en'?'Phone stream':'手機串流'))[0].props.disabled,true);
+    assert.equal(h.nodes(tree,n=>n.type==='button'&&n.props.children===(locale==='en'?'GPIO photo':'GPIO 照片'))[0].props.disabled,true);
+    assert.deepEqual(h.shown,[],'a connection badge cannot switch the camera');
+  }
+});
+
+test('explicit offline presence overrides retained pairing, and status failure stays unknown',()=>{
+  for(const connectionError of ['', 'Network unavailable']) {
+    const h=companionLayoutHarness({connection:null,connectionError});let tree=h.render();
+    const trigger=h.nodes(tree,n=>n.type==='qa-portal'&&n.props.host===h.workspace.trigger)[0].props.children;
+    assert.equal(trigger.props['data-connected'],false);
+    trigger.props.onClick();tree=h.render();
+    const panel=h.nodes(tree,n=>n.props.id==='mobile-companion-panel')[0];
+    assert.match(renderToStaticMarkup(panel),connectionError?/Connection status unavailable/:/Phone paired, currently offline/);
+  }
+});
+
 test('opening an expired invitation hides its old code and refreshes QR and code together',async t=>{
   const pairing={code:'482913',web_url:'https://fixture.test/mobile?code=482913',base_url:'https://fixture.test',base_urls:[],expires_at:Date.now()/1000-1};
   const h=companionLayoutHarness({paired:false,pairing,runEffects:true});t.after(()=>h.unmount());let tree=h.render();
@@ -572,7 +603,7 @@ test('opening an expired invitation hides its old code and refreshes QR and code
   assert.match(renderToStaticMarkup(panel),/Pairing code expired/);
   assert.equal(h.nodes(panel,n=>n.type==='img').length,0);
   assert.equal(h.nodes(panel,n=>n.type==='a').length,0,'expired invitations must not remain clickable');
-  await Promise.resolve();await Promise.resolve();tree=h.render();
+  for(let i=0;i<8;i++){await Promise.resolve();tree=h.render();}
   assert.equal(h.requests.filter(r=>r.path==='pairings').length,1);
   const refreshed=h.nodes(tree,n=>n.props.id==='mobile-companion-panel')[0];
   assert.equal(h.nodes(refreshed,n=>n.props.className==='mobile-pairing-code')[0].props.children,'591204');
@@ -580,13 +611,13 @@ test('opening an expired invitation hides its old code and refreshes QR and code
   assert.equal(h.nodes(refreshed,n=>n.type?.name==='MobileVideo'||n.type?.name==='MobileStreamCaptureActions').length,0);
 });
 
-test('opening after a code is consumed creates a new invitation without disconnecting the phone',async()=>{
-  const h=companionLayoutHarness({paired:false});let tree=h.render();
+test('opening after a code is consumed creates a new invitation without disconnecting the phone',async t=>{
+  const h=companionLayoutHarness({paired:false,runEffects:true});t.after(()=>h.unmount());let tree=h.render();
   const trigger=()=>h.nodes(tree,n=>n.type==='qa-portal'&&n.props.host===h.workspace.trigger)[0].props.children;
-  trigger().props.onClick();await Promise.resolve();tree=h.render();
+  trigger().props.onClick();tree=h.render();for(let i=0;i<8;i++){await Promise.resolve();tree=h.render();}
   assert.equal(h.requests.filter(r=>r.path==='pairings').length,1);
   h.setSession({session_id:'new',base_url:'https://fixture.test',stream:{active:true,publisher_connected:true,generation:1},view:{capture_id:null},context_id:'ctx'});tree=h.render();
-  trigger().props.onClick();tree=h.render();trigger().props.onClick();await Promise.resolve();tree=h.render();
+  trigger().props.onClick();tree=h.render();trigger().props.onClick();tree=h.render();for(let i=0;i<8;i++){await Promise.resolve();tree=h.render();}
   assert.equal(h.requests.filter(r=>r.path==='pairings').length,2);
   assert.equal(h.nodes(tree,n=>n.props.className==='mobile-pairing-code')[0].props.children,'591204');
   assert.ok(h.requests.every(r=>['web-config','pairings'].includes(r.path)),'no stream or disconnect operation');
@@ -609,9 +640,11 @@ test('connected phones show QR plus a readable pairing code in both languages',a
 });
 
 function pairingHookHarness(t) {
-  let cursor=0,refCursor=0,effectCursor=0,pending=[],state={session:null},resolvePairing;
-  const values=[],refs=[],effects=[],sockets=[],requests=[];
-  const invitation={code:'482913',web_url:'https://fixture.test/mobile?code=482913',expires_at:Date.now()/1000+300,base_urls:[]};
+  let cursor=0,refCursor=0,effectCursor=0,pending=[],state={session:null},resolvePairing,pollError='';
+  let configuration={available:true,base_url:'https://fixture.test',web_url:'https://fixture.test/mobile'};
+  const configurationReplies=[];
+  const values=[],refs=[],effects=[],sockets=[],requests=[],timers=[];
+  const invitation={code:'482913',web_url:'https://fixture.test/mobile?code=482913',base_url:'https://fixture.test',expires_at:Date.now()/1000+300,base_urls:[]};
   const hooks={...React,useCallback:callback=>callback,
     useState(initial){const i=cursor++;if(!(i in values))values[i]=initial;return[values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value;}];},
     useRef(initial){return refs[refCursor++]??={current:initial};},
@@ -622,20 +655,27 @@ function pairingHookHarness(t) {
   const descriptors=names.map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]);
   globalThis.window={location:{href:'http://fixture.test/'}};
   globalThis.WebSocket=class {constructor(){sockets.push(this);}close(){}};
-  globalThis.setTimeout=()=>1;globalThis.clearTimeout=()=>{};
+  globalThis.setTimeout=(callback,delay)=>{const id=timers.length+1;timers.push({id,callback,delay,cancelled:false});return id;};
+  globalThis.clearTimeout=id=>{const timer=timers.find(item=>item.id===id);if(timer)timer.cancelled=true;};
   globalThis.fetch=async(path,options)=>{
-    requests.push({path,method:options.method});
-    const value=path.includes('desktop-session')?state:path.endsWith('pairings')
-      ? await new Promise(resolve=>{resolvePairing=()=>resolve(invitation);}) : {context_id:'ctx'};
+    requests.push({path,method:options.method,cache:options.cache,body:options.body?JSON.parse(options.body):undefined});
+    if(path.includes('desktop-session')&&pollError)throw Error(pollError);
+    const value=path.includes('desktop-session')?state:path.endsWith('web-config')
+      ? configurationReplies.length?await configurationReplies.shift():configuration:path.endsWith('pairings')
+      ? await new Promise(resolve=>{const origin=JSON.parse(options.body).base_url;resolvePairing=next=>resolve(next??{...invitation,base_url:origin,web_url:origin+'/mobile?code='+invitation.code});}) : {context_id:'ctx'};
     return{ok:true,status:200,json:async()=>value};
   };
   t.after(()=>{effects.forEach(effect=>effect.cleanup?.());for(const[name,descriptor]of descriptors){
     if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globalThis[name];}});
   const {useMobileCompanion}=load('../src/lib/mobile.ts',{react:hooks,'./photoWiring':photo,'./mobileBrowserRtc':browserRtc,'./mobileViewerStats':viewerStats,'./mobileRecognition':recognition});
   const context={conversation_id:'chat'};
-  const render=()=>{cursor=refCursor=effectCursor=0;const result=useMobileCompanion(context,true);const tasks=pending;pending=[];tasks.forEach(task=>task());return result;};
+  const render=(currentContext=context)=>{cursor=refCursor=effectCursor=0;const result=useMobileCompanion(currentContext,true);const tasks=pending;pending=[];tasks.forEach(task=>task());return result;};
   const tick=async()=>{for(let i=0;i<12;i++)await Promise.resolve();return render();};
-  return{render,tick,requests,resolve(){assert.ok(resolvePairing);resolvePairing();},
+  return{render,tick,requests,resolve(next){assert.ok(resolvePairing);resolvePairing(next);},
+    setConfiguration(next){configuration=next;},queueConfiguration(promise){configurationReplies.push(promise);},
+    pollState(value){state=value;},
+    failPoll(message){pollError=message;},
+    poll(){const timer=timers.findLast(item=>item.delay===5000&&!item.cancelled);assert.ok(timer);timer.cancelled=true;timer.callback();},
     accept(session){state={session};sockets.at(-1).onmessage({data:JSON.stringify(state)});},
     session(id='phone'){return{session_id:id,conversation_id:'chat',context_id:'ctx',stream:{active:true,generation:1},view:{capture_id:null,revision:0}};}};
 }
@@ -659,6 +699,131 @@ test('pairing requests are single-flight and a late response cannot restore a co
   h.accept(h.session('new-phone'));h.resolve();await creating;
   assert.equal(h.render().pairing,null);
   assert.equal(h.render().session.session_id,'new-phone');
+});
+
+const lanConfiguration=(ip,available=true)=>({available,base_url:`https://${ip}:8443`,web_url:`https://${ip}:8443/mobile`});
+const lanInvitation=ip=>({code:'482913',base_url:`https://${ip}:8443`,web_url:`https://${ip}:8443/mobile?code=482913`,
+  expires_at:Date.now()/1000+300,base_urls:[]});
+async function settleCompanion(h){let tree;for(let i=0;i<12;i++){await Promise.resolve();tree=h.render();}return tree;}
+function openConnection(h,tree){h.nodes(tree,n=>n.type==='qa-portal'&&n.props.host===h.workspace.trigger)[0].props.children.props.onClick();return h.render();}
+
+test('automatic pairing reads the fresh HTTPS origin before and after POST with no browser cache',async t=>{
+  const h=pairingHookHarness(t);h.render();await h.tick();h.setConfiguration(lanConfiguration('192.168.50.138'));
+  const operation=h.render().pair();await h.tick();
+  const post=h.requests.find(r=>r.path.endsWith('/pairings'));
+  assert.equal(post.body.base_url,'https://192.168.50.138:8443');
+  h.resolve();await operation;
+  assert.equal(h.render().pairing.base_url,'https://192.168.50.138:8443');
+  const reads=h.requests.filter(r=>r.path.endsWith('/web-config'));
+  assert.equal(reads.length,2);assert.ok(reads.every(r=>r.cache==='no-store'));
+  assert.equal(h.requests.some(r=>r.method==='DELETE'||r.path.includes('/stream')),false);
+});
+
+test('a network change during pairing cannot restore an old-IP code; the new origin can pair',async t=>{
+  const h=pairingHookHarness(t);h.render();await h.tick();h.setConfiguration(lanConfiguration('192.168.50.141'));
+  const old=h.render().pair();await h.tick();
+  h.setConfiguration(lanConfiguration('192.168.50.138'));await h.render().refreshWebConfiguration();
+  h.resolve();await old;
+  assert.equal(h.render().pairing,null);
+  assert.equal(h.render().webConfiguration.base_url,'https://192.168.50.138:8443');
+  const fresh=h.render().pair();await h.tick();h.resolve();await fresh;
+  assert.equal(h.render().pairing.base_url,'https://192.168.50.138:8443');
+  assert.deepEqual(h.requests.filter(r=>r.path.endsWith('/pairings')).map(r=>r.body.base_url),
+    ['https://192.168.50.141:8443','https://192.168.50.138:8443']);
+});
+
+test('a late configuration response cannot overwrite a newer ready origin or revive its invitation',async t=>{
+  const h=pairingHookHarness(t);h.render();await h.tick();
+  let resolve;h.queueConfiguration(new Promise(done=>resolve=done));
+  const stale=h.render().refreshWebConfiguration();await h.tick();
+  h.setConfiguration(lanConfiguration('192.168.50.138'));await h.render().refreshWebConfiguration();
+  resolve(lanConfiguration('192.168.50.141'));await stale;
+  assert.equal(h.render().webConfiguration.base_url,'https://192.168.50.138:8443');
+  assert.equal(h.render().pairing,null);
+});
+
+test('an unavailable automatic HTTPS entry creates no invitation and does not fall back to a session IP',async t=>{
+  const h=pairingHookHarness(t);h.render();await h.tick();h.accept({...h.session(),base_url:'https://192.168.50.141:8443'});
+  h.setConfiguration(lanConfiguration('192.168.50.138',false));await h.render().pair();
+  assert.equal(h.render().pairing,null);assert.equal(h.requests.filter(r=>r.path.endsWith('/pairings')).length,0);
+  assert.equal(h.render().error,'mobile_web_https_unavailable');
+});
+
+test('an explicit advanced address remains authoritative when automatic HTTPS is unavailable',async t=>{
+  const h=pairingHookHarness(t);h.render();await h.tick();h.setConfiguration(lanConfiguration('192.168.50.138',false));
+  const operation=h.render().pair('  https://manual.example:8443  ');await h.tick();h.resolve();await operation;
+  assert.equal(h.render().pairing.base_url,'https://manual.example:8443');
+  assert.equal(h.requests.filter(r=>r.path.endsWith('/web-config')).length,0);
+  await h.render().refreshWebConfiguration();
+  assert.equal(h.render().pairing.base_url,'https://manual.example:8443','automatic refresh does not replace an explicit override');
+});
+
+test('reopening the panel hides a cached old-IP QR until this opening has read the latest configuration',async t=>{
+  const h=companionLayoutHarness({runEffects:true,pairing:lanInvitation('192.168.50.141'),configuration:lanConfiguration('192.168.50.141')});t.after(()=>h.unmount());
+  let tree=openConnection(h,h.render());
+  assert.equal(h.nodes(tree,n=>n.type==='a').length,0,'no cached link while opening configuration is pending');
+  tree=await settleCompanion(h);
+  assert.equal(h.nodes(tree,n=>n.type==='a')[0].props.href,'https://192.168.50.141:8443/mobile?code=482913');
+  tree=openConnection(h,tree);h.setConfiguration(lanConfiguration('192.168.50.138'));
+  tree=openConnection(h,tree);
+  assert.equal(h.nodes(tree,n=>n.type==='a').length,0,'old invitation must not flash on reopen');
+  tree=await settleCompanion(h);
+  assert.equal(h.nodes(tree,n=>n.type==='a')[0].props.href,'https://192.168.50.138:8443/mobile?code=591204');
+  assert.equal(h.requests.filter(r=>r.path==='pairings').length,1);
+});
+
+test('a ready new origin replaces QR and link once; unavailable state hides both without affecting cameras',async t=>{
+  const h=companionLayoutHarness({runEffects:true,pairing:lanInvitation('192.168.50.141'),configuration:lanConfiguration('192.168.50.141')});t.after(()=>h.unmount());
+  let tree=openConnection(h,h.render());tree=await settleCompanion(h);
+  h.setConfiguration(lanConfiguration('192.168.50.138',false));tree=h.render();
+  assert.equal(h.nodes(tree,n=>n.type==='a').length,0);assert.equal(h.nodes(tree,n=>n.type==='img').length,0);
+  h.setConfiguration(lanConfiguration('192.168.50.138'));tree=h.render();tree=await settleCompanion(h);
+  assert.equal(h.nodes(tree,n=>n.type==='a')[0].props.href,'https://192.168.50.138:8443/mobile?code=591204');
+  const posts=h.requests.filter(r=>r.path==='pairings').length;
+  for(let i=0;i<4;i++){h.setConfiguration({...lanConfiguration('192.168.50.138')});tree=h.render();tree=await settleCompanion(h);}
+  assert.equal(h.requests.filter(r=>r.path==='pairings').length,posts,'unchanged origin never rotates a still-valid code');
+  h.setPairing(lanInvitation('192.168.50.141'));tree=h.render();
+  assert.equal(h.nodes(tree,n=>n.type==='a')[0].props.href,'https://192.168.50.138:8443/mobile','late old pairing cannot revive an old URL');
+  assert.ok(h.requests.every(r=>['web-config','pairings'].includes(r.path)||r.path.startsWith('captures/')));
+  assert.equal(h.requests.some(r=>r.method==='DELETE'||r.path.includes('/stream')),false);assert.deepEqual(h.shown,[]);
+});
+
+test('connection summaries are whitelisted and cannot become a project session',()=>{
+  const connection={session_id:'phone',conversation_id:'old',context_id:'ctx',title:'Old project'};
+  assert.deepEqual(mobile.mobileConnectionFromState({connection:{...connection,token:'secret',context:{private:true}}}),connection);
+  assert.equal(mobile.mobileStateForConversation({session:null,connection},'new'),null);
+  assert.equal(mobile.mobileConnectionFromState({session:null}),undefined,'older backend compatibility');
+  assert.equal(mobile.mobileConnectionFromState({connection:null}),null);
+  assert.equal(mobile.mobileConnectionFromState({connection:{...connection,session_id:''}}),null);
+});
+
+test('a global connection never becomes a scoped session or authorizes photo messages',async t=>{
+  const h=pairingHookHarness(t);
+  const connection={session_id:'old-phone',conversation_id:'old-project',context_id:'old-context',title:'Old project'};
+  h.pollState({session:null,connection});h.render();await h.tick();
+  const current=h.render();assert.equal(current.session,null);assert.deepEqual(current.connection,connection);
+  await assert.rejects(current.sendPhoto({}),/Phone is not connected/);
+  assert.equal(h.requests.some(request=>request.path.endsWith('messages')),false);
+});
+
+test('global status failures revoke green and scoped websocket events cannot hide that failure',async t=>{
+  const h=pairingHookHarness(t),connection={session_id:'phone',conversation_id:'chat',context_id:'ctx',title:'Project'};
+  h.pollState({session:h.session(),connection});h.render();await h.tick();
+  assert.deepEqual(h.render().connection,connection);
+  h.failPoll('Network unavailable');h.poll();await h.tick();
+  assert.equal(h.render().connection,null);assert.equal(h.render().connectionError,'Network unavailable');
+  h.accept(h.session());assert.equal(h.render().error,'');
+  assert.equal(h.render().connection,null);assert.equal(h.render().connectionError,'Network unavailable');
+  h.failPoll('');h.pollState({session:h.session(),connection});h.poll();await h.tick();
+  assert.deepEqual(h.render().connection,connection);assert.equal(h.render().connectionError,'');
+});
+
+test('changing desktop projects preserves device presence without retaining a foreign project session',async t=>{
+  const h=pairingHookHarness(t),connection={session_id:'phone',conversation_id:'chat',context_id:'ctx',title:'Project'};
+  h.pollState({session:h.session(),connection});h.render();await h.tick();
+  h.pollState({session:null,connection});
+  const current=h.render({conversation_id:'new-project'});
+  assert.equal(current.session,null);assert.deepEqual(current.connection,connection);
 });
 
 test('grouped phone button keeps a full accessible name and a compact status independent of Pi',()=>{
@@ -832,4 +997,39 @@ test('returning to guide without a session waits before comparing the actual bac
   f.h.workspace.showing=false;f.h.render();
   f.h.workspace.selectedPhoneSource=null;f.sample(3);
   assert.equal(f.calls.length,1,'Choosing webcam still blocks following any phone generation');
+});
+
+test('deployment follows the already selected phone generation and replacement session while guide UI is hidden',async t=>{
+  const f=sourceFollowHarness(t);
+  f.h.workspace.showing=false;f.h.workspace.phoneSourceSelected=true;f.h.workspace.source='phone';
+  f.h.workspace.selectedPhoneSource={session_id:'s',generation:1};f.h.render();
+  f.sample(2);assert.equal(f.calls.length,1);assert.equal(f.calls[0].session.stream.generation,2);
+  assert.equal(f.calls[0].current(),true);await f.settle(0,true);
+  f.h.workspace.selectedPhoneSource={session_id:'s',generation:2};
+  for(let i=0;i<3;i++){f.advance(100);f.sample(2);}
+  assert.equal(f.calls.length,1,'steady deployment does not open a second camera owner');
+  f.sample(1,{session_id:'replacement-phone'});
+  assert.equal(f.calls.length,2);assert.equal(f.calls[1].session.session_id,'replacement-phone');
+  assert.equal(f.calls[1].current(),true);await f.settle(1,true);
+});
+
+test('deployment retains pending generation until fresh frames and the existing camera operation guard permit selection',async t=>{
+  const f=sourceFollowHarness(t);
+  f.h.workspace.showing=false;f.h.workspace.phoneSourceSelected=true;f.h.workspace.source='phone';
+  f.h.workspace.canShow=false;
+  f.sample(2);assert.equal(f.calls.length,0);
+  f.h.workspace.canShow=true;
+  f.sample(2,{stream:{...followedPhone().stream,generation:2,video_receive_fresh:false}});assert.equal(f.calls.length,0);
+  f.sample(2);assert.equal(f.calls.length,1);await f.settle(0,true);
+});
+
+test('a webcam selection invalidates an in-flight deployment follow even if the old guide preview remains marked showing',async t=>{
+  const f=sourceFollowHarness(t);
+  f.h.workspace.showing=false;f.h.workspace.phoneSourceSelected=true;f.h.workspace.source='phone';
+  f.sample(2);assert.equal(f.calls.length,1);assert.equal(f.calls[0].current(),true);
+  f.h.workspace.phoneSourceSelected=false;f.h.workspace.source='webcam';f.h.workspace.showing=true;f.h.render();
+  assert.equal(f.calls[0].current(),false);
+  await f.settle(0,true);
+  f.advance(5000);f.sample(3);
+  assert.equal(f.calls.length,1,'a late successful response never switches webcam back to phone');
 });

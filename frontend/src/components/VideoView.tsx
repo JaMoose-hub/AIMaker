@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { DeploymentLivePreview } from "./DeploymentLivePreview";
 import { computeLetterbox, toDisplay, useElementSize } from "../lib/geometry";
 import { pointBounds, placeWiringLabelPair } from "../lib/wiringLabelLayout";
 import {
@@ -130,6 +132,8 @@ interface VideoViewProps {
   /** Render existing video controls inside the shared camera-tools menu. */
   viewControl?: ReactNode | ((cameraControls: ReactNode) => ReactNode);
   viewNavigation?: ReactNode;
+  livePreviewHost?: HTMLElement | null;
+  livePreviewControls?: ReactNode;
   alternateView?: ReactNode;
   sourceControl?: ReactNode;
   sourceError?: string;
@@ -168,6 +172,8 @@ interface VideoViewProps {
 export function VideoView({
   viewControl = null,
   viewNavigation = null,
+  livePreviewHost = null,
+  livePreviewControls = null,
   alternateView = null,
   sourceControl = null,
   sourceError = '',
@@ -562,6 +568,12 @@ export function VideoView({
 
   return (
     <div className="video-workspace">
+      {livePreviewHost && !displayOnlyMode ? createPortal(<DeploymentLivePreview
+        key={`${sourceKey}:${config?.runtime_revision}`}
+        image={sourceBlocked || glassesLeaving || imageState.hidden ? undefined : realtimeActive ? realtime.frame?.image : imageState.src}
+        unavailable={!config || backendDown || sourceBlocked || glassesLeaving || imageState.hidden || (realtimeActive && !realtime.frame)}
+        phone={config?.camera_source === 'phone'} controls={livePreviewControls}
+        onLoad={handleVideoLoad} onError={handleVideoError} onRetry={onRetrySource} />, livePreviewHost) : null}
       {!displayOnlyMode && <div className="video-control-toolbar">
         {typeof viewControl === "function" ? viewControl(cameraControls) : <>{viewControl}{cameraControls}</>}
       </div>}
