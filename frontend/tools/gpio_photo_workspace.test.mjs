@@ -142,6 +142,17 @@ function elements(node) {
   return [node,...elements(node.props.children)];
 }
 
+test('photo workspace forwards recognition scope independently of endpoint readiness and retains original capture',()=>{
+  const current=capture();
+  for(const overlayComponentId of [null,'hc-sr04','mrd-tf240-8p-cs']) {
+    const node=workspaceNode({record:{source:'webcam',capture:current},historical:false,overlayComponentId,onReturn(){}});
+    const viewport=elements(node).find(el=>el.props.capture);
+    assert.equal(viewport.props.overlayComponentId,overlayComponentId);
+    assert.equal(viewport.props.capture,current);
+    assert.equal(viewport.props.wire,undefined);
+  }
+});
+
 test('photo workspace retains an explicit return action by default for hosts without view tabs',()=>{
   let returned=0;
   const node=workspaceNode({record:null,historical:false,onReturn(){returned++;}});
@@ -190,4 +201,17 @@ test('view-tab hosts can hide only the redundant return action while preserving 
   assert.match(renderToStaticMarkup(empty),/No wiring photos yet/);
   assert.equal(elements(empty).find(element=>element.props['data-capture-action']),captureAction);
   assert.equal(captured,2);
+});
+
+test('photo header accepts the shared source and capture controls without duplicate return actions',()=>{
+  const captureAction=React.createElement(React.Fragment,null,
+    React.createElement('div',{'data-source-host':true}),React.createElement('button',{'data-capture':true},'Retake photo'));
+  const node=workspaceNode({record:{source:'webcam',capture:capture()},historical:false,onReturn(){},showReturn:false,
+    captureAction,sourceError:'fixture source rejected'});
+  const html=renderToStaticMarkup(node);
+  assert.equal((html.match(/data-source-host/g)||[]).length,1);
+  assert.equal((html.match(/data-capture=/g)||[]).length,1);
+  assert.doesNotMatch(html,/Back to live view/);
+  assert.match(html,/role="status" title="fixture source rejected"/);
+  assert.match(html,/original source retained/);
 });

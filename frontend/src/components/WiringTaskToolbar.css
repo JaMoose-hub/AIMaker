@@ -1,0 +1,107 @@
+/* Presentation only: the guide/test owner is a stable sibling of all image views. */
+.assistant-wiring-stage:not(.has-task-toolbar) > .wiring-workspace { order: 1; }
+.app.maker-layout:not(.display-mode-active) .is-unified .assistant-wiring-stage.has-task-toolbar {
+  display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .assistant-wiring-stage.has-task-toolbar > .video-workspace {
+  order: 0; flex: 1 1 0; min-height: min(240px, 36dvh); height: auto; grid-area: auto;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .has-task-toolbar > .wiring-task-toolbar {
+  order: 1; position: relative; flex: none; width: 100%; min-width: 0;
+  container: wiring-guide / inline-size;
+}
+.wiring-task-toolbar [hidden] { display: none !important; }
+.wiring-task-reveal { width: 100%; display: flex; align-items: center; min-height: 34px; text-align: left; }
+.app:not(.display-mode-active) .is-unified .wiring-task-reveal .guide-visibility-toggle { position: static; transform: none; margin: 0; width: auto; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-toolbar {
+  position: static; transform: none; display: grid; grid-template-columns: minmax(0, 1fr) fit-content(46%);
+  grid-template-rows: auto auto; height: auto; max-height: none; width: 100%; min-height: 0;
+  margin: 0; padding: 0; gap: 0; overflow: visible;
+  border: 1px solid var(--line-default); border-radius: 12px; background: var(--surface-card); box-shadow: 0 3px 12px rgb(0 0 0 / 10%);
+}
+.guide-toolbar-heading { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 12px; border-bottom: 1px solid var(--line-default); }
+.guide-toolbar-heading .guide-panel-progress { flex: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0; padding: 0; }
+.guide-toolbar-heading .guide-progress-label { order: 1; margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+.guide-toolbar-heading .guide-progress-label > span, .guide-toolbar-heading progress { display: none; }
+.guide-toolbar-heading .guide-module-track { display: flex; flex-wrap: wrap; gap: 4px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-toolbar-heading .guide-module-track > button { min-height: 28px; padding: 4px 8px; border-radius: 7px; font-size: 11px; }
+.guide-toolbar-header-actions { display: flex; flex: none; align-items: center; gap: 5px; }
+.app:not(.display-mode-active) .is-unified .guide-toolbar-header-actions .guide-visibility-toggle { position: static; transform: none; margin: 0; width: 28px; height: 24px; min-height: 24px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .guide-toolbar-header-actions .guide-icon-action { display: grid; place-items: center; width: 28px; height: 24px; min-width: 28px; min-height: 24px; padding: 0; border-radius: 7px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-panel-body {
+  grid-column: 1; grid-row: 2; display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 0; min-height: 0;
+  padding: 12px 16px; overflow: visible; scrollbar-gutter: auto;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-panel-footer {
+  grid-column: 2; grid-row: 2; display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+  gap: 10px; min-width: 0; max-height: none; padding: 12px 14px; border: 0; border-left: 1px solid var(--line-default); background: transparent; overflow: visible;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-navigation { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-navigation > button { flex: 0 0 auto; width: auto; min-width: 0; min-height: 34px; padding: 7px 11px; border-radius: 8px; font-size: 12px; box-shadow: none; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-navigation > .guide-primary-action { min-width: 130px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-prepare-message { min-height: 0; padding: 0; text-align: left; }
+.wiring-task-toolbar .guide-prepare-message > strong { display: none; }
+.wiring-task-toolbar .guide-prepare-message > p { margin: 0; font-size: 13px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-connection-card {
+  display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; width: 100%; max-width: 590px; gap: 8px; padding: 0; margin: 0; border: 0; background: transparent; box-shadow: none;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-step-label { order: 0; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: auto; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; font-size: 11px; }
+.wiring-task-toolbar .guide-step-label > span { display: inline; }
+.wiring-task-toolbar .guide-step-label svg { display: none; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-step-label > strong { font-size: 11px; color: var(--text-dim); font-weight: 400; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-pin-pair { display: grid; grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr); align-items: stretch; gap: 10px; margin: 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-endpoint { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; border: 0; background: transparent; padding: 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-endpoint > span { display: block; font-size: 10px; line-height: 1.4; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-endpoint > strong { font-size: 19px; line-height: 1.4; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-endpoint > small { font-size: 11px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-pin-link { display: grid; place-items: center; width: 36px; height: auto; border-radius: 0; background: transparent; color: var(--brand-link); font-size: 25px; font-weight: 400; }
+.wiring-task-toolbar .guide-connect-hint { grid-column: 1; margin: 0; font-size: 11px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-caution { margin: 0; padding: 4px 8px; font-size: 11px; }
+/* Test controls use their original components, including Stop and TFT choices. */
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-test-controls { order: 0; flex: none; width: auto; max-width: 100%; min-width: 0; padding: 0; border: 0; overflow: visible; scrollbar-gutter: auto; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .component-test-card { margin: 0; padding: 0; gap: 5px; border: 0; background: transparent; font-size: 12px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .test-next-step { padding: 0; font-size: 13px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .test-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .test-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; width: auto; min-height: 34px; padding: 7px 11px; border-radius: 8px; font-size: 12px; box-shadow: none; }
+.wiring-task-toolbar .test-visual-confirm { max-width: 100%; }
+.wiring-task-toolbar :is(button, summary, input):focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+/* Override the older expanded active-wire card, not just its outer wrapper. */
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-connection-card { min-height: 0; padding: 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-pin-pair { margin: 0; background: transparent; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-endpoint { display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: center; align-items: center; gap: 5px 12px; min-height: 76px; padding: 10px 14px; border: 1px solid var(--line-default); border-radius: 9px; background: var(--bg-inset); }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-endpoint > span { grid-column: 1 / -1; color: var(--text-dim); font-size: 11px; line-height: 1.4; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-endpoint > strong { font-size: 28px; line-height: 1.15; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-endpoint > small { font-size: 11px; line-height: 1.5; color: var(--text-dim); }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .component-test-card { padding: 0; gap: 5px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-next-step { min-height: 0; margin: 0; padding: 0; font-size: 13px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-safety-note { margin: 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar:has(.test-visual-confirm) { grid-template-columns: minmax(0, 1fr) minmax(340px, 46%); }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar:has(.test-visual-confirm) > .guide-panel-body { justify-content: flex-start; padding-top: 16px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-test-controls:has(.test-visual-confirm) { width: 100%; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-visual-confirm { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; margin: 0; padding: 10px; border-radius: 8px; font-size: 12px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-visual-confirm .test-code-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-code-options label { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 5px 2px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-visual-confirm > button { min-height: 32px; padding: 5px 8px; font-size: 11px; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-visual-confirm .test-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-visual-confirm .test-actions > button { flex: 0 0 auto; min-height: 30px; padding: 4px 6px; font-size: 11px; }
+/* Override full-width legacy test buttons, not the test state or handlers. */
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .component-test-card > .test-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-actions > button { flex: 0 0 auto; width: auto; grid-column: auto; min-width: 0; max-width: 100%; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-secondary-test-action { color: var(--brand-link); border-color: var(--brand-link); background: transparent; }
+.app.maker-layout:not(.display-mode-active) .is-unified .has-task-toolbar .maker-2d-main > .circuit-workspace { display: flex; flex-direction: column; min-height: 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .has-task-toolbar .circuit-workspace > .circuit-zoom { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .has-task-toolbar .circuit-workspace .circuit-viewport { flex: 1; height: auto; min-height: 160px; }
+@container wiring-guide (max-width: 650px) {
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-toolbar,
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar:has(.test-visual-confirm) { grid-template-columns: minmax(0, 1fr); }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-panel-footer { grid-column: 1; grid-row: 3; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 10px 12px; border-left: 0; border-top: 1px solid var(--line-default); }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-navigation { margin-left: auto; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-test-controls:has(.test-visual-confirm) { width: 100%; }
+}
+@container wiring-guide (max-width: 400px) {
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-panel-body { padding: 12px; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-pin-pair { grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); gap: 6px; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-endpoint { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 9px 10px; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-endpoint > strong { font-size: 24px; }
+  .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-pin-link { width: 22px; font-size: 20px; }
+}

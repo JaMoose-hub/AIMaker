@@ -15,10 +15,12 @@ interface Props {
   onClose: () => void;
   embedded?: boolean;
   floating?: boolean;
+  toolbar?: boolean;
+  visibilityControl?: ReactNode;
 }
 
 /** Opening extra copy never changes the wiring session or its active target. */
-export function CompactGuide({ contextKey, phase, visible, title, headerActions, progress, targetId, actions, children, details: extraDetails, onClose, embedded = false, floating = false }: Props) {
+export function CompactGuide({ contextKey, phase, visible, title, headerActions, progress, targetId, actions, children, details: extraDetails, onClose, embedded = false, floating = false, toolbar = false, visibilityControl }: Props) {
   const tr = useMakerText();
   const detailsId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -30,7 +32,7 @@ export function CompactGuide({ contextKey, phase, visible, title, headerActions,
   if (details.contextKey !== contextKey) setDetails({ contextKey, expanded: false });
   const expanded = details.contextKey === contextKey && details.expanded;
   const setExpanded = (value: boolean) => setDetails({ contextKey, expanded: value });
-  return <section className={`photo-guide component-guide maker-project-guide compact-guide ${phase}`}
+  return <section className={`photo-guide component-guide maker-project-guide compact-guide ${phase}${toolbar ? " guide-toolbar" : ""}`}
     hidden={!visible} aria-label={tr("作品 Pin 接線引導", "Project Pin wiring guide")}
     onKeyDown={event => {
       if (event.key === "Escape" && expanded) {
@@ -39,7 +41,10 @@ export function CompactGuide({ contextKey, phase, visible, title, headerActions,
         event.preventDefault(); event.stopPropagation(); onClose();
       }
     }}>
-    {embedded ? <header className="guide-panel-header guide-panel-header-embedded">
+    {toolbar ? <header className="guide-toolbar-heading">
+      <div className="guide-panel-progress">{progress}</div>
+      <div className="guide-toolbar-header-actions">{headerActions}{visibilityControl}</div>
+    </header> : embedded ? <header className="guide-panel-header guide-panel-header-embedded">
       <div className="guide-panel-progress">{progress}</div><div className="guide-header-actions">{headerActions}</div>
     </header> : <><header className="guide-panel-header">
       <div><span className="guide-panel-eyebrow">{tr("接線引導", "WIRING GUIDE")}</span>
@@ -53,13 +58,13 @@ export function CompactGuide({ contextKey, phase, visible, title, headerActions,
     <div className="guide-panel-progress">{progress}</div></>}
     <div ref={bodyRef} className="guide-panel-body" data-wiring-target={targetId}>
       {children}
-      <section className="guide-panel-reference">
+      {!toolbar ? <section className="guide-panel-reference">
         <button ref={toggleRef} type="button" className="guide-reference-toggle" aria-expanded={expanded} aria-controls={detailsId}
           onClick={() => setExpanded(!expanded)}>
           <span>{tr("接線說明與紀錄", "Instructions & records")}</span><span aria-hidden="true">{expanded ? "−" : "+"}</span>
         </button>
         <div id={detailsId} className="compact-guide-details" hidden={!expanded}>{extraDetails}</div>
-      </section>
+      </section> : null}
     </div>
     <footer className="guide-panel-footer">{actions}</footer>
   </section>;

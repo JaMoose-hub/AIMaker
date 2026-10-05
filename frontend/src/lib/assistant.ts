@@ -68,6 +68,13 @@ export function currentAssistantMedia(record: AssistantConversation | null, roun
   return record?.kind === "project" && media?.asset_ids.length && media.epoch === record.context_epoch && media.round === round ? media : null;
 }
 const KEY = "boardvision.assistant.v1";
+const REMOVED_MEDIA_KEY = `${KEY}.removed-media.v1`;
+function mediaScope(record: AssistantConversation | null, media: AssistantActiveMedia | null): string | null {
+  return record && media ? JSON.stringify([record.id, media.epoch, media.round, media.capture_id ?? null, media.asset_ids]) : null;
+}
+function savedRemovedMedia(): string | null {
+  try { return localStorage.getItem(REMOVED_MEDIA_KEY); } catch { return null; }
+}
 const DEMO_KEY = "boardvision.assistant-demo.v1";
 const WIRING_OUTBOX_KEY = `${KEY}.wiring-outbox`;
 function savedWiringOutbox(): WiringActionOutbox | null {
@@ -106,7 +113,7 @@ export function resultBelongsToState(job: AssistantJob, state: MakerState) {
 }
 /** One payload builder for desktop messages and the paired phone's workspace. */
 export function assistantWorkspacePayload(snapshot: MakerState, locale: string, selectedModel?: string,
-  debugSession?: DebugSession | null, target: "auto" | "design" | "wiring" | "debug" = "auto", prompt = snapshot.prompt) {
+  debugSession?: DebugSession | null, target: "auto" | "answer" | "design" | "wiring" | "debug" = "auto", prompt = snapshot.prompt) {
   const wire = snapshot.design ? currentWire(snapshot.design, snapshot.guide) : undefined;
   return { stage: snapshot.stage, target,
     design: designRequest({ ...snapshot, prompt, aiIntent: "auto" }, locale, selectedModel || snapshot.aiModel || null),
@@ -140,6 +147,8 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
   const [connectionError, setConnectionError] = useState("");
   const [wiringOutbox, setWiringOutbox] = useState<WiringActionOutbox | null>(savedWiringOutbox);
   const [wiringReceiptError, setWiringReceiptError] = useState('');
+  const [removedMediaScope, setRemovedMediaScope] = useState(savedRemovedMedia);
+  const removedMedia = useRef(removedMediaScope); removedMedia.current = removedMediaScope;
   const wiringOutboxRef = useRef(wiringOutbox); wiringOutboxRef.current = wiringOutbox;
   const recoveryFlight = useRef(false);
   const latest = useRef(state); latest.current = state;
@@ -269,7 +278,7 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
     const snapshot = latest.current;
     const workspace = assistantWorkspacePayload(snapshot, locale, selectedModel, debugSession, target, text);
     const key = JSON.stringify([id, text, workspace, record?.context_epoch]);
-    const request_id = requestId(key, currentAssistantMedia(record, workspace.round));
+    const request_id = requestId(key, composerMedia(record, workspace.round));
     const reference = retry.current?.reference;
     // Old outboxes omit this field so their original server fingerprint remains valid.
     const mediaPayload = reference === undefined ? {} : { inherit_media: false,
@@ -282,6 +291,26 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
       try { localStorage.removeItem(`${KEY}.outbox`); } catch { setStorageError(true); }
       if (wasDemo) setDemoDraft(current => clearAcceptedDraft(current, text));
       else setState(current => activeId.current === id ? { ...current, prompt: clearAcceptedDraft(current.prompt, text) } : current);
+    }
+    return accepted;
+  }
+  /** Explicit, read-only hardware comparison; never consumes the existing draft. */
+  async function sendPartsCheck(snapshot: MakerState, text: string, includePhoto = false) {
+    if (!text.trim() || busy || flight.current || demoOpen || latest.current.aiJobId || !project ||
+      snapshot.stage !== 'design' || !snapshot.design || snapshot.design !== latest.current.design || activeId.current !== projectId) return false;
+    const reference = includePhoto ? composerMedia(project, snapshot.guide.run ?? 0) : null;
+    if (includePhoto && (!reference || !reference.attachments.length || reference.attachments.some(asset => asset.type !== 'image'))) return false;
+    const base = assistantWorkspacePayload(snapshot, locale, selectedModel, null, 'answer', text);
+    const workspace = { ...base, context: { ...base.context, parts_check: { scope: 'demo-three-hardware' } } };
+    const key = JSON.stringify([projectId, text, workspace, project.context_epoch, reference]);
+    const request_id = requestId(key, reference);
+    const accepted = await perform(() => makerRequest<AssistantConversation>(`assistant/conversations/${projectId}/messages`, {
+      request_id, text, ...workspace, inherit_media: false, asset_ids: reference ? [...reference.asset_ids] : [],
+      capture_id: reference?.capture_id ?? null,
+    }));
+    if (accepted) {
+      retry.current = null;
+      try { localStorage.removeItem(`${KEY}.outbox`); } catch { setStorageError(true); }
     }
     return accepted;
   }
@@ -540,10 +569,28 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
   const draftKey = JSON.stringify([id, draft.trim(), assistantWorkspacePayload(state, locale, selectedModel, debugSession, "auto", draft.trim()), record?.context_epoch]);
   const pendingReference = retry.current?.key === draftKey && !record?.jobs.some(job => job.request_id === retry.current?.id && job.status === "failed")
     ? retry.current?.reference : undefined;
-  const mediaReference = pendingReference === undefined ? currentAssistantMedia(record, mobileWorkspace.round)
+  const mediaReference = pendingReference === undefined ? composerMedia(record, mobileWorkspace.round)
     : pendingReference && record ? currentAssistantMedia({ ...record, active_media: pendingReference }, mobileWorkspace.round) : null;
+  function composerMedia(conversation: AssistantConversation | null, round: number) {
+    const media = currentAssistantMedia(conversation, round);
+    return mediaScope(conversation, media) === removedMedia.current ? null : media;
+  }
+  /** Remove only the next-message reference, never the shared photos/history. */
+  function removeMediaReference() {
+    if (!mediaReference || busy || flight.current || demoOpen) return false;
+    const scope = mediaScope(record, currentAssistantMedia(record, mobileWorkspace.round));
+    removedMedia.current = scope; setRemovedMediaScope(scope);
+    // An explicit removal is a new user intent, not a retry of the frozen photo payload.
+    retry.current = null;
+    try {
+      if (scope) localStorage.setItem(REMOVED_MEDIA_KEY, scope);
+      else localStorage.removeItem(REMOVED_MEDIA_KEY);
+      localStorage.removeItem(`${KEY}.outbox`);
+    } catch { setStorageError(true); }
+    return true;
+  }
   return { record, project, demo, demoOpen, setDemoOpen, busy, pending, wiringAnalysis, draft, setDraft, error: error || connectionError, storageError,
-    send, sendTestHelp, offerTestHelp, testHelpAction, wiringFlowAction, recoverWiringFlow, acknowledgeWiringFlow, confirmDemo, adoptDemo, startConversation, prepareConversation, activateConversation, archiveWiring, mediaReference,
+    send, sendPartsCheck, sendTestHelp, offerTestHelp, testHelpAction, wiringFlowAction, recoverWiringFlow, acknowledgeWiringFlow, confirmDemo, adoptDemo, startConversation, prepareConversation, activateConversation, archiveWiring, mediaReference, removeMediaReference,
     wiringReceiptPending: Boolean(wiringOutbox && wiringOutbox.conversation_id === projectId && wiringOutbox.context_epoch === (project?.context_epoch ?? 0)
       && wiringOutbox.before_signature === wiringReceiptSignature(state)),
     wiringReceiptMessageId: wiringOutbox?.message_id, wiringReceiptRequestId: wiringOutbox?.request_id, wiringReceiptError,

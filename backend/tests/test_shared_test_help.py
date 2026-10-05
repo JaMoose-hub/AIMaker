@@ -239,7 +239,7 @@ def test_fresh_photo_invitation_after_restart_starts_new_collect_and_keeps_histo
 
 
 def test_restored_functional_or_execution_related_case_still_blocks_photo_invitation(tmp_path):
-    changes = [dict(purpose='debug'), dict(job_ids=['prior-pi-job']), dict(run_ids=['prior-run']),
+    changes = [dict(purpose='debug', job_ids=['prior-pi-job']), dict(job_ids=['prior-pi-job']), dict(run_ids=['prior-run']),
                dict(trial_id='prior-trial'), dict(adopted_tests=[dict(id='prior-test')]),
                dict(capture_pending=True), dict(chat_pending=True), dict(model_started_at=1)]
     for index, change in enumerate(changes):
@@ -306,12 +306,131 @@ def test_restored_photo_history_requires_idle_actual_work_and_explicit_new_colle
         owner.create(_context(), '拍照檢查', purpose='wiring_review', initial_action='collect')
     assert owner.sessions[old_id] == history
     state.pi_execution.jobs.clear()
-    assert owner.replaceable_photo_history(owner.sessions[old_id])
+    assert owner.replaceable_collection_history(owner.sessions[old_id])
     for purpose, action in [('debug', None), ('wiring_review', 'capture'), ('wiring_review', 'message')]:
         with pytest.raises(ValueError, match='restart_requires_stop'):
             owner.create(_context(), '拍照檢查', purpose=purpose, initial_action=action)
     assert owner.sessions[old_id] == history and len(owner.sessions) == 1
     assert not state.design_service.bridge.calls
+
+
+def restored_observation_history(state):
+    """Matches the old foreign-project debug case: observations, no owned Pi work."""
+    from app.debug_sessions import DebugSessions
+    owner = state.debug_sessions
+    context = _context()
+    context['project']['id'] = 'previous-project'
+    old_id = owner.create(context, '舊作品照片觀察', purpose='debug')['id']
+    old = owner.sessions[old_id]
+    old.update(status='awaiting_capture', phase='awaiting_user', case_id='old-diagnostic-case')
+    old['budget'].update(model_calls=1, captures=1)
+    old['adopted_tests'] = [dict(component_id='hc-sr04', run_id='old-historical-pass',
+        source='existing_component_test', evidence_scope='current_configuration_historical_run')]
+    owner._save()
+    state.debug_sessions = DebugSessions(state, owner.store, owner.capture_fn, autostart=False)
+    return old_id
+
+
+@pytest.mark.parametrize('surface', ['desktop', 'mobile'])
+def test_stopped_project_with_restored_observation_case_can_start_photo_check(tmp_path, surface):
+    app, state, mobile, phone, published, meta = fixture(tmp_path)
+    old_id = restored_observation_history(state)
+    owner = state.debug_sessions
+    history = deepcopy(owner.sessions[old_id])
+    message = imported(state, meta)
+    assert message['test_help_offer']['can_act'] and message['test_help_offer']['can_dismiss']
+    assert not message['test_help_offer']['reusable_review']
+    assert owner.sessions[old_id] == history, 'Polling must not stop or edit old history'
+    for purpose, action in [('debug', None), ('wiring_review', 'capture'), ('wiring_review', 'message')]:
+        with pytest.raises(ValueError, match='restart_requires_stop'):
+            owner.create(_context(), '新工作', purpose=purpose, initial_action=action)
+    with TestClient(app, client=('127.0.0.1', 5000)) as client:
+        if surface == 'mobile':
+            response = post(client, mobile, phone, message)
+        else:
+            response = client.post('/api/assistant/conversations/shared-conversation/test-help',
+                json={key: value for key, value in invitation(mobile, message).items() if key != 'context_id'})
+        assert response.status_code == 200, response.text
+    new = next(s for sid, s in owner.sessions.items() if sid != old_id)
+    assert new['purpose'] == 'wiring_review' and new['context']['project']['id'] == meta['project_id']
+    assert new['wiring_review']['status'] == 'collecting' and not new['wiring_review']['reviews']
+    assert all(slot is None for slot in new['wiring_review']['slots'].values())
+    expected_history = deepcopy(history)
+    for key in ('status', 'phase', 'step_rev', 'updated_at', 'request_id'):
+        expected_history[key] = owner.sessions[old_id][key]
+    assert owner.sessions[old_id] == expected_history, 'Superseding must retain old evidence and messages'
+    assert owner.sessions[old_id]['phase'] == 'superseded'
+    assert not state.design_service.bridge.calls and not state.pi_execution.jobs and not state.component_tests.actions
+
+
+@pytest.mark.parametrize('blocker', ['running_job', 'reserved_test', 'reserved_trial', 'running_program',
+                                    'unknown_program', 'prior_hardware_attempt', 'pending_capture', 'live_debug'])
+def test_observation_history_does_not_bypass_pending_or_unknown_hardware(tmp_path, blocker):
+    app, state, mobile, phone, published, meta = fixture(tmp_path)
+    old_id = restored_observation_history(state)
+    owner = state.debug_sessions
+    if blocker == 'running_job': state.pi_execution.jobs.append(dict(id='real-work', state='running'))
+    if blocker == 'reserved_test': state.component_tests.runs[-1]['reserved'] = True
+    if blocker == 'reserved_trial': state.integration_trials.runs.append(dict(project_id=meta['project_id'], reserved=True))
+    if blocker == 'running_program': state.pi_deployer.snapshot = lambda: dict(program='running', pid=123)
+    if blocker == 'unknown_program': state.pi_deployer.snapshot = lambda: dict(program='unknown', version='unreconciled')
+    if blocker == 'prior_hardware_attempt': owner.sessions[old_id]['test_attempts'] = {'hc-sr04': 1}
+    if blocker == 'pending_capture': owner.sessions[old_id]['capture_pending'] = True
+    if blocker == 'live_debug': owner.sessions[old_id].update(status='awaiting_capture', phase='awaiting_user', context=_context())
+    history = deepcopy(owner.sessions[old_id])
+    message = imported(state, meta)
+    assert not message['test_help_offer']['can_act'] and message['test_help_offer']['can_dismiss']
+    with TestClient(app, client=('127.0.0.1', 5000)) as client:
+        response = client.post('/api/assistant/conversations/shared-conversation/test-help',
+            json={key: value for key, value in invitation(mobile, message).items() if key != 'context_id'})
+        assert response.status_code == 409, response.text
+    assert owner.sessions[old_id] == history and len(owner.sessions) == 1
+    assert not state.design_service.bridge.calls and not state.component_tests.actions
+
+
+@pytest.mark.parametrize('surface', ['desktop', 'mobile'])
+@pytest.mark.parametrize('component_id,reason', [('hc-sr04', 'no_echo'), ('mrd-tf240-8p-cs', 'display_white')])
+def test_three_consecutive_failed_runs_keep_photo_check_available(tmp_path, surface, component_id, reason):
+    app, state, mobile, phone, published, meta = fixture(tmp_path)
+    owner = state.debug_sessions
+    retained = None
+    previous = None
+    review_id = None
+    with TestClient(app, client=('127.0.0.1', 5000)) as client:
+        for attempt in range(3):
+            run = _run(f'failed-run-{attempt}', component_id, _context(), 'finished', 'failed')
+            run.update(revision=meta['project_revision'], reason=reason, reserved=False)
+            state.component_tests.runs.append(run)
+            current_meta = {**meta, 'offer_id': f'repeat-offer-{attempt}', 'test_id': run['id'],
+                'component_id': component_id, 'guide_key': _context()['test_keys'][component_id], 'reason': reason}
+            result = state.assistant.import_messages('shared-conversation', f'retest:{attempt}',
+                [dict(id='test-help-invitation', role='assistant', text='本次測試未通過，拍照檢查？', stage='guide', round=0)],
+                'legacy-debug', current_meta)
+            message = next(m for m in result['messages'] if m.get('test_help_offer', {}).get('offer_id') == current_meta['offer_id'])
+            assert message['test_help_offer']['can_act'], f'Attempt {attempt + 1} must not inherit a disabled button'
+            if previous:
+                old_offer = next(m for m in result['messages'] if m['id'] == previous)['test_help_offer']
+                assert old_offer['state'] == 'stale' and not old_offer['can_act']
+                assert message['test_help_offer']['reusable_review']
+            if surface == 'mobile':
+                response = post(client, mobile, phone, message)
+            else:
+                response = client.post('/api/assistant/conversations/shared-conversation/test-help',
+                    json={key: value for key, value in invitation(mobile, message).items() if key != 'context_id'})
+            assert response.status_code == 200, response.text
+            session = next(iter(owner.sessions.values()))
+            review = session['wiring_review']
+            assert len(owner.sessions) == 1 and review['component_id'] == component_id
+            if retained:
+                assert review == retained and review['id'] == review_id, 'Retest must not reset photos or human decisions'
+            else:
+                review['slots']['pi_side_a'] = dict(capture_id='retained-photo', available=True, sha256='a' * 64,
+                    photo_acceptance=dict(capture_id='retained-photo', sha256='a' * 64, round=review['round'], source='human'))
+                review['reviews']['retained-wire'] = dict(decision='confirmed', source='human')
+                retained = deepcopy(review)
+                review_id = review['id']
+            previous = message['id']
+    assert not state.design_service.bridge.calls and not state.pi_execution.jobs and not state.component_tests.actions
 
 
 def test_busy_model_blocks_start_but_does_not_block_later(tmp_path):
@@ -381,8 +500,8 @@ def test_first_offer_continues_current_history_review_without_resetting_photos(t
     state.assistant.import_messages('shared-conversation', 'existing-review',
         [dict(id='existing-review', role='assistant', text='已收集照片。', round=0, session_id=debug_id)], 'legacy-debug')
     review = owner.sessions[debug_id]['wiring_review']
-    review['slots']['pi_side_a'] = dict(capture_id='retained-photo', available=True, image_url='immutable-original',
-                                      photo_acceptance=dict(capture_id='retained-photo', round=0, source='human'))
+    review['slots']['pi_side_a'] = dict(capture_id='retained-photo', available=True, image_url='immutable-original', sha256='a' * 64,
+                                      photo_acceptance=dict(capture_id='retained-photo', sha256='a' * 64, round=review['round'], source='human'))
     review['reviews']['retained-wire'] = dict(decision='confirmed', source='human')
     original = deepcopy(review)
     monkeypatch.setattr(owner, 'action', lambda *args, **kwargs: pytest.fail('Continue must not restart an existing review'))
@@ -419,3 +538,129 @@ def test_first_continue_projection_requires_current_uncleared_history_and_full_c
             assert result.status_code == (200 if source == 'current-job' else 409), result.text
         assert owner.sessions[debug_id]['wiring_review'] == original and len(owner.sessions) == 1
         assert not state.design_service.bridge.calls and not state.pi_execution.jobs
+
+
+def expired_photo_case(state, mobile, meta):
+    """Actual camera-change transition, not a hand-written waiting flag."""
+    message = imported(state, meta)
+    started = mobile.test_help_action('shared-conversation',
+        {key: value for key, value in invitation(mobile, message).items() if key != 'context_id'})
+    owner = state.debug_sessions
+    old_id = started['debug_session_id']
+    old = owner.sessions[old_id]
+    review = old['wiring_review']
+    review['slots']['pi_side_a'] = dict(capture_id='old-camera-photo', available=True, sha256='a' * 64,
+        photo_acceptance=dict(capture_id='old-camera-photo', sha256='a' * 64, round=review['round'], source='human'))
+    review['reviews']['old-wire'] = dict(decision='confirmed', source='human')
+    state.source.current_index += 1
+    owner.action(old_id, 'context_changed', 'camera-changed', context=deepcopy(old['context']))
+    assert review['status'] == 'stale' and review['error'] == 'camera_changed'
+    return old_id, message
+
+
+@pytest.mark.parametrize('surface', ['desktop', 'mobile'])
+@pytest.mark.parametrize('component_id,reason', [('hc-sr04', 'no_echo'), ('mrd-tf240-8p-cs', 'display_white')])
+def test_actual_stop_project_unlocks_waiting_photo_invitation_without_backend_restart(tmp_path, surface, component_id, reason):
+    from app.api.pi import router as pi_router
+    from app.pi_deploy import SERVICE
+    from test_pi_execution import queue as queue_fixture
+    app, state, mobile, phone, published, meta = fixture(tmp_path)
+    queue = queue_fixture.__wrapped__(tmp_path / 'pi')
+    state.pi_execution, state.pi_deployer = queue, queue.pi
+    app.state.pi_execution, app.state.pi_deployer = queue, queue.pi
+    app.include_router(pi_router)
+    queue.pi._set(program='stopped', pid=None)
+    run = _run('first-failure', component_id, _context(), 'finished', 'failed')
+    run.update(revision=meta['project_revision'], reason=reason, reserved=False)
+    state.component_tests.runs.append(run)
+    meta.update(component_id=component_id, guide_key=run['guide_key'], reason=reason, test_id=run['id'])
+    # Collection itself is photo-only. The later camera change sees a running
+    # program and enters the same waiting_for_stop phase as the production case.
+    queue.pi._set(program='running', pid=41, invocation_id='original')
+    old_id, first = expired_photo_case(state, mobile, meta)
+    owner = state.debug_sessions
+    assert owner.sessions[old_id]['phase'] == 'waiting_for_stop'
+    new_run = {**run, 'id': 'second-failure'}
+    state.component_tests.runs.append(new_run)
+    new_meta = {**meta, 'offer_id': 'second-offer', 'test_id': new_run['id']}
+    message = state.assistant.import_messages('shared-conversation', 'second-failure',
+        [dict(id='test-help-invitation', role='assistant', text='再測未通過，要拍照檢查？', stage='guide', round=0)],
+        'legacy-debug', new_meta)['messages'][-1]
+    assert not message['test_help_offer']['can_act']
+    refresh = queue.pi._refresh
+    def inactive_refresh():
+        refresh()
+        if queue.pi.snapshot()['program'] == 'stopped': queue.pi._set(pid=None)
+    queue.pi._refresh = inactive_refresh
+    with TestClient(app, client=('127.0.0.1', 5000)) as client:
+        stopped = client.post('/api/pi/stop', json={'owner': 'program:original'})
+        assert stopped.status_code == 200 and stopped.json()['ok'], stopped.text
+        assert stopped.json()['status']['program'] == 'stopped' and stopped.json()['status']['pid'] is None
+        history = deepcopy(owner.sessions[old_id])
+        current = next(m for m in state.assistant.read('shared-conversation')['messages'] if m['id'] == message['id'])
+        assert current['test_help_offer']['can_act'] and not current['test_help_offer']['reusable_review']
+        assert owner.sessions[old_id] == history, 'Availability must not modify the expired round'
+        if surface == 'mobile': response = post(client, mobile, phone, current)
+        else: response = client.post('/api/assistant/conversations/shared-conversation/test-help',
+            json={key: value for key, value in invitation(mobile, current).items() if key != 'context_id'})
+        assert response.status_code == 200, response.text
+    new = next(s for sid, s in owner.sessions.items() if sid != old_id)
+    assert new['camera'] == owner._camera() and new['wiring_review']['component_id'] == component_id
+    assert new['wiring_review']['id'] != history['wiring_review']['id']
+    assert all(slot is None for slot in new['wiring_review']['slots'].values()) and not new['wiring_review']['reviews']
+    assert owner.sessions[old_id]['wiring_review'] == history['wiring_review']
+    assert owner.sessions[old_id]['messages'] == history['messages'] and owner.sessions[old_id]['phase'] == 'superseded'
+    assert queue.pi.commands == [f'systemctl --user stop {SERVICE}']
+    assert not queue.jobs and not queue.pi.deployments and not state.design_service.bridge.calls and not state.component_tests.actions
+
+
+@pytest.mark.parametrize('surface', ['desktop', 'mobile'])
+def test_same_started_invitation_can_collect_fresh_photos_after_camera_invalidation(tmp_path, surface):
+    app, state, mobile, phone, published, meta = fixture(tmp_path)
+    state.pi_deployer.snapshot = lambda: dict(program='stopped', pid=None, busy=False)
+    old_id, message = expired_photo_case(state, mobile, meta)
+    owner = state.debug_sessions
+    history = deepcopy(owner.sessions[old_id]['wiring_review'])
+    current = next(m for m in state.assistant.read('shared-conversation')['messages'] if m['id'] == message['id'])
+    assert current['test_help_offer']['can_act'] and not current['test_help_offer']['reusable_review']
+    with TestClient(app, client=('127.0.0.1', 5000)) as client:
+        if surface == 'mobile': response = post(client, mobile, phone, current)
+        else: response = client.post('/api/assistant/conversations/shared-conversation/test-help',
+            json={key: value for key, value in invitation(mobile, current).items() if key != 'context_id'})
+        assert response.status_code == 200, response.text
+    assert len(owner.sessions) == 2 and owner.sessions[old_id]['wiring_review'] == history
+    new = next(s for sid, s in owner.sessions.items() if sid != old_id)
+    assert new['request_id'] == 'test-help:' + meta['offer_id'], 'Do not return the old idempotent but expired session'
+    assert new['wiring_review']['status'] == 'collecting' and not new['wiring_review']['reviews']
+    assert all(slot is None for slot in new['wiring_review']['slots'].values())
+    assert not state.design_service.bridge.calls and not state.pi_execution.jobs and not state.component_tests.actions
+
+
+@pytest.mark.parametrize('blocker', ['running_program', 'unknown_program', 'running_job', 'reserved_test', 'reserved_trial',
+                                    'pending_capture', 'pending_model', 'pending_analysis', 'owned_hardware', 'functional_debug'])
+def test_expired_photo_collection_cannot_bypass_real_or_unreconciled_work(tmp_path, blocker):
+    app, state, mobile, phone, published, meta = fixture(tmp_path)
+    state.pi_deployer.snapshot = lambda: dict(program='running', pid=41)
+    old_id, message = expired_photo_case(state, mobile, meta)
+    owner = state.debug_sessions
+    state.pi_deployer.snapshot = lambda: dict(program='stopped', pid=None, busy=False)
+    old = owner.sessions[old_id]
+    if blocker == 'running_program': state.pi_deployer.snapshot = lambda: dict(program='running', pid=41)
+    if blocker == 'unknown_program': state.pi_deployer.snapshot = lambda: dict(program='unknown', invocation_id='lost-stop-reply')
+    if blocker == 'running_job': state.pi_execution.jobs.append(dict(id='other-work', state='running'))
+    if blocker == 'reserved_test': state.component_tests.runs[-1]['reserved'] = True
+    if blocker == 'reserved_trial': state.integration_trials.runs.append(dict(project_id=meta['project_id'], reserved=True))
+    if blocker == 'pending_capture': old['capture_pending'] = True
+    if blocker == 'pending_model': old['model_started_at'] = 1
+    if blocker == 'pending_analysis': old['wiring_review']['pending'] = True
+    if blocker == 'owned_hardware': old['job_ids'] = ['unreconciled-job']
+    if blocker == 'functional_debug': old['purpose'] = 'debug'
+    history = deepcopy(old)
+    current = next(m for m in state.assistant.read('shared-conversation')['messages'] if m['id'] == message['id'])
+    assert not current['test_help_offer']['can_act']
+    with TestClient(app, client=('127.0.0.1', 5000)) as client:
+        response = client.post('/api/assistant/conversations/shared-conversation/test-help',
+            json={key: value for key, value in invitation(mobile, current).items() if key != 'context_id'})
+        assert response.status_code == 409, response.text
+    assert owner.sessions[old_id] == history and len(owner.sessions) == 1
+    assert not state.design_service.bridge.calls and not state.component_tests.actions

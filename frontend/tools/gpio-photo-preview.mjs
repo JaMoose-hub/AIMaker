@@ -14,16 +14,21 @@ if(replay) {
   const {createHash}=await import('node:crypto');
   if(createHash('sha256').update(replayImage).digest('hex')!==replay.image_sha256)throw Error('Replay image hash mismatch');
 }
-const design={...designFor(['hc-sr04','mrd-tf240-8p-cs']),title:'Offline GPIO workspace',source:'demo',code:'# offline'};
+const design={...designFor(['hc-sr04','mrd-tf240-8p-cs']),title:'Offline GPIO workspace',source:'demo',code:'# offline',
+  bom:[{id:'raspberry-pi-5',name:'Raspberry Pi 5',quantity:1,price:2500,purpose:'控制板 / Controller'},
+    {id:'hc-sr04',name:'HC-SR04+ 3.3V',quantity:1,price:65,purpose:'超音波 / Ultrasonic'},
+    {id:'mrd-tf240-8p-cs',name:'MRD_TFT240_8P_CS ILI9341',quantity:1,price:220,purpose:'螢幕 / Display'},
+    {id:'jumper-wires',name:'杜邦線 / Jumper wires',quantity:11,price:2,purpose:'接線 / Connections'}],
+  instructions:['先關閉並拔除 Pi 電源；固定底盤，保留通風與散熱空間。','固定 Pi 5、超音波與 TFT 螢幕；先核對零件標籤與供電規格。','依接線引導逐線核對；本預覽不代表實體或電氣驗證。']};
 const state={...maker.initialMaker(),design,stage:'guide',code:design.code};
 const reviewGuide={...maker.emptyGuide(),phase:'review',confirmed:Object.fromEntries(design.wiring.map(w=>[w.id,{signature:maker.wireSignature(w),mode:'camera',at:'fixture'}]))};
-const dockCases=Object.fromEntries(['active','stale','near','visual','lost'].map(name=>{
+const dockCases=Object.fromEntries(['active','stale','retest','near','visual','lost'].map(name=>{
   const cid=name==='visual'?'mrd-tf240-8p-cs':'hc-sr04';
-  const guide={...reviewGuide,confirmed:name==='active'?{}:reviewGuide.confirmed,componentIndex:design.component_ids.indexOf(cid),phase:name==='active'?'active':'review'};
+  const guide={...reviewGuide,confirmed:name==='active'?{}:name==='retest'?Object.fromEntries(Object.entries(reviewGuide.confirmed).filter(([id])=>id.startsWith('hc-sr04:'))):reviewGuide.confirmed,componentIndex:design.component_ids.indexOf(cid),phase:name==='active'?'active':'review'};
   const run={id:'dock-'+name,project_id:design.id,revision:design.revision,component_id:cid,guide_key:componentTests.componentTestKey(design,guide,cid),
-    created_at:1,heartbeat_at:1,outcome:name==='stale'?'inconclusive':name==='visual'?'awaiting_confirmation':'running',
-    phase:name==='visual'?'awaiting_visual':'awaiting_near',reserved:!['active','stale'].includes(name),invalidated:name==='stale',
-    reason:name==='lost'?'connection_lost':null,detail:'',samples:{},logs:[],options:['1234','2468','4567','7890'],program_stopped:false};
+    created_at:1,heartbeat_at:1,outcome:name==='stale'?'inconclusive':name==='retest'?'failed':name==='visual'?'awaiting_confirmation':'running',
+    phase:name==='retest'?'finished':name==='visual'?'awaiting_visual':'awaiting_near',reserved:!['active','stale','retest'].includes(name),invalidated:name==='stale',
+    reason:name==='lost'?'connection_lost':name==='retest'?'no_echo':null,detail:'',samples:{},logs:[],options:['1234','2468','4567','7890'],program_stopped:false};
   return [name,{state:{...state,guide},tests:{connected:name!=='stale',test_busy:run.reserved,active:run.reserved?run:null,results:name==='active'?[]:[run],execution:{jobs:[]}}}];
 }));
 const pi={connected:false,busy:false,program:'stopped',deployment:'idle',pid:null,execution:{jobs:[]},logs:[]};
@@ -55,6 +60,10 @@ if((!resetFixture&&!entryFixture)||(resetFixture&&!sessionStorage.getItem('workf
 }
 localStorage.setItem('boardvision.locale.v1',options.get('lang')||'en');localStorage.setItem('boardvision.theme.v1',options.get('theme')||'dark');
 localStorage.setItem('boardvision.wiring-guide-visible.v1','true');
+if(options.has('blueprint')) {
+  const s=JSON.parse(localStorage.getItem('boardvision.maker.v1'));s.stage='design';s.designView='blueprint';
+  localStorage.setItem('boardvision.maker.v1',JSON.stringify(s));
+}
 const fixed=${JSON.stringify(fixed)},design=${JSON.stringify(design)},board=${JSON.stringify(board)};
 if(options.get('reset-case')==='hardware')Object.assign(fixed['/api/pi/status'],{program:'running',pid:1234});
 if(options.get('reset-case')==='unknown')delete fixed['/api/pi/status'].execution;
@@ -146,6 +155,12 @@ window.fetch=async(input,init={})=>{
     fixed['/api/debug/conversations']={conversation};return json({conversation});
   }
   if(path==='/api/assistant/conversations'&&method==='POST') {chat={id:body.id,kind:'project',locale:body.locale,project_id:body.project_id??null,messages:[],jobs:[],before:null,total:0,context_epoch:0,round:0,demo:null};return json(chat);}
+  if(options.has('blueprint')&&path.endsWith('/messages')&&path.startsWith('/api/assistant/conversations/')&&method==='POST') {
+    if(body.target!=='answer')throw Error('Hardware comparison must be read-only');
+    chat={...chat,messages:[...chat.messages,{id:'parts-user-'+(++seq),role:'user',text:body.text,stage:'design',capability:'answer',source:'desktop',epoch:0,round:0,created_at:Date.now()/1000},
+      {id:'parts-ai-'+seq,role:'assistant',text:options.get('lang')==='zh-TW'?'離線流程測試：僅收到零件型號描述，缺少標籤規格的項目無法確認。這不是實物核對結果。':'OFFLINE FLOW TEST: supplied model text received. Missing ratings cannot be confirmed. This is not a real hardware comparison.',stage:'design',capability:'answer',source:'assistant',epoch:0,round:0,created_at:Date.now()/1000}],total:chat.total+2};
+    return json(chat);
+  }
   if(path.startsWith('/api/assistant/conversations/')&&['reset','import'].includes(path.split('/').at(-1))&&method==='POST') {
     if(path.endsWith('/reset'))chat={...chat,messages:[],jobs:[],total:0,round:body.round??chat?.round??0,context_epoch:(chat?.context_epoch??0)+1};
     return json(chat);

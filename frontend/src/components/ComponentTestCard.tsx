@@ -6,10 +6,12 @@ import type { ProjectDesign, ProjectGuideState } from "../lib/maker";
 import type { ComponentTestHelpEvidence } from "../lib/componentTestHelp";
 import "./ComponentTestCard.css";
 
-export function ComponentTestCard({ design, session, tests, onViewWiring, onDebug, view = "all", runId }: {
+export function ComponentTestCard({ design, session, tests, onViewWiring, onDebug, view = "all", runId, inlineActions = false }: {
   design: ProjectDesign; session: ProjectGuideState; tests: ReturnType<typeof useComponentTests>;
   view?: "all" | "controls" | "results" | "instructions" | "actions" | "dock";
   runId?: string;
+  /** Bottom guide presentation only; never changes test eligibility or ownership. */
+  inlineActions?: boolean;
   onViewWiring: () => void;
   onDebug?: (componentId: string, runId?: string, symptom?: string, evidence?: ComponentTestHelpEvidence) => void | Promise<boolean>;
 }) {
@@ -107,7 +109,11 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
   const jobProblem = Boolean(failedJob && !run && failedJob.project_id === design.id && failedJob.component_id === cid
     && failedJob.guide_key === key && !nonProblemReasons.includes(failedJob.reason ?? "")
     && !nonProblemReasons.includes(reason ?? ""));
-  const canAskHelp = Boolean(liveProblem || (!queued && (terminalProblem || jobProblem)));
+  // The bottom wiring bar must not keep soliciting help for saved failures.
+  // Explicit history/result surfaces keep their existing troubleshooting action.
+  const freshProblem = (terminalProblem && !historical)
+    || (jobProblem && (failedJob?.created_at ?? 0) >= openedAt);
+  const canAskHelp = Boolean(liveProblem || (!queued && (inlineActions ? freshProblem : terminalProblem || jobProblem)));
   const helpTarget = JSON.stringify([design.id, design.revision, cid, key, runId ?? null, run?.id ?? null, failedJob?.id ?? null]);
   // Retained click handlers must check the latest target and eligibility again.
   const currentHelp = useRef({ target: helpTarget, canAskHelp, onDebug, busy, cid, run, reason, outcome, historical, stale,
@@ -134,7 +140,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
   const historyNote = run && !run.reserved ? <small className="test-history">{historical ? tr("上次測試紀錄", "Last test record") : tr("本次測試結果", "This test result")}{!compact ? ` · ${finishedTime}` : ""}{historical ? tr("（先前保存，非目前接線證據）", " (saved history, not current wiring evidence)") : ""}</small> : null;
   const compactStale = compact && stale && !run?.reserved && !tests.error && !failedJob && !foreign;
   const wiringCount = design.wiring.filter(wire => wire.componentId === cid).length;
-  return <section className={`component-test-card${compact ? " is-compact-test" : ""}`} data-view={view} aria-label={tr("零件功能測試", "Component function test")}>
+  return <section className={`component-test-card${compact ? " is-compact-test" : ""}${inlineActions ? " is-inline-test-actions" : ""}`} data-view={view} aria-label={tr("零件功能測試", "Component function test")}>
     {!showResults && foreign ? <p role="status">{tr("其他零件仍在測試；下方停止按鈕會停止該次測試。新測試須經上方執行管理確認交接。", "Another component is testing; Stop below stops that run. Confirm handoff in Execution before the next test.")}</p> : null}
     {!showResults && !compactActions ? debugAction : null}
     {showResults ? <><header><span>{compact ? <>{tr("功能測試", "Function test")}{complete ? <small className="test-wiring-count">{tr("人工確認", "Manually checked")} {wiringCount}/{wiringCount}</small> : null}</> : <>{tr("零件功能測試", "COMPONENT TEST")} · {showControls && foreign ? run?.component_id : name}</>}</span>
@@ -168,12 +174,18 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     </> : null}
     {showControls ? <><div className="test-actions">
       {!tests.status.connected && !compactActions ? <small>{tr("請使用上方「連線 Pi」", "Use Connect Pi at the top")}</small> : null}
-      {!runId && session.phase !== "prepare" && complete && (!active || foreign) && !queued ? <button className="guide-primary-action" disabled={busy || !tests.status.connected} title={!tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>{busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
+      {!runId && session.phase !== "prepare" && complete && (!active || foreign) && !queued ? <button className={inlineActions && last ? "guide-secondary-test-action" : "guide-primary-action"} disabled={busy || !tests.status.connected}
+        aria-label={inlineActions ? `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}` : undefined}
+        title={!tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>
+        {inlineActions ? <svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          {last ? <path d="M3.5 8a6.5 6.5 0 1 1 .6 5M3.5 3.5V8H8" /> : <path d="m7 4 9 6-9 6V4Z" />}
+        </svg> : null}
+        {busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : inlineActions ? tr(last ? "重新測試" : "測試零件", last ? "Retest" : "Test module") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
       {compactActions ? debugAction : null}
       {canAct && phase === "awaiting_stop_consent" ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, "stop_project")}>{tr("確認停止原作品，開始測試", "Stop original project and test")}</button> : null}
       {canAct && (phase === "awaiting_near" || phase === "awaiting_far") ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, phase === "awaiting_near" ? "near" : "far")}>{tr("準備好了，取樣 5 秒", "Ready · sample for 5 seconds")}</button> : null}
       {run?.reserved ? <button disabled={busy} onClick={() => void tests.action(run, "stop")}>{tr("停止本次測試", "Stop this test")}</button> : null}
-      {!compactActions ? <button disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button> : null}
+      {!compactActions ? <button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button> : null}
     </div>
     {canAct && phase === "awaiting_visual" ? <fieldset disabled={busy} className="test-visual-confirm"><legend>{tr("本次螢幕顯示哪個數字？", "Which code is on the screen?")}</legend>
       <div className="test-code-options">{run.options.map(code => <label key={code}><input type="radio" name={`test-code-${run.id}`} checked={choice.runId === run.id && choice.code === code}
@@ -182,7 +194,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
       <button className="guide-primary-action" disabled={choice.runId !== run.id || !choice.code || !choice.normal} onClick={() => void tests.action(run, "visual", {code:choice.code,appearance:"normal"})}>{tr("確認顯示結果", "Confirm display result")}</button>
       <div className="test-actions">{([['black','全黑','Black screen'],['white','白屏','White screen'],['abnormal','亂碼／顏色異常','Abnormal image/colors']] as const).map(([appearance,zh,en]) => <button key={appearance} onClick={() => void tests.action(run,"visual",{appearance})}>{tr(zh,en)}</button>)}</div>
     </fieldset> : null}
-    {compactActions && view !== "dock" ? <details className="test-more-actions"><summary>{tr("其他操作", "More actions")}</summary><div>
+    {compactActions && view !== "dock" && !inlineActions ? <details className="test-more-actions"><summary>{tr("其他操作", "More actions")}</summary><div>
       <button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button>
     </div></details> : null}
     </> : null}

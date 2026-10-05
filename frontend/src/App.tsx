@@ -44,6 +44,7 @@ import type {
   Pin,
 } from "./lib/types";
 import type { ActiveGuideTarget } from "./lib/componentWiringGuides";
+import { projectGuideOverlayScope } from "./lib/componentOverlayScope";
 import { wsClient } from "./lib/wsClient";
 import { DesignStudio } from "./components/DesignStudio";
 import { BlueprintPage } from "./components/BlueprintPage";
@@ -126,7 +127,6 @@ export default function App() {
   }, [guideVisible]);
   const [calibrateOpen, setCalibrateOpen] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
-  const [diagramCaptureOverride, setDiagramCaptureOverride] = useState<string | null>(null);
   const [evidenceDiagram, setEvidenceDiagram] = useState<(DiagramInspection & { requestId: number }) | null>(null);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("standard");
   const glasses = useGlassesStream();
@@ -215,7 +215,7 @@ export default function App() {
   const changeImageView = useCallback((view: GpioView) => {
     setImageView(view);
     if (view !== 'photo') lastLiveView.current = view;
-    setEvidenceDiagram(null); setDiagramCaptureOverride(null);
+    setEvidenceDiagram(null);
     setMaker(s => s.guide.mode === "camera" ? s : ({...s, guide: {...s.guide, mode: "camera"}}));
   }, [setMaker]);
   const liveViewIntent = useRef(0);
@@ -281,14 +281,14 @@ export default function App() {
   // A fresh Maker project is not the legacy standalone board workspace.
   const emptyProjectGuide = makerEnabled && !maker.standalone && !project && makerStage === "guide" && !displayModeActive;
   const fullWidthWiring = (Boolean(project) || emptyProjectGuide) && makerStage === "guide";
-  // A requested photo temporarily reveals the shared camera without changing
-  // the user's 2D guide preference or confirmation progress.
+  // Debug photo requests must not override the user's view. The shared camera
+  // stays mounted; switching to photo guidance remains an explicit user action.
   const projectWire = project ? currentWire(project, maker.guide) : undefined;
+  const guideOverlayComponentId = project && makerStage === "guide" && !displayModeActive
+    ? projectGuideOverlayScope(project.component_ids, maker.guide) : null;
   const diagramInspection = evidenceDiagram && project && evidenceDiagram.snapshot.project_id === project.id ? evidenceDiagram : null;
-  const diagramCaptureKey = debugCaptureSession ? `${debugCaptureSession.id}:${debugCaptureSession.capture_task?.id ??
-    `${debugCaptureSession.phase}:${debugCaptureSession.capture_task?.target}:${debugCaptureSession.capture_task?.attempt ?? debugCaptureSession.capture_task?.attempts ?? 0}:${debugCaptureSession.evidence?.at(-1)?.id ?? ""}`}` : null;
   const showWiringDiagram = Boolean(projectWire || diagramInspection) && makerStage === "guide" && maker.guide.mode === "2d" && !displayModeActive &&
-    !calibrateOpen && (!debugCaptureSession || diagramCaptureOverride === diagramCaptureKey);
+    !calibrateOpen;
   const navigateMaker = (stage: MakerStage) => {
     setGuideTarget(null);
     setMaker(s => ({ ...s, stage, standalone: false }));
@@ -416,7 +416,6 @@ export default function App() {
     if (calibrateOpen || displayModeActive || !createDiagramInspection(inspection.snapshot, inspection.wireId, project)) return;
     setGuideVisible(true);
     setEvidenceDiagram(previous => ({ ...inspection, requestId: (previous?.requestId ?? 0) + 1 }));
-    setDiagramCaptureOverride(diagramCaptureKey);
     setMaker(s => inspectDiagramInMaker(s, inspection));
   };
   async function prepareWiringEdit() {
@@ -428,7 +427,6 @@ export default function App() {
     if (!projectId || !await aiDebug.restartConversation()) return false;
     if (!await assistant.archiveWiring(guide.run ?? 0)) return false;
     setEvidenceDiagram(null);
-    setDiagramCaptureOverride(null);
     setMaker(s => s.design === maker.design ? ({ ...s, guide, debug: { panelOpen: s.debug?.panelOpen, intent: "wiring" } }) : s);
     return true;
   }
@@ -452,7 +450,7 @@ export default function App() {
       assistant.activateConversation(nextConversation);
       assistant.setDemoOpen(false);
       setGuideTarget(null); setSelectedPinId(null); setFilter("all");
-      setEvidenceDiagram(null); setDiagramCaptureOverride(null);
+      setEvidenceDiagram(null);
       setGpioPhotos([]); setSelectedPhoto("");
       // Clear this round's references, not the capture archive or live source.
       setImageView(config?.camera_source === "phone" ? "phone" : "webcam");
@@ -898,6 +896,8 @@ export default function App() {
   // One shared selector; each view hosts it in its existing header/dock.
   const imageViewControls = makerStage === "guide" && makerEnabled && !displayModeActive ? <ImageViewControls
     view={photoMainActive ? 'photo' : showWiringDiagram ? 'diagram' : 'live'}
+    photoView={photoMainActive || (showWiringDiagram && !!activeGpioPhoto) ? 'photo' : 'live'}
+    savedPhotoAvailable={!!activeGpioPhoto}
     disabled={calibrateOpen || liveCamera.pending || photoOperationBusy}
     photoDisabled={!canChangeImage}
     diagramAvailable={Boolean(project && (projectWire || diagramInspection))}
@@ -905,10 +905,12 @@ export default function App() {
       if (view === 'diagram') {
         setImageView(lastLiveView.current);
         if (projectWire) setEvidenceDiagram(null);
-        setDiagramCaptureOverride(diagramCaptureKey);
         setMaker(s => ({ ...s, guide: { ...s.guide, mode: '2d' } }));
       } else changeImageView(view === 'photo' ? 'photo' : lastLiveView.current);
     }} /> : null;
+  // Only the visible photo-guide surface hosts the existing source selector and
+  // capture action. VideoView and the capture owner stay mounted across views.
+  const photoGuideCaptureControls = <><div className="image-source-host" ref={setMobileControlsHost} />{gpioCaptureAction}</>;
 
   const completedStages = {
     design: Boolean(project),
@@ -968,13 +970,20 @@ export default function App() {
             design={maker.design} onGuide={() => navigateMaker("guide")}
             onEdit={() => setMaker(s => ({ ...s, designView: "concept" }))}
             onViewChange={view => setMaker(s => ({ ...s, designView: view }))}
+            onOpenAI={openAssistant}
+            onCheckParts={async (prompt, includePhoto) => { openAssistant(); return assistant.sendPartsCheck(maker, prompt, includePhoto); }}
+            partsPhotoLabel={assistant.mediaReference?.attachments.filter(asset => asset.type === 'image').map(asset => asset.filename ?? tr('對話照片', 'Conversation photo')).join(' · ') || undefined}
+            partsPhotoKey={assistant.mediaReference ? JSON.stringify([assistant.mediaReference.epoch, assistant.mediaReference.round, assistant.mediaReference.asset_ids]) : undefined}
+            partsCheckDisabledReason={!makerAI.ai?.logged_in || !makerAI.aiOptions.selectionValid ? tr('請先登入 AI 並選擇可用模型。', 'Sign in to AI and select an available model first.')
+              : !assistant.project ? tr('正在連接 AI 對話…', 'Connecting the AI conversation…')
+              : assistant.busy || makerAI.busy || maker.aiJobId ? tr('請等待目前 AI 工作完成。', 'Wait for the current AI task to finish.') : undefined}
             hasCandidate={Boolean(maker.candidate)} generating={Boolean(maker.aiJobId)} /> :
               <DesignStudio state={maker} setState={setMaker} onAdopt={adoptDesign} generationPhase={makerAI.phase} busy={makerAI.busy || assistant.busy}
                 onViewChange={view => setMaker(s => ({ ...s, designView: view }))} />
             }
         </div> : null}
         <GuidePaneLayout stageRef={videoStageRef}
-          className={`video-guide-stage assistant-wiring-stage${floatingGuide ? " guide-floating" : ""}${showWiringDiagram ? " maker-2d" : ""}`}
+          className={`video-guide-stage assistant-wiring-stage${floatingGuide ? " guide-floating" : ""}${floatingGuide && project ? " has-task-toolbar" : ""}${showWiringDiagram ? " maker-2d" : ""}`}
           visible={makerStage === "guide"}
           stacked={makerEnabled && !maker.standalone && !displayModeActive}
           resizable={makerEnabled && Boolean(project) && guideVisible && !displayModeActive && !floatingGuide}>
@@ -988,8 +997,9 @@ export default function App() {
             alternateView={photoMainActive ? <GpioPhotoWorkspace key={selectedPhoto || 'empty'} record={activeGpioPhoto}
               viewControls={imageViewControls}
               historical={!!photoMismatch} historicalReason={photoMismatch} target={photoGuidanceTarget(project, maker.guide)}
+              overlayComponentId={guideOverlayComponentId}
               records={gpioPhotos} onRecord={record => setSelectedPhoto(`${record.source}:${record.capture.capture_id}`)}
-              captureAction={gpioCaptureAction} busy={photoOperationBusy}
+              captureAction={photoGuideCaptureControls} sourceError={liveCamera.error} busy={photoOperationBusy}
               showReturn={!makerEnabled || displayModeActive}
               onReturn={() => changeImageView(lastLiveView.current)} /> : project && showWiringDiagram ? diagramInspection ? <DiagramInspectionView key={diagramInspection.requestId}
               viewControls={imageViewControls}
@@ -999,8 +1009,8 @@ export default function App() {
             glassesStatus={glasses.status}
             onGlassesDisplayFps={setGlassesDisplayFps}
             config={config}
-            sourceControl={makerStage === 'guide' && makerEnabled && !displayModeActive
-              ? <><div className="image-source-host" ref={setMobileControlsHost} />{gpioCaptureAction}</> : null}
+            sourceControl={makerStage === 'guide' && makerEnabled && !displayModeActive && !photoMainActive
+              ? photoGuideCaptureControls : null}
             sourceError={liveCamera.error}
             sourceChanging={liveCamera.pending}
             sourceUnavailable={config?.camera_source === 'phone' && !phoneReady}
@@ -1017,8 +1027,8 @@ export default function App() {
             onCloseCalibrate={handleCloseCalibrate}
             onCalibrationSuccess={() => void refreshAccuracy()}
             guideTarget={guideTarget}
-            overlayOverview={Boolean(project) && !displayModeActive && (!guideVisible || makerStage !== "guide" || maker.guide.phase !== "active")}
-            overlayComponentId={project && makerStage === "guide" && !displayModeActive ? project.component_ids[maker.guide.componentIndex] ?? null : null}
+            overlayOverview={Boolean(project) && !displayModeActive && guideOverlayComponentId === null}
+            overlayComponentId={guideOverlayComponentId}
             opticalHudCalibration={opticalHudCalibration}
             onOpticalHudCalibrationComplete={handleOpticalHudCalibrationComplete}
             debugView={false}
@@ -1026,14 +1036,15 @@ export default function App() {
             debugEvidence={debugCaptureSession?.evidence?.at(-1)}
             debugFramingFeedback={debugCaptureSession?.framing_feedback}
           />
-          {floatingGuide && !guideVisible ? <div className="floating-guide-dock">{guideVisibilityControl}</div> : null}
-          {project && makerStage === "guide" ? <WiringWorkspace guideOnly design={project} guide={maker.guide} visible={guideVisible && !displayModeActive}
+          {project && makerStage === "guide" ? <WiringWorkspace guideOnly toolbar={floatingGuide} design={project} guide={maker.guide} visible={guideVisible && !displayModeActive}
+            onReveal={() => handleGuideVisibilityChange(true)}
+            revealControl={floatingGuide && !guideVisible ? guideVisibilityControl : undefined}
             panelId={floatingGuide ? 'maker-floating-guide' : undefined}
             assistantOpen={maker.debug?.panelOpen ?? false}
             onAssistantOpenChange={panelOpen=>setMaker(s=>({...s,debug:{...s.debug,panelOpen}}))}
             onClose={()=>handleGuideVisibilityChange(false)} assistant={null} busy={Boolean(aiDebug.record?.model_busy)}
             replyId={(aiDebug.conversation?.messages ?? aiDebug.record?.messages)?.filter(message=>message.role==="assistant").at(-1)?.id}>
-            <ProjectGuidePanel design={project} session={maker.guide} visible embedded floating={floatingGuide} disabled={backendDown}
+            <ProjectGuidePanel design={project} session={maker.guide} visible embedded floating={floatingGuide} toolbar={floatingGuide} disabled={backendDown}
             visibilityControl={floatingGuide && guideVisible ? guideVisibilityControl : undefined}
             onInspectComponent={photoMainActive ? cid => inspectWiring(cid) : undefined}
             pinsById={pinsById}
@@ -1042,6 +1053,7 @@ export default function App() {
             onRestart={restartWiringConversation}
             onTargetChange={setGuideTarget} onVisibleChange={handleGuideVisibilityChange} onDebug={askComponentTestAI} onDeploy={() => navigateMaker("deploy")} />
           </WiringWorkspace> : null}
+          {floatingGuide && !guideVisible && !project ? <div className="floating-guide-dock">{guideVisibilityControl}</div> : null}
           {emptyProjectGuide ? <section id={floatingGuide ? 'maker-floating-guide' : undefined} className="photo-guide component-guide compact-guide maker-guide-empty"
             hidden={!guideVisible} aria-labelledby="empty-project-guide-title">
             <header className="guide-panel-header"><div>

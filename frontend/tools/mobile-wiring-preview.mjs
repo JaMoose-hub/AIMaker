@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { build } from 'esbuild';
 
-export async function startPreview(port = 18798) {
+export async function startPreview(port = 18798, { partsCheck = false } = {}) {
     const directory = fileURLToPath(new URL('../', import.meta.url));
     const bundle = await build({ entryPoints: [fileURLToPath(new URL('mobile-wiring-preview.tsx', import.meta.url))], bundle: true,
         write: false, outdir: 'preview', jsx: 'automatic', external: ['/brand/*'], plugins: [{ name: 'fixture-translation', setup(builder) {
@@ -19,12 +19,13 @@ export async function startPreview(port = 18798) {
         slots: Object.fromEntries(roles.map(role => [role, null])), observations: [], results: [], reviews: {}, missing_roles: [...roles], no_progress_count: 0 });
     let review = fresh(), assetIndex = 0, failUpload = false, delayUpload = false;
     const requests = [], assets = new Set();
-    const snapshot = () => ({ review: structuredClone(review), component_label: 'HC-SR04', can_act: review.status !== 'analysing' });
+    const snapshot = () => partsCheck ? { review: null, can_act: false } : ({ review: structuredClone(review), component_label: 'HC-SR04', can_act: review.status !== 'analysing' });
     const session = { session_id: 'fixture-phone', conversation_id: 'fixture-conversation', context_id: 'fixture-context', title: '接線照片對話測試',
-        context: { round: 1, stage: 'guide' }, available_context: { context_id: 'fixture-context' }, stream: { active: false, generation: 0, state: 'finding', can_capture: false },
+        context: { round: 1, stage: partsCheck ? 'design' : 'guide', design: { locale: 'zh-TW' } }, available_context: { context_id: 'fixture-context' }, stream: { active: false, generation: 0, state: 'finding', can_capture: false },
         view: { capture_id: null, wire_id: null, revision: 0 } };
     const chat = { id: 'fixture-conversation', messages: [{ id: 'start', role: 'assistant', text: '我會陪你一張一張拍。先保持接線不變，我們從 Pi 第一側開始。', source: 'fixture', created_at: 1, epoch: 0, round: 1 }],
         jobs: [], before: null, total: 1, context_epoch: 0, round: 1, locale: 'zh-TW' };
+    if (partsCheck) chat.messages[0].text = '隔離測試：本次只核對 Pi 5、超音波與 TFT，不分析接線，也不呼叫真實 AI。';
     const html = '<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Actual mobile photo dialogue — isolated fixture</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/preview.css"><div id="root"></div><script type="module" src="/preview.js"></script></html>';
     const server = createServer(async (request, response) => {
         const path = new URL(request.url, 'http://127.0.0.1').pathname;
@@ -45,6 +46,14 @@ export async function startPreview(port = 18798) {
         if (path.startsWith('/api/mobile/') && request.headers.authorization !== 'Bearer synthetic-phone-token') return send({ detail: 'mobile_session_expired_or_invalid' }, 401);
         if (path === '/api/mobile/session') return send(session);
         if (path === '/api/mobile/conversation') return send(chat);
+        if (path === '/api/mobile/messages' && request.method === 'POST' && partsCheck) {
+            if (body.purpose !== 'parts_check' || body.inherit_media !== false || !body.asset_ids?.length || body.asset_ids.some(id => !assets.has(id)))
+                return send({ detail: 'fixture_expected_explicit_parts_check' }, 422);
+            chat.messages.push({ id: body.request_id, role: 'user', text: '模擬收到：請核對本次零件照片，不檢查接線。', source: 'fixture', created_at: 2, epoch: 0, round: 1 });
+            chat.messages.push({ id: `${body.request_id}-reply`, role: 'assistant', text: '本機模擬回覆：三項硬體皆無法確認。這不是實際 AI 或硬體驗證。', source: 'fixture', created_at: 3, epoch: 0, round: 1 });
+            chat.total = chat.messages.length;
+            return send(chat);
+        }
         if (path === '/api/mobile/stream' && request.method === 'DELETE') return send(session);
         if (path === '/api/mobile/wiring-review' && request.method === 'GET') return send(snapshot());
         if (path === '/api/mobile/assets') {
@@ -53,6 +62,7 @@ export async function startPreview(port = 18798) {
             const id = `fixture-asset-${++assetIndex}`; assets.add(id);
             return send({ id, type: 'image', mime: 'image/svg+xml', width: 1200, height: 900, size: 5000, duration: null, filename: 'synthetic-photo.svg', url: `/api/mobile/assets/${id}/file` });
         }
+        if (/^\/api\/mobile\/assets\/[^/]+\/file$/.test(path)) return send(picture, 200, 'image/svg+xml');
         if (/^\/api\/mobile\/wiring-review\/evidence\//.test(path)) return send(picture, 200, 'image/svg+xml');
         if (path === '/api/mobile/wiring-review' && request.method === 'POST') {
             const action = body.action;

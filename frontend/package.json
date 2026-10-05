@@ -11,7 +11,7 @@
     "test:headers": "node --test tools/component_header.test.mjs tools/camera_tuning.test.mjs tools/auto_calibration.test.mjs tools/camera_modes.test.mjs tools/status_layout.test.mjs tools/component_tests.test.mjs tools/component_distance.test.mjs tools/component_test_help.test.mjs tools/pi_execution.test.mjs tools/debug.test.mjs tools/debug_session.test.mjs tools/debug_session_binding.test.mjs tools/runtime_config.test.mjs tools/responsive_layout.test.mjs tools/capture_countdown.test.mjs tools/chat_scroll.test.mjs",
     "test:pin-calibration": "node --test tools/pin_calibration.test.mjs",
     "test:wiring-ai": "node --test tools/wiring_ai_integration.test.mjs tools/wiring_presets.test.mjs tools/debug_evidence.test.mjs tools/wiring_edit.test.mjs tools/wiring_restart.test.mjs tools/step_diagram.test.mjs tools/camera_tools.test.mjs tools/component_overlay_scope.test.mjs tools/preview_request_scope.test.mjs",
-    "test:theme": "node --test tools/tinkro.test.mjs tools/theme.test.mjs tools/workspace_header.test.mjs tools/chat-presentation.test.mjs",
+    "test:theme": "node --test tools/tinkro.test.mjs tools/theme.test.mjs tools/workspace_header.test.mjs tools/chat-presentation.test.mjs tools/assistant_markdown.test.mjs",
     "test:language": "node --test tools/language.test.mjs",
     "test:stages": "node --test tools/maker_stage.test.mjs tools/concept_motors.test.mjs tools/demo_image.test.mjs tools/assistant.test.mjs",
     "test:photo-wiring": "node --test tools/photo_wiring.test.mjs tools/mobile.test.mjs tools/mobile_browser.test.mjs tools/mobile_web.test.mjs tools/mobile_capture.test.mjs tools/mobile_wiring_review.test.mjs tools/mobile_test_help.test.mjs tools/mobile_wiring_chat.test.mjs tools/mobile_chat_image.test.mjs",
@@ -23,7 +23,9 @@
   "dependencies": {
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.6",

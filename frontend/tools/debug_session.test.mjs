@@ -350,7 +350,7 @@ test('capture guidance remains available with original Pin overlays and respects
   assert.match(read('../src/components/VideoView.tsx'),/debugCaptureBox \? <div className="debug-capture-feedback"/);
 });
 
-test('2D preference resumes after capture without hiding the requested shared camera',()=>{
+test('debug photo requests and retakes preserve the chosen diagram without stopping the shared camera',()=>{
   const appTree=ts.createSourceFile('App.tsx',read('../src/App.tsx'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   let initializer;
   function find(node) {
@@ -361,10 +361,17 @@ test('2D preference resumes after capture without hiding the requested shared ca
   const show=new Function('projectWire','makerStage','maker','displayModeActive','debugCaptureSession','diagramCaptureOverride','diagramCaptureKey','calibrateOpen = false','diagramInspection = null',`return ${initializer.getText(appTree)};`);
   const maker={guide:{mode:'2d'}};
   assert.equal(show({},'guide',maker,false,null),true);
-  assert.equal(show({},'guide',maker,false,{capture_task:{target:'pi_header'}},null,'new-capture'),false);
+  for(const capture of [
+    {id:'session',capture_task:{id:'side-a',target:'pi_header'}},
+    {id:'session',capture_task:{id:'side-b',target:'pi_header',attempt:2}},
+    {id:'session',capture_task:{id:'component',target:'tft_screen'},evidence:[{id:'new-photo'}]},
+  ]) assert.equal(show({},'guide',maker,false,capture,null,'new-capture'),true);
   assert.equal(show({},'guide',maker,false,null),true);
   assert.equal(maker.guide.mode,'2d');
   assert.equal(show({},'guide',maker,true,null),false);
+  assert.equal(show({},'guide',{guide:{mode:'camera'}},false,{capture_task:{target:'pi_header'}}),false);
+  assert.equal(show({},'guide',maker,false,null,null,null,true),false,'calibration still owns its camera view');
+  assert.match(read('../src/App.tsx'),/debugCaptureTask=\{debugCaptureSession\?\.capture_task\}/,'capture framing still reaches the one mounted camera');
 });
 
 test('camera guidance clears when a session is stopped, stale or awaiting a text answer',()=>{

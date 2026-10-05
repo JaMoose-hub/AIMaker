@@ -12,6 +12,7 @@ function load(file, modules = {}) {
 }
 const reviewDomain = load('../src/lib/wiringReview.ts');
 const analysisDomain = load('../src/lib/assistantAnalysis.ts');
+const mediaDomain = load('../src/lib/mobileBrowser.ts');
 const round = (revision = 1, number = 1) => ({ id: 'review', revision, round: number, component_id: 'hc-sr04', status: 'collecting', photo_flow_version: 2,
     slots: { pi_side_a: null, pi_side_b: null, component_header: null }, results: [], observations: [], reviews: {}, no_progress_count: 0, missing_roles: ['pi_side_a', 'pi_side_b', 'component_header'] });
 const turn = () => new Promise(done => setImmediate(done));
@@ -36,13 +37,15 @@ async function fixture(run, options = {}) {
     let review = round(), contextId = 'context', requestOverride = null, uploadOverride = null, counter = 0;
     const flow = (role = 'pi_side_a', extra = {}) => ({ flow_id: 'flow', review_id: review.id, revision: review.revision, round: review.round,
         component_id: review.component_id, kind: 'photo_request', role, current: true, can_act: true, actions: ['capture'], ...extra });
-    let conversation = { id: 'chat', kind: 'project', messages: [{ id: 'question', role: 'assistant', source: 'legacy-debug', text: '請拍 Pi 第一側。', epoch: 0, round: 1, wiring_flow: flow() }], jobs: [], context_epoch: 0, round: 1 };
+    let conversation = { id: 'chat', kind: 'project', messages: [{ id: 'question', role: 'assistant', source: 'legacy-debug', text: '請拍 Pi 第一側。', epoch: 0, round: 1, wiring_flow: flow() }], jobs: [], context_epoch: 0, round: 1,
+        ...(options.activeMedia ? { active_media: structuredClone(options.activeMedia) } : {}) };
     const snapshot = () => ({ review: structuredClone(review), can_act: true, component_label: 'HC-SR04', conversation: structuredClone(conversation) });
-    const session = () => ({ session_id: 'phone', conversation_id: 'chat', context_id: contextId, context: { round: 1,
+    const session = () => ({ session_id: 'phone', conversation_id: 'chat', context_id: contextId, context: { round: 1, stage: options.stage ?? 'guide',
         design: { current: { id: 'project', revision: 2, component_ids: ['hc-sr04'] } },
         context: { debug_context: { guide_run: 1, test_keys: { 'hc-sr04': 'selected-test-key' } } } },
         view: { capture_id: null, wire_id: null, revision: 1 }, stream: { active: false, generation: 0, state: 'finding', can_capture: false } });
-    const empty = () => ({ text: '保留普通聊天草稿', attachments: [{ id: 'ordinary', name: 'normal.jpg', type: 'image',
+    const empty = () => ({ text: options.text ?? '保留普通聊天草稿', attachments: options.noAttachments ? [] : [{ id: 'ordinary', name: 'normal.jpg', type: 'image',
+        ...(options.purpose ? { purpose: options.purpose } : {}),
         ...(options.uploadAttachment ? {} : { asset: { id: 'ordinary-asset' } }) }], outbox: structuredClone(options.outbox ?? []), captureJob: null });
     class Api {
         pairing = { token: 'synthetic', session_id: 'phone', conversation_id: 'chat' };
@@ -53,6 +56,7 @@ async function fixture(run, options = {}) {
             if (override !== undefined) return override;
             if (path === 'session') return session();
             if (path.startsWith('conversation')) return structuredClone(conversation);
+            if (path === 'messages') return structuredClone(conversation);
             if (path === 'wiring-review' && !options.method) return snapshot();
             if (path === 'wiring-review') {
                 const action = options.body.action;
@@ -74,11 +78,12 @@ async function fixture(run, options = {}) {
         }
         async upload(attachment) { calls.push({ path: 'assets', attachment }); return uploadOverride ? uploadOverride(attachment) : { id: 'asset', type: 'image', sha256: 'asset-hash' }; }
     }
+    const savedDrafts = [];
     const browser = { MobileBrowserApi: Api, loadBrowserPairing: () => ({ token: 'synthetic', session_id: 'phone', conversation_id: 'chat', context_id: 'context' }),
         emptyBrowserDraft: empty, idleBrowserRtc: () => ({ stats: {}, stream: null }), mobileBrowserDraftKey: () => 'draft-key', loadBrowserDraft: async () => empty(),
-        saveBrowserDraft: async () => {}, saveBrowserPairing() {}, browserLease: () => ({ key: '', deadline: 0 }),
+        saveBrowserDraft: async (_, value) => { savedDrafts.push(structuredClone(value)); }, saveBrowserPairing() {}, browserLease: () => ({ key: '', deadline: 0 }),
         mergeBrowserSession: (_, next) => next, mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false,
-        browserMediaReference: () => ({ asset_ids: [] }), browserUuid: () => `request-${++counter}`, browserAttachment: async selected => ({ id: 'attachment', upload_id: 'upload', file: selected, name: selected.name,
+        browserMediaReference: mediaDomain.browserMediaReference, browserUuid: () => `request-${++counter}`, browserAttachment: async selected => ({ id: 'attachment', upload_id: 'upload', file: selected, name: selected.name,
             filename: selected.name, type: 'image', mime: selected.type, size: 100, width: 1080, height: 1920 }) };
     const { useMobileBrowser, mobileWiringPhotoFlow } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },
         './mobile': { mobileVideoFresh: () => false }, './mobileViewerStats': { mobileMeasurementFresh: () => false },
@@ -88,7 +93,7 @@ async function fixture(run, options = {}) {
     try {
         render(); for (const effect of effects) { const cleanup = effect(); if (cleanup) cleanups.push(cleanup); }
         for (let i = 0; i < 4; i++) await turn();
-        await run({ render, file, calls, snapshot, setReview(value) { review = value; }, getReview: () => review, setContext(value) { contextId = value; }, setEpoch(value) { conversation.context_epoch = value; },
+        await run({ render, file, calls, savedDrafts, snapshot, setReview(value) { review = value; }, getReview: () => review, setContext(value) { contextId = value; }, setEpoch(value) { conversation.context_epoch = value; },
             eligibility: mobileWiringPhotoFlow, chat: () => structuredClone(conversation), setConversation(value) { conversation = value; }, setFlow(value) { conversation.messages[0].wiring_flow = { ...conversation.messages[0].wiring_flow, ...value }; },
             onRequest(callback) { requestOverride = callback; }, onUpload(callback) { uploadOverride = callback; } });
     } finally {
@@ -96,6 +101,84 @@ async function fixture(run, options = {}) {
         Object.assign(globalThis, saved);
     }
 }
+
+const inheritedPhoto = { epoch: 0, round: 1, asset_ids: ['previous-photo'], capture_id: 'previous-capture', attachments: [{ asset_id: 'previous-photo', filename: 'Pi.jpg', type: 'image' }] };
+
+test('phone cancellation takes effect even for Send on the same render and saves only draft reference intent', async () => fixture(async f => {
+    const w = f.render(), original = f.chat();
+    assert.match(w.inheritedMediaLabel, /Pi.jpg/);
+    w.removeMediaReference();
+    assert.equal(f.render().inheritedMediaLabel, null);
+    assert.equal(f.render().draft, '保留普通聊天草稿');
+    assert.deepEqual(f.chat(), original);
+    await w.send();
+    const body = f.calls.find(call => call.path === 'messages').body;
+    assert.deepEqual(body.asset_ids, []); assert.equal(body.inherit_media, false); assert.equal('capture_id' in body, false);
+    assert.ok(f.savedDrafts.some(d => d.removedMediaReference && d.text === '保留普通聊天草稿'));
+    await f.render().refresh();
+    assert.equal(f.render().inheritedMediaLabel, null, 'polling must not resurrect the same reference');
+}, { noAttachments: true, activeMedia: inheritedPhoto }));
+
+test('cancelled mobile reference stays excluded in immutable failed-message retries', async () => fixture(async f => {
+    let fail = true;
+    f.onRequest(path => { if (path === 'messages' && fail) throw Error('network interrupted'); });
+    const w = f.render(); w.removeMediaReference(); await w.send();
+    const queued = f.render().outbox[0];
+    assert.equal(queued.status, 'failed'); assert.deepEqual(queued.payload.asset_ids, []);
+    const first = f.calls.find(call => call.path === 'messages').body;
+    const next = f.chat(); next.active_media.asset_ids = ['new-photo']; f.setConversation(next);
+    await f.render().refresh();
+    assert.ok(f.render().inheritedMediaLabel, 'a genuinely new photo is available for new messages');
+    fail = false; await f.render().retry(queued.id);
+    assert.deepEqual(f.calls.filter(call => call.path === 'messages')[1].body, first);
+    assert.equal('capture_id' in first, false); assert.equal(first.inherit_media, false);
+}, { noAttachments: true, activeMedia: inheritedPhoto }));
+
+test('cancel does not remove a newly chosen attachment or change its explicit send', async () => fixture(async f => {
+    const w = f.render(); w.removeMediaReference();
+    assert.equal(f.render().attachments[0].id, 'ordinary');
+    assert.equal(f.render().draft, '保留普通聊天草稿');
+    await f.render().send();
+    const body = f.calls.find(call => call.path === 'messages').body;
+    assert.deepEqual(body.asset_ids, ['ordinary-asset']); assert.equal('capture_id' in body, false);
+}, { activeMedia: inheritedPhoto }));
+
+test('hardware-only photo send retains its explicit purpose on upload failure and retry without wiring actions', async () => fixture(async f => {
+    let fail = true;
+    f.onRequest(path => { if (path === 'messages' && fail) throw Error('network interrupted'); });
+    await f.render().send();
+    let w = f.render();
+    assert.equal(w.outbox.length, 1);
+    assert.equal(w.outbox[0].status, 'failed');
+    assert.equal(w.outbox[0].payload.purpose, 'parts_check');
+    const first = f.calls.find(call => call.path === 'messages').body;
+    assert.equal(first.text, '');
+    assert.deepEqual(first.asset_ids, ['asset']);
+    assert.equal(first.inherit_media, false);
+    assert.equal('capture_id' in first, false);
+    fail = false;
+    await w.retry(w.outbox[0].id);
+    const requests = f.calls.filter(call => call.path === 'messages');
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests[1].body, first, 'retry must keep the same frozen purpose, images and request ID');
+    assert.equal(f.render().outbox.length, 0);
+    assert.equal(f.calls.filter(call => call.path === 'assets').length, 1);
+    assert.equal(f.calls.filter(call => call.path === 'wiring-review' && call.method === 'POST').length, 0);
+}, { stage: 'design', purpose: 'parts_check', text: '', uploadAttachment: true }));
+
+test('hardware attachment cannot silently become a wiring request outside design', async () => fixture(async f => {
+    await f.render().send();
+    assert.equal(f.calls.some(call => call.path === 'messages' || call.path === 'assets'), false);
+    assert.equal(f.render().attachments[0].purpose, 'parts_check');
+    assert.match(f.render().error, /零件核對/);
+}, { purpose: 'parts_check', text: '' }));
+
+test('ordinary design attachments remain general chat rather than hardware comparison', async () => fixture(async f => {
+    await f.render().send();
+    const request = f.calls.find(call => call.path === 'messages').body;
+    assert.equal('purpose' in request, false);
+    assert.equal(request.text, '保留普通聊天草稿');
+}, { stage: 'design' }));
 
 test('photo actions require the current exact shared question rather than message text', async () => fixture(async f => {
     const w = f.render(), message = w.conversation.messages[0];
@@ -110,8 +193,9 @@ test('mobile shows the current framing example without capturing and keeps old q
     const framing = () => null;
     const hooks = { ...React, useRef: current => ({ current }) };
     const { MobileWiringChatActions } = load('../src/components/MobileWebApp.tsx', {
-        react: hooks, '../lib/i18n': { useI18n: () => ({ locale: 'zh-TW' }) }, '../lib/assistantHistory': {},
-        './AssistantAnalysisTime': {}, './WiringChatMessage': { WiringCaptureFraming: framing }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
+        react: { ...hooks, useState: initial => [initial, () => {}] }, '../lib/i18n': { useI18n: () => ({ locale: 'zh-TW' }) }, '../lib/assistantHistory': {},
+        './MobileWiringAlbumPanel': {}, '../lib/useMobileWiringAlbum': {},
+        './AssistantAnalysisTime': {}, './AssistantMarkdown': { AssistantMarkdown: () => null }, './WiringChatMessage': { WiringCaptureFraming: framing }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
         '../lib/mobile': {}, '../lib/useMobileBrowser': { mobileWiringPhotoFlow: f.eligibility },
         '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {} });
     const w = f.render(), message = w.conversation.messages[0];
@@ -121,7 +205,7 @@ test('mobile shows the current framing example without capturing and keeps old q
     const current = nodes(MobileWiringChatActions({ w, message }));
     assert.equal(current.find(node => node.type === framing).props.current, true);
     assert.equal(current.find(node => node.type === framing).props.role, 'pi_side_a');
-    assert.equal(current.filter(node => node.type === 'button').length, 1);
+    assert.equal(current.filter(node => node.type === 'button').length, 2);
     const old = nodes(MobileWiringChatActions({ w, message: { ...message, wiring_flow: { ...message.wiring_flow, current: false } } }));
     assert.equal(old.find(node => node.type === framing).props.current, false);
     assert.equal(old.filter(node => node.type === 'button').length, 0);
@@ -215,7 +299,7 @@ test('an old snapshot or a mismatched conversation receipt cannot replace the cu
 test('the mobile chat mounts shared-message actions and photos without a persistent sequence, analysis or manual-review panel', () => {
     const source = readFileSync(new URL('../src/components/MobileWebApp.tsx', import.meta.url), 'utf8');
     const chat = source.slice(source.indexOf('export function ChatView('), source.indexOf('export function CameraView('));
-    assert.match(chat, /<MobileWiringChatActions w=\{w\} message=\{message\}/); assert.match(chat, /<MobileWiringChatPhoto w=\{w\} message=\{message\}/);
+    assert.match(chat, /<MobileWiringChatActions w=\{w\} message=\{message\} photoAlbum=\{photoAlbum\}/); assert.match(chat, /<MobileWiringChatPhoto w=\{w\} message=\{message\}/);
     assert.doesNotMatch(source, /MobileWiringPhotoDialogue|WiringPhotoSequence|FramingGuide|onAnalyse=|wiringReviewAction\(/);
     assert.match(source, /message\.capture_id && !message\.wiring_flow/);
 });
@@ -286,9 +370,10 @@ test('mobile analysis UI keeps one inline server clock, blocks form submission a
     const time = () => null, edits = [], calls = [];
     const hooks = { ...React, useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useRef: current => ({ current }), useEffect() {}, useLayoutEffect() {} };
     const { ChatView } = load('../src/components/MobileWebApp.tsx', { react: hooks, '../lib/i18n': { useI18n: () => ({ locale: 'zh-TW' }) },
-        '../lib/assistantHistory': load('../src/lib/assistantHistory.ts'), './AssistantAnalysisTime': { AssistantAnalysisTime: time }, '../lib/mobile': {},
+        '../lib/assistantHistory': load('../src/lib/assistantHistory.ts'), './AssistantAnalysisTime': { AssistantAnalysisTime: time }, './AssistantMarkdown': { AssistantMarkdown: () => null }, '../lib/mobile': {},
         '../lib/useMobileBrowser': {}, '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {},
-        './WiringChatMessage': { WiringCaptureFraming: () => null }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null } });
+        './WiringChatMessage': { WiringCaptureFraming: () => null }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
+        './MobileWiringAlbumPanel': {}, '../lib/useMobileWiringAlbum': {} });
     const w = { draft: '可以編輯', attachments: [], outbox: [], busy: false, chatSendBlocked: true, wiringAnalysis: { startedAt: 123 },
         conversation: { id: 'chat', context_epoch: 0, round: 1, before: null, jobs: [], messages: [
             { id: 'old', role: 'assistant', text: '舊分析', epoch: 0, round: 0, wiring_flow: { current: true, kind: 'analysing' } },

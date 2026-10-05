@@ -3,7 +3,10 @@ import { useI18n } from "../lib/i18n";
 import type { AssistantMessage } from "../lib/assistant";
 import { conversationMessageNote, conversationMessages } from "../lib/assistantHistory";
 import { AssistantAnalysisTime } from "./AssistantAnalysisTime";
+import { AssistantMarkdown } from "./AssistantMarkdown";
 import { WiringCaptureFraming } from "./WiringChatMessage";
+import { MobileWiringAlbumPanel } from "./MobileWiringAlbumPanel";
+import { useMobileWiringAlbum, type MobileWiringAlbum } from "../lib/useMobileWiringAlbum";
 import { mobileVideoFresh, type MobileCapture } from "../lib/mobile";
 import { mobileTestHelpOffer, mobileWiringPhotoFlow, useMobileAssetUrl, useMobileBrowser, type MobileWiringPhotoRequest } from "../lib/useMobileBrowser";
 import { captureBrowserVideoFrame } from "../lib/mobileBrowserCapture";
@@ -17,6 +20,15 @@ type Workspace = ReturnType<typeof useMobileBrowser>;
 type MobileTab = "chat" | "camera" | "photo";
 type Asset = NonNullable<AssistantMessage["attachments"]>[number];
 function useMobileText() { const { locale } = useI18n(); return (zh: string, en: string) => locale === "en" ? en : zh; }
+
+/** UI preference only: switching language never reconnects or changes camera state. */
+export function MobileLanguageSwitch() {
+  const { locale, setLocale } = useI18n();
+  return <div className="mw-language-switch" role="group" aria-label="語言 / Language">
+    <button type="button" lang="zh-Hant" aria-pressed={locale === "zh-TW"} onClick={() => setLocale("zh-TW")}>繁中</button>
+    <button type="button" lang="en" aria-pressed={locale === "en"} onClick={() => setLocale("en")}>English</button>
+  </div>;
+}
 
 function Symbol({ name }: { name: "chat" | "camera" | "photo" | "arrow" | "link" }) {
   const paths = { chat: "M5 4h14v12H9l-4 4V4Z M9 8h6 M9 12h4", camera: "M8 6l2-3h4l2 3h5v14H3V6h5Z M16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
@@ -107,11 +119,14 @@ export function MobileWiringChatPhoto({ w, message }: { w: Workspace; message: A
   </figure>;
 }
 
-/** One explicit camera submission answers the exact current server question. */
-export function MobileWiringChatActions({ w, message }: { w: Workspace; message: AssistantMessage }) {
+/** Camera and album submissions answer the exact current server question. */
+export function MobileWiringChatActions({ w, message, photoAlbum }: { w: Workspace; message: AssistantMessage; photoAlbum?: MobileWiringAlbum }) {
   const tr = useMobileText();
   const camera = useRef<HTMLInputElement>(null);
+  const album = useRef<HTMLInputElement>(null);
   const requested = useRef<MobileWiringPhotoRequest | null>(null);
+  const albumRequested = useRef<MobileWiringPhotoRequest | null>(null);
+  const [albumError, setAlbumError] = useState('');
   const flow = mobileWiringPhotoFlow(message, w.session, w.conversation, w.wiringReview, w.wiringCanAct);
   const role = message.wiring_flow?.kind === "photo_request" ? message.wiring_flow.role : undefined;
   const pending = w.pendingWiringPhoto?.dialogue?.message_id === message.id ? w.pendingWiringPhoto : null;
@@ -119,25 +134,47 @@ export function MobileWiringChatActions({ w, message }: { w: Workspace; message:
   if (!flow && !pending && !role) return null;
   return <div className="mw-wiring-chat-actions" aria-busy={Boolean(pending && w.wiringReviewBusy)}>
     {role ? <WiringCaptureFraming role={role} current={Boolean(flow)} /> : null}
-    {flow ? <button type="button" className="mw-button mw-secondary" disabled={disabled} onClick={() => {
-      const target = w.prepareWiringChatPhoto(message);
-      if (target) { requested.current = target; camera.current?.click(); }
-    }}><Symbol name="camera" />{tr("拍這張照片", "Take this photo")}</button> : null}
+    {flow ? <><div className="mw-row mw-wiring-photo-sources">
+      <button type="button" className="mw-button mw-secondary" disabled={disabled} onClick={() => {
+        const target = w.prepareWiringChatPhoto(message);
+        if (target) { requested.current = target; camera.current?.click(); }
+      }}><Symbol name="camera" />{tr("拍這張照片", "Take this photo")}</button>
+      <button type="button" className="mw-button mw-secondary" disabled={disabled} onClick={() => {
+        const target = w.prepareWiringChatPhoto(message);
+        if (target) { albumRequested.current = target; album.current?.click(); }
+      }}><Symbol name="photo" />{tr("從相簿選擇", "Choose from album")}</button>
+    </div><small>{tr("可一次選好三張，確認角度後逐張送出；接線改過請用新照片。", "Choose all three photos, check their views, then send them one at a time. Use new photos if the wiring changed.")}</small></> : null}
     <input ref={camera} type="file" accept="image/*" capture="environment" className="mw-file-input" aria-label={tr("拍攝這一題要求的照片", "Capture the photo requested in this question")} onChange={event => {
       const file = event.target.files?.[0], target = requested.current; event.target.value = ""; requested.current = null;
-      if (file && target) void w.uploadWiringChatPhoto(file, target);
+      if (file && target) void w.uploadWiringChatPhoto(file, target).then(ok => { if (ok) photoAlbum?.submitted(target); });
     }} />
+    <input ref={album} type="file" accept="image/*" multiple={Boolean(photoAlbum)} className="mw-file-input" aria-label={tr("從相簿選擇這一題要求的照片", "Choose the photo requested in this question from your album")} onChange={event => {
+      const files = Array.from(event.target.files ?? []), target = albumRequested.current; event.target.value = ""; albumRequested.current = null;
+      if (!files.length || !target) return;
+      setAlbumError('');
+      if (files.length > 1) {
+        if (!photoAlbum?.stage(files, target)) setAlbumError(tr('最多選三張，並確認目前仍是同一輪照片核對。', 'Choose up to three photos and make sure this is still the same photo-review round.'));
+      } else void w.uploadWiringChatPhoto(files[0], target).then(ok => { if (ok) photoAlbum?.submitted(target); });
+    }} />
+    {flow?.role && photoAlbum?.selection ? <MobileWiringAlbumPanel album={photoAlbum} role={flow.role} disabled={disabled} tr={tr} onUse={() => {
+      const target = w.prepareWiringChatPhoto(message), file = target && photoAlbum.fileFor(target);
+      if (target && file) void w.uploadWiringChatPhoto(file, target).then(ok => { if (ok) photoAlbum.submitted(target); });
+    }} /> : null}
+    {albumError && flow ? <p className="mw-error-text" role="alert">{albumError}</p> : null}
     {pending ? <><small role="status">{w.wiringReviewBusy ? `${tr("正在提交照片", "Submitting photo")} · ${Math.round((pending.attachment.progress ?? 0) * 100)}%` : tr("尚未確認照片是否送達，可取得最新對話後重試。", "Photo delivery is not confirmed. Reload the conversation, then retry.")}</small>
-      {!w.wiringReviewBusy ? <div className="mw-row"><button type="button" className="mw-quiet" disabled={disabled || !flow} onClick={() => void w.retryWiringPhoto()}>{tr("重試這張照片", "Retry this photo")}</button>
+      {!w.wiringReviewBusy ? <div className="mw-row"><button type="button" className="mw-quiet" disabled={disabled || !flow} onClick={() => void w.retryWiringPhoto().then(ok => { if (ok && pending.dialogue) photoAlbum?.submitted(pending.dialogue); })}>{tr("重試這張照片", "Retry this photo")}</button>
         <button type="button" className="mw-quiet" onClick={() => void w.refresh()}>{tr("重新取得對話", "Reload conversation")}</button><button type="button" className="mw-quiet" onClick={w.discardWiringPhoto}>{tr("移除待送照片", "Remove pending photo")}</button></div> : null}</> : null}
     {w.wiringReviewError ? <p className="mw-error-text" role="alert">{w.wiringReviewError}</p> : null}
   </div>;
 }
 
-export function ChatView({ w, onPhoto, onCamera }: { w: Workspace; onPhoto: (id: string) => void; onCamera?: () => void }) {
+export function ChatView({ w, onPhoto, onCamera, photoAlbum }: { w: Workspace; onPhoto: (id: string) => void; onCamera?: () => void; photoAlbum?: MobileWiringAlbum }) {
   const tr = useMobileText();
   const { locale } = useI18n();
   const attachments = useRef<HTMLInputElement>(null);
+  const partsCamera = useRef<HTMLInputElement>(null);
+  const partsAlbum = useRef<HTMLInputElement>(null);
+  const partsCheck = w.attachments.some(attachment => attachment.purpose === 'parts_check');
   const messages = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const [clearedHistoryKey, setClearedHistoryKey] = useState<string | null>(null);
@@ -157,12 +194,12 @@ export function ChatView({ w, onPhoto, onCamera }: { w: Workspace; onPhoto: (id:
       {!visibleMessages.length ? <div className="mw-empty"><Symbol name="chat" /><h2>{tr("接著聊，從這裡開始。", "Continue your project here.")}</h2><p>{tr("與電腦共用同一份對話。你可以提問、附上照片，或拍下目前的接線。", "The same conversation as your desktop. Ask a question, add a photo, or capture the wiring in front of you.")}</p></div> : null}
       {visibleMessages.map(message => { const note = conversationMessageNote(message, w.conversation!); return <article key={message.id} data-message-id={message.id} className={`mw-message ${message.role === "user" ? "is-user" : "is-assistant"}${note ? " is-archived" : ""}`}>
         <header><strong>{message.role === "user" ? tr("你", "You") : "Tinkro"}</strong><time>{message.created_at ? new Date(message.created_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) : ""}</time></header>
-        <p>{message.text}</p>
+        {message.role === 'assistant' ? <AssistantMarkdown text={message.text} /> : <p>{message.text}</p>}
         {w.wiringAnalysis && message.id === analysisMessageId ? <AssistantAnalysisTime startedAt={w.wiringAnalysis.startedAt} active className="mw-analysis-time" />
           : message.role === "assistant" && typeof message.wiring_flow?.elapsed_ms === "number"
             ? <AssistantAnalysisTime active={false} durationMs={message.wiring_flow.elapsed_ms} className="mw-analysis-time" /> : null}
         <MobileTestHelpActions w={w} message={message} />
-        <MobileWiringChatActions w={w} message={message} />
+        <MobileWiringChatActions w={w} message={message} photoAlbum={photoAlbum} />
         <MobileWiringChatPhoto w={w} message={message} />
         {message.attachments?.map(asset => <AssetView key={asset.asset_id} asset={asset} api={w.api} />)}
         {message.capture_id && !message.wiring_flow ? <button type="button" className="mw-photo-link" onClick={() => onPhoto(message.capture_id!)}><Symbol name="photo" />{tr("查看 GPIO 照片", "View GPIO photo")}</button> : null}
@@ -177,7 +214,17 @@ export function ChatView({ w, onPhoto, onCamera }: { w: Workspace; onPhoto: (id:
           <button type="button" className="mw-quiet" disabled={w.busy} onClick={() => w.removeOutbox(item.id)}>{tr("移除", "Remove")}</button></div></article>)}
     </div>
     <form className="mw-composer" onSubmit={event => { event.preventDefault(); if (w.chatSendBlocked) return; follow.current = true; void w.send(); }}>
-      {w.inheritedMediaLabel ? <p className="mw-reference" role="status"><Symbol name="link" />{w.inheritedMediaLabel}</p> : null}
+      {w.session?.context?.stage === 'design' && w.session.context.ui?.parts_check === true ? <div className="mw-hardware-upload"><div><strong>{tr('零件核對', 'Check hardware')}</strong><small>Pi 5 · {tr('超音波', 'Ultrasonic')} · TFT</small></div>
+        <input ref={partsCamera} type="file" accept="image/*" capture="environment" className="mw-file-input" aria-label={tr('拍攝零件標籤', 'Photograph part labels')}
+          onChange={event => { void w.addFiles(Array.from(event.target.files ?? []), 'parts_check'); event.target.value = ''; }} />
+        <input ref={partsAlbum} type="file" accept="image/*" multiple className="mw-file-input" aria-label={tr('選擇零件照片', 'Select part photographs')}
+          onChange={event => { void w.addFiles(Array.from(event.target.files ?? []), 'parts_check'); event.target.value = ''; }} />
+        <div><button type="button" className="mw-quiet" disabled={w.busy || w.chatSendBlocked} onClick={() => partsCamera.current?.click()}><Symbol name="camera" />{tr('拍照核對', 'Photograph parts')}</button>
+          <button type="button" className="mw-quiet" disabled={w.busy || w.chatSendBlocked} onClick={() => partsAlbum.current?.click()}><Symbol name="photo" />{tr('相簿核對', 'Select part photos')}</button></div>
+        <small className="mw-hardware-upload-note">{tr('加入後按送出，只核對這三項硬體；不檢查接線。', 'Press Send to compare these three parts only, not their wiring.')}</small></div> : null}
+      {partsCheck ? <p className="mw-reference" role="status">{tr('本次用途：零件核對，不重新設計作品。', 'This request: hardware comparison, not project redesign.')}</p> : null}
+      {w.inheritedMediaLabel ? <div className="mw-reference is-removable"><Symbol name="link" /><span role="status">{w.inheritedMediaLabel}</span>
+        <button type="button" className="mw-reference-remove" disabled={!w.ready} aria-label={tr('取消引用', 'Remove reference')} title={tr('取消引用', 'Remove reference')} onClick={w.removeMediaReference}>×</button></div> : null}
       {w.attachments.length ? <div className="mw-draft-assets">{w.attachments.map(asset => <div key={asset.id}>
         {asset.previewUrl && asset.type === "image" ? <img src={asset.previewUrl} alt={asset.name} /> : <Symbol name="photo" />}
         <span>{asset.name}<small>{(asset.size / 1048576).toFixed(1)} MB</small></span>
@@ -188,7 +235,7 @@ export function ChatView({ w, onPhoto, onCamera }: { w: Workspace; onPhoto: (id:
         onChange={event => { void w.addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
         <button type="button" className="mw-quiet" disabled={w.busy} onClick={() => attachments.current?.click()}><Symbol name="photo" />{tr("加入附件", "Add media")}</button>
         {onCamera ? <button type="button" className="mw-quiet" disabled={w.busy} onClick={onCamera}><Symbol name="camera" />{tr("拍照問 AI", "Photo for AI")}</button> : <span>{tr("照片或短片", "Photos or short video")}</span>}
-        <button className="mw-send" type="submit" disabled={w.chatSendBlocked || (!w.draft.trim() && !w.attachments.length)} aria-label={tr("送出訊息", "Send message")} aria-describedby={w.wiringAnalysis ? "mw-analysis-send-note" : undefined}><Symbol name="arrow" /></button></div>
+        <button className="mw-send" type="submit" disabled={w.chatSendBlocked || (!w.draft.trim() && !w.attachments.length)} aria-label={partsCheck ? tr('送出零件核對', 'Send hardware comparison') : tr("送出訊息", "Send message")} aria-describedby={w.wiringAnalysis ? "mw-analysis-send-note" : undefined}><Symbol name="arrow" /></button></div>
       {w.wiringAnalysis ? <small id="mw-analysis-send-note" className="mw-composer-note">{tr("分析完成後才能送出，草稿可以繼續編輯。", "Send after analysis finishes. You can keep editing your draft.")}</small> : null}
     </form>
   </section>;
@@ -413,6 +460,8 @@ export function MobileWebPhoto({ w, onAsk, onCheck }: { w: Workspace; onAsk: (id
 
 export function MobileWebSurface({ workspace: w, httpsUrl }: { workspace: Workspace; httpsUrl?: string }) {
   const tr = useMobileText();
+  const photoAlbum = useMobileWiringAlbum({ contextId: w.session?.context_id, conversationId: w.conversation?.id,
+    epoch: w.conversation?.context_epoch, review: w.wiringReview });
   const [code, setCode] = useState(() => mobilePairingCode(typeof window === "undefined" ? "" : window.location.search));
   const [tab, setTab] = useState<MobileTab>("chat");
   const [pairingBusy, setPairingBusy] = useState(false);
@@ -423,7 +472,7 @@ export function MobileWebSurface({ workspace: w, httpsUrl }: { workspace: Worksp
   const changed = w.session?.available_context && w.session.available_context.context_id !== w.session.context_id;
   return <div className="mobile-web-app" data-tab={tab} data-camera-layout={w.ready && w.pairing && tab === "camera" ? "active" : undefined}>
     {!w.ready ? <div className="mw-loading" role="status">Tinkro · {tr("正在載入…", "Loading…")}</div> : !w.pairing ? <main className="mw-connect">
-      <div className="mw-brand-mark"><img src="/brand/tinkro-dark.png" alt={tr("Tinkro", "Tinkro")} width={128} height={40} /></div><span className="mw-eyebrow">TINKRO / MOBILE WORKSPACE</span><h1>{tr("把鏡頭，\n接上你的作品。", "Connect your camera.\nContinue your project.")}</h1>
+      <div className="mw-connect-header"><div className="mw-brand-mark"><img src="/brand/tinkro-dark.png" alt={tr("Tinkro", "Tinkro")} width={128} height={40} /></div><MobileLanguageSwitch /></div><span className="mw-eyebrow">TINKRO / MOBILE WORKSPACE</span><h1>{tr("把鏡頭，\n接上你的作品。", "Connect your camera.\nContinue your project.")}</h1>
       <p>{tr("與電腦共用聊天、串流與 GPIO 照片。", "Share your conversation, stream and GPIO photos with your desktop.")}</p>
       {!w.secureContext ? <SecureEntry url={httpsUrl} /> : null}
       <form className="mw-pair-form" onSubmit={event => { event.preventDefault(); if (pairingBusy) return; setPairingBusy(true); void w.pair(code).finally(() => setPairingBusy(false)); }}>
@@ -434,11 +483,12 @@ export function MobileWebSurface({ workspace: w, httpsUrl }: { workspace: Worksp
       {w.error ? <div className="mw-notice mw-error" role="alert">{w.error}</div> : null}
     </main> : <>
       <header className="mw-header"><div className="mw-wordmark"><img src="/brand/tinkro-dark.png" alt={tr("Tinkro", "Tinkro")} width={100} height={32} /></div><div className="mw-project-title"><strong>{w.session?.title ?? tr("正在連接工作區", "Connecting workspace")}</strong><span><i className={w.connected ? "is-online" : ""} />{w.connected ? tr("已與電腦同步", "Synced with desktop") : tr("重新連接中", "Reconnecting")}</span></div>
+        {tab === "camera" ? <MobileLanguageSwitch /> : null}
         <button type="button" className="mw-quiet mw-disconnect" onClick={() => void w.disconnect()}>{tr("離線", "Disconnect")}</button></header>
-      <div className="mw-session-status"><span>{aiBusy ? tr("Tinkro 處理中", "Tinkro is working") : tr("共用同一份對話", "One shared conversation")}</span><span>{w.rtc.stream ? w.rtc.publishing === false ? tr("手機本地預覽", "Local camera preview") : tr("相機串流中", "Camera streaming") : w.session?.context?.stage === "guide" ? tr("接線", "Wiring") : w.session?.context?.stage === "deploy" ? tr("程式與輸出", "Code & output") : tr("設計", "Design")}</span></div>
+      <div className="mw-session-status"><div className="mw-session-info"><span>{aiBusy ? tr("Tinkro 處理中", "Tinkro is working") : tr("共用同一份對話", "One shared conversation")}</span><span>{w.rtc.stream ? w.rtc.publishing === false ? tr("手機本地預覽", "Local camera preview") : tr("相機串流中", "Camera streaming") : w.session?.context?.stage === "guide" ? tr("接線", "Wiring") : w.session?.context?.stage === "deploy" ? tr("程式與輸出", "Code & output") : tr("設計", "Design")}</span></div>{tab !== "camera" ? <MobileLanguageSwitch /> : null}</div>
       {changed ? <div className="mw-context-notice"><span>{tr("電腦已更新工作區", "Desktop workspace updated")}<strong>{w.session?.available_context?.title}</strong></span><button type="button" className="mw-quiet" disabled={w.busy} onClick={() => void w.join()}>{tr("加入目前作品", "Join current project")}</button></div> : null}
       {w.error ? <div className="mw-global-error" role="alert">{w.error}</div> : null}
-      <main className="mw-main">{tab === "chat" ? <ChatView w={w} onCamera={() => navigate("camera")} onPhoto={id => { navigate("photo"); void w.openCapture(id); }} />
+      <main className="mw-main">{tab === "chat" ? <ChatView w={w} photoAlbum={photoAlbum} onCamera={() => navigate("camera")} onPhoto={id => { navigate("photo"); void w.openCapture(id); }} />
         : tab === "camera" ? <MobileWebCamera w={w} httpsUrl={httpsUrl} onCaptured={() => setTab("photo")} onDebugCaptured={() => setTab("chat")} />
           : <MobileWebPhoto w={w} onAsk={id => { navigate("chat"); void w.send({ text: tr("請說明這張照片目前的接線狀況與下一步。", "Describe the wiring in this photograph and the next step."), capture_id: id }); }}
             onCheck={(scope, id, wireId) => { navigate("chat"); void w.send({ text: scope === "one" ? tr("請核對這張照片中的這條接線。", "Check the selected wire in this photograph.") : tr("請核對這張照片中的全部接線。", "Check all wiring in this photograph."), capture_id: id, check_scope: scope, ...(wireId ? { wire_id: wireId } : {}) }); }} />}</main>

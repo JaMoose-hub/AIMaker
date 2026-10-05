@@ -5,8 +5,19 @@ import ts from 'typescript';
 import {renderWiringVideo} from './glasses_wiring_fixture.mjs';
 const {outputText}=ts.transpileModule(readFileSync(new URL('../src/lib/componentOverlayScope.ts',import.meta.url),'utf8'),{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}});
-const {componentOverlayScope,componentPosesForOverlay}=await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+const {componentOverlayScope,componentPosesForOverlay,projectGuideOverlayScope}=await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 const hc='hc-sr04',tft='mrd-tf240-8p-cs';
+
+test('project preparation shows all objects; started/reviewed modules stay focused until reset',()=>{
+  const ids=[hc,tft], guide={phase:'prepare',componentIndex:0};
+  assert.equal(projectGuideOverlayScope(ids,guide),null);
+  assert.equal(projectGuideOverlayScope(ids,{...guide,phase:'active'}),hc);
+  assert.equal(projectGuideOverlayScope(ids,{...guide,phase:'review'}),hc);
+  assert.equal(projectGuideOverlayScope(ids,{...guide,componentIndex:1,phase:'active'}),tft);
+  assert.equal(projectGuideOverlayScope(ids,{...guide,componentIndex:1,phase:'review'}),tft);
+  assert.equal(projectGuideOverlayScope(ids,guide),null);
+  assert.equal(projectGuideOverlayScope(ids,{phase:'active',componentIndex:9}),null);
+});
 
 test('selected component wins over a late guide effect; capture context wins while photographing',()=>{
   assert.equal(componentOverlayScope(hc,tft,null),hc);
@@ -63,10 +74,12 @@ test('no guide or selected component retains general detection and Eye presentat
     assert.match(view.html,/data-component-id="hc-sr04"/);assert.match(view.html,/data-component-id="mrd-tf240-8p-cs"/);
   }
 });
-test('App scopes only the visible active guide; prepare, review and collapsed guides show the overview',()=>{
+test('live and photo share the guide scope; collapsing controls never changes recognition focus',()=>{
   const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
-  assert.match(app,/overlayComponentId=\{project && makerStage === "guide" && !displayModeActive \? project\.component_ids\[maker\.guide\.componentIndex\]/);
-  assert.match(app,/overlayOverview=\{Boolean\(project\) && !displayModeActive && \(!guideVisible \|\| makerStage !== "guide" \|\| maker\.guide\.phase !== "active"\)\}/);
+  assert.match(app,/projectGuideOverlayScope\(project\.component_ids, maker\.guide\)/);
+  assert.equal((app.match(/overlayComponentId=\{guideOverlayComponentId\}/g)??[]).length,2);
+  assert.match(app,/overlayOverview=\{Boolean\(project\) && !displayModeActive && guideOverlayComponentId === null\}/);
+  assert.doesNotMatch(app,/overlayOverview=\{[^\n]*guideVisible/);
   const view=readFileSync(new URL('../src/components/VideoView.tsx',import.meta.url),'utf8');
   assert.match(view,/componentPosesForOverlay\(componentPoses, focusedComponentId\)/);
   assert.doesNotMatch(view,/dimmed=\{Boolean\(guideTarget/);

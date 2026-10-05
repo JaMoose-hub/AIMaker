@@ -10,10 +10,12 @@ import { ProjectConcept } from "./ProjectConcept";
 import { MakerModelMenu } from "./MakerModelMenu";
 import { MobileCompanion, MobileAttachmentCards, type MobileWorkspaceTargets } from "./MobileCompanion";
 import { WiringChatMessage, WiringReceiptStatus } from './WiringChatMessage';
+import { AssistantMarkdown } from './AssistantMarkdown';
 import { AssistantAnalysisTime } from './AssistantAnalysisTime';
 import { assistantProgress } from '../lib/assistantProgress';
 import { AssistantJobProgress } from './AssistantJobProgress';
 import type { WiringReviewAction, WiringReviewState } from '../lib/wiringReview';
+import { ConversationGuideHost } from './ConversationGuideDock';
 
 export function DemoChecklist({ record, controller, compact = false, aiReady = false }: { record: AssistantConversation; controller: AssistantController; compact?: boolean; aiReady?: boolean }) {
   const tr = useMakerText();
@@ -132,7 +134,6 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
     <header className="unified-assistant-heading"><strong className="unified-assistant-title" title={assistantTitle}>{assistantTitle}</strong>
       <MobileCompanion controller={controller} aiReady={aiReady && !legacy.busy} selection={mobileSelection} workspace={mobileWorkspace} />
       <details className="assistant-more"><summary>{tr("更多", "More")}</summary><div>
-        {state.stage === "design" ? <button onClick={() => controller.setDemoOpen(true)}>{tr("體驗 AI 設計 Demo", "Try AI design demo")}</button> : null}
         {!controller.demoOpen ? <><button disabled={controller.busy || legacy.busy} onClick={() => setConfirm("demo")}>{tr("載入 Demo 示範", "Load demo")}</button>
           <button disabled={controller.busy || legacy.busy} onClick={() => setConfirm("new")}>{tr("新作品", "New project")}</button>
           <button onClick={() => { setState(s => fillStarterPrompt(s, locale)); input.current?.focus(); }}>{tr("帶入預設", "Use starter prompt")}</button>
@@ -151,7 +152,8 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
           const note = conversationMessageNote(message, record!);
           return <article key={message.id} data-message-id={message.id} className={`ai-debug-message is-${message.role}${note ? " is-archived" : ""}`}>
           <header><strong>{message.role === "user" ? tr("你", "You") : "Tinkro AI"}</strong><small>{message.source === "demo" ? tr("示範對話", "Sample dialogue") : message.source === "legacy-design" ? tr("舊設計對話", "Legacy design conversation") : message.created_at ? new Date(message.created_at * 1000).toLocaleTimeString(locale) : tr("匯入紀錄", "Imported record")}</small></header>
-          <div className="assistant-message-text">{message.text}</div>
+          {message.role === 'assistant' ? <AssistantMarkdown text={message.text} />
+            : <div className="assistant-message-text">{message.text}</div>}
           {message.id === testHelpMessage?.id && onTestHelpActionTargetChange ? <div className="assistant-message-actions" ref={testHelpActionRef} /> : null}
           {message.wiring_flow ? <WiringChatMessage message={message} review={wiringReview} busy={controller.busy || legacy.busy || Boolean(receiptController.wiringReceiptPending)} inactive={Boolean(note)}
             receipt={receiptVisible && message.id === receiptController.wiringReceiptMessageId ? receipt : undefined}
@@ -169,9 +171,6 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
           <WiringReceiptStatus key={receiptController.wiringReceiptMessageId} receipt={receipt} />
         </article> : null}
         {controller.demoOpen && record?.demo ? <DemoChecklist record={record} controller={controller} aiReady={aiReady} /> : null}
-        {!controller.demoOpen ? record?.jobs.filter(job => job.result && job.result !== state.candidate).map(job => <details key={job.id} className="assistant-checklist"><summary>{tr("保留的設計成果", "Retained design result")} · v{job.result!.revision}</summary>
-          <p>{tr("歷史預覽，不會自動覆寫目前作品。", "Historical preview; does not overwrite the current project.")}</p><ProjectConcept design={job.result!} />
-        </details>) : null}
         {record?.jobs.filter(job => job.status === "failed" || job.status === "unknown" || job.result?.image_error).map(job => <div key={job.id} className="assistant-job-error" role="status">
           {job.status === "unknown" ? tr("後端重啟，結果尚未核對；不會自動重送。", "Backend restarted; outcome unknown. Nothing was resubmitted.") : job.error || job.result?.image_error}
           {job.result?.image_error ? <button disabled={controller.busy} onClick={() => void controller.retryImage(job)}>{tr("只重試圖片", "Retry image only")}</button> : null}
@@ -180,6 +179,7 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
     </div>
     {chat.unread ? <button className="ai-debug-latest" onClick={chat.showLatest}>{tr("查看最新回覆 ↓", "View latest reply ↓")}</button> : null}
     {debugTools}
+    <ConversationGuideHost enabled={!controller.demoOpen && state.stage === "guide" && Boolean(state.design)} />
     <form className="unified-composer" onSubmit={event => { event.preventDefault(); void send(); }}>
       {!controller.demoOpen && state.stage === "guide" ? <div className="assistant-context-row">
         <small className="assistant-wire-context" title={wire ? `${wire.componentPin} → ${wire.boardLabel}` : undefined}>{wire ? `${wire.componentPin} → ${wire.boardLabel}` : tr("接線協作", "Wiring assistance")}</small>
@@ -190,7 +190,10 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
           <div className="assistant-suggestion-list">{questions.map(question => <button key={question} type="button" onClick={() => { if (suggestions.current) suggestions.current.open = false; controller.setDraft(question); input.current?.focus(); }}>{question}</button>)}</div>
         </details>
       </div> : <div className="assistant-quick">{questions.map(question => <button key={question} type="button" onClick={() => { controller.setDraft(question); input.current?.focus(); }}>{question}</button>)}</div>}
-      {referencedMedia ? <small className="assistant-media-reference" role="status">{tr("此訊息引用：", "This message references: ")}{mediaNames?.length ? mediaNames.join(" · ") : tr("最近附件", "Recent attachment")}</small> : null}
+      {referencedMedia ? <small className="assistant-media-reference" role="status"><span>{tr("此訊息引用：", "This message references: ")}{mediaNames?.length ? mediaNames.join(" · ") : tr("最近附件", "Recent attachment")}</span>
+        <button type="button" disabled={controller.busy || legacy.busy || !controller.removeMediaReference}
+          aria-label={tr("移除照片引用", "Remove photo reference")} title={tr("後續訊息不再附上這些照片；保留原始照片與對話紀錄", "Stop attaching these photos to follow-ups; keep the original photos and conversation")}
+          onClick={() => { if (controller.removeMediaReference()) input.current?.focus(); }}>{tr("移除引用", "Remove")}</button></small> : null}
       <label className="sr-only" htmlFor="unified-prompt">{tr("傳訊息給 AI", "Message AI")}</label>
       <div className="assistant-input"><textarea id="unified-prompt" ref={input} value={controller.draft} rows={3} maxLength={8000} onChange={event => controller.setDraft(event.target.value)}
         placeholder={tr("提問或修改都可以；操作由你確認。", "Ask or request changes; you confirm actions.")}

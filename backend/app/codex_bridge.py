@@ -15,6 +15,51 @@ from pathlib import Path
 from app.ai_costs import OUTPUT_SCENARIOS, resolve_selection
 
 
+def resolve_codex_executable() -> str:
+    """Find the installed CLI without depending on the launcher's inherited PATH.
+
+    Explicit overrides remain authoritative. Windows desktop updates keep the
+    CLI in versioned bin directories; only inspect that installation directory.
+    Never install software, change PATH, or read Codex authentication files here.
+    """
+    configured = os.environ.get("BOARDVISION_CODEX_BIN", "").strip().strip('"')
+    if configured:
+        expanded = os.path.expandvars(os.path.expanduser(configured))
+        executable = shutil.which(expanded)
+        if executable:
+            return executable
+        raise RuntimeError("BOARDVISION_CODEX_BIN 指向的 Codex CLI 不存在或無法執行；請更新此設定。")
+
+    executable = shutil.which("codex")
+    if executable:
+        return executable
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        installation = Path(local_app_data) / "OpenAI" / "Codex" / "bin"
+        candidates = []
+        try:
+            for entry in installation.iterdir():
+                # Desktop release directories are hashes, not arbitrary nested
+                # downloads or executables elsewhere on the machine.
+                if len(entry.name) >= 16 and all(char in "0123456789abcdef" for char in entry.name.lower()):
+                    candidate = entry / "codex.exe"
+                    try:
+                        if candidate.is_file():
+                            candidates.append((candidate.stat().st_mtime_ns, str(candidate)))
+                    except OSError:
+                        continue
+            if candidates:
+                return max(candidates)[1]
+            legacy = installation / "codex.exe"
+            if legacy.is_file():
+                return str(legacy)
+        except OSError:
+            pass
+
+    raise RuntimeError("找不到 Codex CLI；請安裝 Codex 或設定 BOARDVISION_CODEX_BIN。")
+
+
 class CodexBridge:
     def __init__(self):
         self._lock = threading.Lock()
@@ -33,9 +78,7 @@ class CodexBridge:
             raise RuntimeError("AI service is shutting down")
         if self._process and self._process.poll() is None:
             return
-        executable = os.environ.get("BOARDVISION_CODEX_BIN") or shutil.which("codex")
-        if not executable:
-            raise RuntimeError("找不到 Codex CLI；請安裝 Codex 或設定 BOARDVISION_CODEX_BIN。")
+        executable = resolve_codex_executable()
         if not self._workspace:
             self._workspace = tempfile.TemporaryDirectory(prefix="boardvision-ai-")
         self._queue = queue.Queue(maxsize=512)

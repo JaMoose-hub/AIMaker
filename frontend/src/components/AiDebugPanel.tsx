@@ -9,6 +9,7 @@ import { sameDebugTestKeys } from "../lib/debugSessions";
 import { componentComplete, componentTestKey } from "../lib/componentTests";
 import type { TestHelpInvitation } from "../lib/componentTestHelp";
 import { PhotoEvidenceCard } from "./PhotoEvidenceCard";
+import { AssistantMarkdown } from "./AssistantMarkdown";
 import { DiagramEvidenceCard } from "./DiagramEvidenceCard";
 import { debugEvidenceUrl, evidenceSessionId, type DiagramInspection } from "../lib/debugEvidence";
 import { useCaptureCountdown } from "../lib/useCaptureCountdown";
@@ -522,7 +523,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
       {!actionsOnly && !record && messages.length === 0 ? <div className="ai-debug-welcome"><span className="ai-debug-avatar">AI</span><h4>{wiringMode ? tr("這一步需要幫忙嗎？", "Need help with this step?") : tr("哪裡沒有照預期運作？", "What isn't working as expected?")}</h4><p>{wiringMode ? tr("直接問接法，或按「拍攝這一步」讓 AI 對照實際接線。Pi 尚未開機也可以先討論。", "Ask about the wiring, or capture this step for AI to inspect it. You can talk before powering on the Pi.") : tr("直接告訴我。我會看目前的鏡頭畫面，對照 Pi 與作品資料，接著一步一步排查。", "Tell me what's happening. I'll inspect the camera image and your project's Pi data, then guide you step by step.")}</p>{missingWiring ? <p className="workflow-muted">{tr("可以先讓 AI 看畫面並引導排查；硬體測試前再完成接線確認。", "AI can inspect the image first; confirm wiring before hardware tests.")}</p> : null}</div> : null}
       {!actionsOnly && messages.map(message => <article key={message.id} className={`ai-debug-message is-${message.role}`} data-message-id={message.id}>
         <div className="ai-debug-message-meta"><strong>{message.role === "user" ? tr("你", "You") : "Tinkro AI"}</strong><time>{epochTime(message.created_at, tr("zh-TW", "en"))}</time>{message.role === "assistant" && message.elapsed_ms != null ? <span>{(message.elapsed_ms / 1000).toFixed(1)} s</span> : null}</div>
-        <p>{message.text}</p>
+        {message.role === 'assistant' ? <AssistantMarkdown text={message.text} /> : <p>{message.text}</p>}
         {message.capture_ids?.length ? <div className="ai-debug-message-photos">{message.capture_ids.map(id => {
           const sourceId = message.session_id ?? message.check_id;
           const photo = [...allEvidence].reverse().find(item => item.id === id && (!sourceId || (item.session_id ?? item.check_id) === sourceId));

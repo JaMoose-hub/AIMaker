@@ -9,6 +9,8 @@ import type { AssistantMessage, AssistantTestHelpOffer } from './assistant';
 import { assistantModelRunning, assistantWiringAnalysis } from './assistantAnalysis';
 const EXPIRED_SESSION_MESSAGE = '手機連線已失效，請重新輸入電腦顯示的新配對碼。草稿與附件已保留。';
 const errorText = (cause: unknown) => expiredBrowserSession(cause) ? EXPIRED_SESSION_MESSAGE
+    : cause && typeof cause === 'object' && 'detail' in cause && cause.detail === 'wiring_photo_collection_in_progress'
+      ? '目前正在收集 Pi 兩側與零件接頭三張照片。請用對話中的「拍這張照片」依序送出，收齊後再按「開始分析」。文字與附件已保留，尚未進行分析。'
     : cause && typeof cause === 'object' && 'detail' in cause && cause.detail === 'wiring_analysis_in_progress'
       ? '接線照片正在分析，完成後才能送出訊息。文字與附件已保留。'
       : cause instanceof Error ? cause.message : String(cause);
@@ -540,14 +542,19 @@ export function useMobileBrowser() {
     };
     const setDraft = (text: string) => { if (ready)
         void commit(d => ({ ...d, text })).catch(() => undefined); };
-    const addFiles = async (files: File[]): Promise<boolean> => { if (!ready || busy || attachmentFlight.current)
+    const addFiles = async (files: File[], purpose?: 'parts_check'): Promise<boolean> => { if (!ready || busy || attachmentFlight.current)
         return false; const key = workspaceKey.current, serial = owner.current, context = sessionRef.current?.context_id;
     const current = () => key === workspaceKey.current && serial === owner.current && context === sessionRef.current?.context_id;
     const flight = {};
     attachmentFlight.current = flight; setBusy(true); setError(''); try {
+        if (purpose && sessionRef.current?.context.stage !== 'design')
+            throw Error('零件核對只適用設計階段，請回到目前的零件核對頁。');
         const additions: BrowserAttachment[] = [];
-        for (const file of files)
-            additions.push(await browserAttachment(file));
+        for (const file of files) {
+            const attachment = await browserAttachment(file);
+            if (purpose && attachment.type !== 'image') throw Error('零件核對請使用照片，不要加入影片。');
+            additions.push({ ...attachment, ...(purpose ? { purpose } : {}) });
+        }
         if (!current())
             return false;
         const invalid = validateBrowserAttachments([...draftRef.current.attachments, ...additions]);
@@ -811,13 +818,19 @@ export function useMobileBrowser() {
         const text = options.text ?? draftRef.current.text, attachments = options.capture_id ? [] : draftRef.current.attachments;
         if (!text.trim() && !attachments.length)
             return;
+        const partsCheck = attachments.some(attachment => attachment.purpose === 'parts_check');
+        if (partsCheck && (context.context.stage !== 'design' || attachments.some(attachment => attachment.type !== 'image')
+            || options.capture_id || options.check_scope || options.wire_id)) {
+            setError('這些照片用於零件核對，不能改為接線檢查。請回到設計階段並只使用零件照片。');
+            return;
+        }
         if (options.capture_id && (!capture || capture.capture_id !== options.capture_id || capture.context_id !== context.context_id)) {
             setError('照片已切換，請重新選擇目前照片。');
             return;
         }
-        const reference = browserMediaReference(conversationRef.current, context.context.round, attachments.length, options.capture_id);
+        const reference = browserMediaReference(conversationRef.current, context.context.round, attachments.length, options.capture_id, draftRef.current.removedMediaReference);
         const id = browserUuid();
-        const item: BrowserOutbox = { id, status: 'pending', attachments: [...attachments], payload: { request_id: id, text: text.trim(), asset_ids: reference.asset_ids, inherit_media: false, context_id: context.context_id, ...(attachments.length ? {} : options.capture_id ? { capture_id: options.capture_id } : reference.capture_id ? { capture_id: reference.capture_id } : {}), ...(options.check_scope ? { check_scope: options.check_scope } : {}), ...(options.wire_id ? { wire_id: options.wire_id } : {}) } };
+        const item: BrowserOutbox = { id, status: 'pending', attachments: [...attachments], payload: { request_id: id, text: text.trim(), asset_ids: reference.asset_ids, inherit_media: false, context_id: context.context_id, ...(partsCheck ? { purpose: 'parts_check' as const } : {}), ...(attachments.length ? {} : options.capture_id ? { capture_id: options.capture_id } : reference.capture_id ? { capture_id: reference.capture_id } : {}), ...(options.check_scope ? { check_scope: options.check_scope } : {}), ...(options.wire_id ? { wire_id: options.wire_id } : {}) } };
         try {
             await commit(d => ({ ...d, text: options.text === undefined ? '' : d.text, attachments: options.capture_id ? d.attachments : [], outbox: [...d.outbox, item] }));
             await deliver(item);
@@ -1006,7 +1019,14 @@ export function useMobileBrowser() {
     };
     const openCapture = (id: string) => updateView(id, null);
     const selectWire = (id: string) => updateView(sessionRef.current?.view.capture_id ?? null, id);
-    const inheritedMediaLabel = browserMediaReference(conversation, session?.context.round, workspace.attachments.length).label;
+    const removeMediaReference = () => {
+        if (!ready || !sessionRef.current) return;
+        const reference = browserMediaReference(conversationRef.current, sessionRef.current.context.round, draftRef.current.attachments.length, undefined, draftRef.current.removedMediaReference);
+        if (!reference.reference_key) return;
+        // commit updates draftRef synchronously: an immediate Send cannot reuse this media.
+        void commit(d => ({ ...d, removedMediaReference: reference.reference_key })).catch(() => undefined);
+    };
+    const inheritedMediaLabel = browserMediaReference(conversation, session?.context.round, workspace.attachments.length, undefined, workspace.removedMediaReference).label;
     const currentRtc = mobileMeasurementFresh(rtcMeasurement.current.at, clock) ? rtc : { ...rtc,
         stats: { appliedBitrateKbps: rtc.stats.appliedBitrateKbps, parameterStatus: rtc.stats.parameterStatus } };
     const receiveFresh = mobileVideoFresh(session?.stream);
@@ -1026,6 +1046,6 @@ export function useMobileBrowser() {
         cameraTune, wiringAnalysis: assistantWiringAnalysis(conversation), error, connected, ready, secureContext, rtc: currentRtc,
         previewFresh: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && lease.current.deadline > clock,
         canCapture: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && !!session?.stream.can_capture && lease.current.deadline > clock && !busy && !streamBusy && !cameraTune.busy, inheritedMediaLabel,
-        pair, disconnect, join, send, retry, removeOutbox, removeAttachment, addFiles, startStream, stopStream, beginCapture, finishCapture, cancelCapture, retryCapture, discardCapture, openCapture, selectWire, older, refresh,
+        pair, disconnect, join, send, retry, removeMediaReference, removeOutbox, removeAttachment, addFiles, startStream, stopStream, beginCapture, finishCapture, cancelCapture, retryCapture, discardCapture, openCapture, selectWire, older, refresh,
         retryCaptureImage: () => { setCaptureAttempt(n => n + 1); image.retry(); } };
 }

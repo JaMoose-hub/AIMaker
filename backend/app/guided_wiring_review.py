@@ -83,9 +83,20 @@ class ViewInventory(BaseModel):
     limitations: str = Field(max_length=800)
 
 
+class ReviewWirePath(BaseModel):
+    """A visible route association, never a pairing inferred from wire colour."""
+    model_config = ConfigDict(extra="forbid")
+    wire_id: str = Field(max_length=150)
+    board_connector_id: str | None = Field(max_length=160)
+    component_connector_id: str | None = Field(max_length=160)
+    visibility: Literal["traceable", "partial", "not_visible"]
+    evidence: str = Field(max_length=600)
+
+
 class ReviewOpinion(CloudOutputModel):
     model_config = ConfigDict(extra="forbid")
     views: list[ViewInventory] = Field(min_length=1, max_length=3)
+    wire_paths: list[ReviewWirePath] = Field(default_factory=list, max_length=20)
 
 
 def _board_pins():
@@ -216,8 +227,8 @@ def _canonical_candidates(opinion, review, board_pins, component_pins):
     return output
 
 
-def compare_candidates(candidates, wires, board_pins, locale="zh-TW"):
-    """Produce colour clues only. Repeated colours never establish identity."""
+def compare_candidates(candidates, wires, board_pins, locale="zh-TW", wire_paths=()):
+    """Produce advisory colour and route findings; repeated colours never establish identity."""
     board = [c for c in candidates if c["role"] != "component_header"]
     component = [c for c in candidates if c["role"] == "component_header"]
     def colors(items):
@@ -263,14 +274,43 @@ def compare_candidates(candidates, wires, board_pins, locale="zh-TW"):
             matching = [c for c in items if c["color"] == color]
             return dict(name=color, visibility="clear" if all(c["color_visibility"] == "clear" for c in matching) else "partial",
                         evidence="; ".join(c["evidence"] for c in matching)[:500])
-        rows.append(dict(wire_id=wire["id"], expected=dict(board_pin=wire["boardPin"], physical_pin=pin.get("index"),
+        row = dict(wire_id=wire["id"], expected=dict(board_pin=wire["boardPin"], physical_pin=pin.get("index"),
             bcm=int(wire["boardPin"][4:]) if wire["boardPin"].startswith("GPIO") else None,
             component_pin=wire["componentPin"], connection_kind=wire["connectionKind"]),
             pi_candidates=deepcopy(chosen_board), component_candidates=deepcopy(chosen_component),
             comparison=comparison, evidence=evidence, next_step=next_step, authority="visual_advisory",
             wire_colors=dict(board=color_observation(target_board, bc), component=color_observation(target_component, cc),
                              comparison=comparison if comparison in {"similar", "different"} else "uncertain", evidence=evidence),
-            same_wire="uncertain"))
+            same_wire="uncertain")
+        paths = [path for path in wire_paths if path.wire_id == wire["id"]]
+        path = paths[0] if len(paths) == 1 else None
+        observed_board = next((c for c in board if path and c["id"] == path.board_connector_id), None)
+        observed_module = next((c for c in component if path and c["id"] == path.component_connector_id), None)
+        # A known module endpoint plus an independently visible route is required
+        # before attaching a wrong Pi pin to this wire. Duplicate colours alone
+        # cannot make either a fault or a match, nor can stale/missing endpoints.
+        supported = bool(path and path.visibility == "traceable" and path.evidence.strip()
+            and observed_board and observed_module
+            and observed_board["pin_id"] and observed_module["pin_id"]
+            and (observed_module["pin_id"] == wire["componentPin"] or observed_board["pin_id"] == wire["boardPin"])
+            and observed_board["contact"] == observed_module["contact"] == "covers_pin"
+            and wire["connectionKind"] == "direct")
+        diagnosis = "uncertain"
+        if supported:
+            diagnosis = "suspected" if (observed_board["pin_id"] != wire["boardPin"]
+                or observed_module["pin_id"] != wire["componentPin"]) else "no_issue_seen"
+            row["same_wire"] = "consistent"
+        row["diagnosis"] = dict(status=diagnosis,
+            observed_board_pin=observed_board["pin_id"] if supported else None,
+            observed_physical_pin=observed_board["physical_pin"] if supported else None,
+            observed_component_pin=observed_module["pin_id"] if supported else None,
+            board_connector_id=observed_board["id"] if supported else None,
+            component_connector_id=observed_module["id"] if supported else None,
+            evidence=path.evidence if supported else evidence,
+            retake_roles=[role for role in ROLES if not any(c["role"] == role and c["pin_id"] ==
+                (wire["componentPin"] if role == "component_header" else wire["boardPin"]) for c in candidates)]
+                if diagnosis == "uncertain" else [])
+        rows.append(row)
     return rows
 
 
@@ -332,7 +372,9 @@ class GuidedWiringReview:
         elif review["status"] in {"ready", "needs_human"}:
             pending = [row for row in review["results"] if not review["reviews"].get(row["wire_id"])
                        or review["reviews"][row["wire_id"]].get("evidence_stale")]
-            pending.sort(key=lambda row: {"different": 0, "unknown": 1, "ambiguous": 2, "similar": 3}.get(row["comparison"], 1))
+            pending.sort(key=lambda row: (0 if row.get("diagnosis", {}).get("status") == "suspected" else
+                2 if row.get("diagnosis", {}).get("status") == "no_issue_seen" else 1,
+                {"different": 0, "unknown": 1, "ambiguous": 2, "similar": 3}.get(row["comparison"], 1)))
             if pending:
                 row = pending[0]
                 values = dict(wire_id=row["wire_id"], result=deepcopy(row))
@@ -342,16 +384,23 @@ class GuidedWiringReview:
                 name = f"Pi Pin {pin}" if pin is not None else expected.get("board_pin", "Pi")
                 summary = ""
                 if not any(not v.get("evidence_stale") for v in review["reviews"].values()):
-                    counts = {key: sum(result["comparison"] == key for result in review["results"])
-                              for key in ("similar", "different", "ambiguous", "unknown")}
-                    priority = [result["expected"]["component_pin"] for result in pending if result["comparison"] != "similar"][:3]
-                    summary = _text(locale,
-                        f"照片分析完成：{counts['similar']} 條線色相符、{counts['different']} 條異色、{counts['ambiguous']} 條有多個候選、{counts['unknown']} 條證據不足。這些只是照片依據，尚未證明接線正確。",
-                        f"Photo findings: {counts['similar']} matching colours, {counts['different']} different colours, {counts['ambiguous']} ambiguous and {counts['unknown']} insufficient evidence. This does not establish correct wiring.")
-                    if priority:
-                        summary += _text(locale, " 優先核對：", " Check first: ") + "、".join(priority) + "。"
+                    priority = [result["expected"]["component_pin"] for result in pending
+                                if result.get("diagnosis", {}).get("status") == "suspected"]
+                    summary = (_text(locale, "優先檢查：", "Check first: ") + "、".join(priority) if priority else
+                        _text(locale, "照片分析完成，先核對看不清的接線。", "Photos analysed. Check unclear connections first."))
                     summary += "\n\n"
-                text = summary + f"{expected['component_pin']} → {name}\n{row['evidence']}\n{row['next_step']}"
+                finding = row.get("diagnosis", {})
+                observed = finding.get("observed_physical_pin")
+                if finding.get("status") == "suspected":
+                    module_pin = finding.get("observed_component_pin")
+                    detail = _text(locale, f"照片疑似：{module_pin} → Pi Pin {observed}。先斷電，再沿線核對。",
+                        f"Photo suggests: {module_pin} → Pi Pin {observed}. Power off before tracing or changing wires.")
+                elif finding.get("status") == "no_issue_seen":
+                    detail = _text(locale, "照片未見明顯錯接；仍需親自確認。", "No obvious mismatch in the photos; confirm physically.")
+                else:
+                    detail = _text(locale, "腳位或線路看不清，不能判定接錯。請補拍不清楚的一側，或親自沿線核對。",
+                        "Pin or route unclear; a fault cannot be established. Retake the unclear side or trace the wire.")
+                text = summary + f"{expected['component_pin']} → {name}\n{detail}"
                 if review["no_progress_count"] >= 2:
                     text += _text(locale, "\n補拍未改善證據，請親自沿線確認，或保留無法確定。", "\nRetakes have not improved the evidence. Trace the wire or leave it uncertain.")
             else:
@@ -723,7 +772,7 @@ class GuidedWiringReview:
                     module = json.loads((ROOT / "profiles/components" / review["component_id"] / "vision_profile.json").read_text(encoding="utf-8"))
                     candidates = _canonical_candidates(opinion, review, pins, {p["id"] for p in module["pins"]})
                     review.update(status="ready", observations=candidates,
-                        results=compare_candidates(candidates, wires, pins, session["context"].get("locale", "zh-TW")),
+                        results=compare_candidates(candidates, wires, pins, session["context"].get("locale", "zh-TW"), opinion.wire_paths),
                         analysis_revision=review["revision"], revision=review["revision"]+1, error=None)
                     self.sync_dialogue(session)
                     service._save()
@@ -917,9 +966,17 @@ class GuidedWiringReview:
                     "box is optional normalized [x0,y0,x1,y1] in that role's FULL ORIGINAL overview coordinates, "
                     "never detail-crop coordinates; return null if localization is uncertain. Detail crops retain source pixels "
                     "but may omit relevant context: compare the overview. Do not judge electrical correctness or give hardware actions. "
+                    "For each expected_wire, optionally associate its module connector with a Pi connector in wire_paths. "
+                    "Connector IDs must use role:id (for example pi_side_a:c1 and component_header:c2). "
+                    "traceable requires independently visible wire routing or unique physical markings connecting those exact housings; "
+                    "matching colours, expected wiring, nearest positions and the user's unchanged-wiring claim are NOT route evidence. "
+                    "When routes cross, leave the frame or are hidden, use partial/not_visible and null connector IDs. "
+                    "Do not fabricate a path, and do not infer a wrong pin from an unrelated neighboring connector. "
+                    "A partial-view recheck must return no wire_paths: missing photographs cannot be reconstructed from cached observations. "
                     "Use short evidence, retain uncertainty; no tools. Board pin references are naming references only: "
                     + json.dumps({"board_pins": {k: v["index"] for k, v in board_pins.items()},
                                   "component_id": snapshot["component_id"], "module_pin_labels": sorted(component_pins), "requested_roles": changed_roles,
+                                  "expected_wires": wires,
                                   "images_in_order": image_manifest}, ensure_ascii=False))
                 raw_opinion = service._ask(sid, prompt, ReviewOpinion.model_json_schema(), entries,
                     trusted_paths=paths, generate_options={"timeout_s": 210}, expected_step=expected_step)
@@ -927,11 +984,13 @@ class GuidedWiringReview:
                 if len(supplied.views) != len(changed_roles) or {v.role for v in supplied.views} != set(changed_roles):
                     raise ValueError("wiring_review_roles_invalid")
                 cached.update({v.role: v.model_dump() for v in supplied.views})
-                opinion = ReviewOpinion.model_validate(dict(views=[cached[r] for r in ROLES]))
+                opinion = ReviewOpinion.model_validate(dict(views=[cached[r] for r in ROLES],
+                    wire_paths=supplied.wire_paths if set(changed_roles) == set(ROLES) else []))
             candidates = _canonical_candidates(opinion, snapshot, board_pins, component_pins)
-            rows = compare_candidates(candidates, wires, board_pins, selection["context"].get("locale", "zh-TW"))
-            progress_key = digest(sorted((c["role"], c["pin_id"] or "", c["color"], c["color_visibility"], c["contact"]) for c in candidates))
-            unresolved = any(r["comparison"] in {"unknown", "ambiguous"} for r in rows)
+            rows = compare_candidates(candidates, wires, board_pins, selection["context"].get("locale", "zh-TW"), opinion.wire_paths)
+            progress_key = digest([sorted((c["role"], c["pin_id"] or "", c["color"], c["color_visibility"], c["contact"]) for c in candidates),
+                [(r["wire_id"], r["diagnosis"]["status"], r["diagnosis"]["observed_board_pin"], r["diagnosis"]["observed_component_pin"]) for r in rows]])
+            unresolved = any(r["diagnosis"]["status"] == "uncertain" for r in rows)
             count = snapshot["no_progress_count"] + 1 if unresolved and progress_key == snapshot.get("last_progress_key") else 0
             with service.lock:
                 current = service.sessions[sid]

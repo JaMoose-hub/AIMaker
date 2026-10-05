@@ -6,6 +6,9 @@
 .gpio-photo-workspace > header.image-workspace-heading > .gpio-photo-metadata { flex:1; overflow:hidden; }
 .gpio-photo-metadata > small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gpio-photo-workspace > header > .gpio-photo-actions { flex:none; align-items:center; margin-left:auto; }
+.gpio-photo-actions > .image-source-host { flex:none; width:132px; }
+.gpio-photo-actions .image-source-select { width:100%; }
+.gpio-photo-actions .image-source-trigger { min-height:36px; }
 .gpio-photo-workspace small,.gpio-photo-workspace>footer { color:var(--muted); font-size:11px; }
 .gpio-photo-workspace button,.gpio-image-view-controls button { appearance:none; font-family:inherit; line-height:1.4; font-size:11px; padding:6px 9px; background:var(--bg-panel); color:var(--text); border:1px solid var(--border); border-radius:7px; cursor:pointer; }
 .gpio-photo-workspace button:focus-visible,.gpio-image-view-controls button:focus-visible { outline:2px solid var(--brand-link); outline-offset:2px; }
@@ -28,7 +31,9 @@
 .webcam-photo-status { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:7px 10px; color:var(--warn); font-size:11px; }
 @media(max-width:700px) {
   .gpio-photo-workspace > header.image-workspace-heading > .image-view-controls { flex-basis:100%; }
-  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .video-workspace:has(> .gpio-photo-workspace) { flex:none; min-height:0; height:auto; }
+  /* The dock's flex-basis:0 photo must have a definite parent height on narrow
+     screens; height:auto collapses the entire photo and its shared controls. */
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified .assistant-wiring-stage > .video-workspace:has(> .gpio-photo-workspace) { flex:none; min-height:400px; height:clamp(400px,60dvh,520px); }
   .gpio-photo-workspace { flex:none; height:400px; min-height:400px; }
   .gpio-photo-workspace>header { flex-wrap:wrap; }
   .gpio-photo-workspace .photo-poc-object-label { display:none; }

@@ -96,6 +96,23 @@ test('full-frame step diagrams show one heading, one current-module chip and the
   assert.deepEqual(design,before);
 });
 
+test('each step renders all forty Pi pins and highlights only the physical target',()=>{
+  const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);
+  for(const wire of design.wiring){
+    const layout=layoutExports.circuitLayout(design,wire.componentId);
+    const target=layout.boardPins.find(pin=>pin.id===wire.boardPin);
+    const html=renderToStaticMarkup(React.createElement(diagramExports.CircuitDiagram,{design,activeId:wire.id,workspace:true}));
+    const pins=[...html.matchAll(/data-pi-pin="([^"]+)" data-physical-pin="(\d+)" data-pin-column="([01])" class="([^"]+)"/g)];
+    assert.equal(pins.length,40);
+    assert.equal(pins.filter(pin=>pin[3]==='0').length,20);
+    assert.equal(pins.filter(pin=>pin[3]==='1').length,20);
+    assert.deepEqual(pins.filter(pin=>pin[4]==='circuit-board-pin active').map(pin=>pin[1]),[wire.boardPin]);
+    assert.ok(html.includes(`data-board-pin="${target.id}" data-physical-pin="${target.number}"`));
+    assert.ok(html.includes(`M ${target.x} ${target.y} V ${target.y+(target.column===0?-9:9)}`));
+    assert.match(html,/方形接點為 Pin 1/);
+  }
+});
+
 test('only the workspace inspector embeds view navigation; dialogs and blueprints keep their own tools',()=>{
   const design=designFor(),wire=design.wiring[0];
   const viewControls=React.createElement('nav',{'data-view-tabs':true},'Live · Diagram · Photo');
@@ -129,13 +146,14 @@ test('a divider warning stays visible above the full-frame canvas instead of onl
   assert.match(html,/330Ω/);assert.match(html,/470Ω/);
 });
 
-test('2D is available with the AI tab open and only requested captures temporarily reveal the camera',()=>{
+test('the selected diagram stays available through new debug photos and retakes with the AI tab open',()=>{
   const state={...maker.initialMaker(),guide:{...maker.emptyGuide(),mode:'2d'},debug:{panelOpen:true}};
   assert.equal(shouldShow({},'guide',state,false,null),true);
   const capture={capture_task:{id:'photo-one',target:'pi_header'}};
-  assert.equal(shouldShow({},'guide',state,false,capture,null,'photo-one'),false);
+  assert.equal(shouldShow({},'guide',state,false,capture,null,'photo-one'),true,'requesting a photo never overrides diagram preference');
   assert.equal(shouldShow({},'guide',state,false,capture,'photo-one','photo-one'),true,'an explicit view choice can inspect the diagram while waiting');
-  assert.equal(shouldShow({},'guide',state,false,capture,'photo-one','photo-two'),false,'the next capture reveals the camera again');
+  assert.equal(shouldShow({},'guide',state,false,capture,'photo-one','photo-two'),true,'the next requested photo retains the diagram');
+  assert.equal(shouldShow({},'guide',{...state,guide:{...state.guide,mode:'camera'}},false,capture),false,'explicitly returning to live framing still works');
   assert.equal(shouldShow({},'guide',state,false,null),true);
   assert.equal(state.guide.mode,'2d');
   assert.equal(shouldShow(undefined,'guide',state,false,null),false);
@@ -155,16 +173,14 @@ test('the actual unified App switch retains the source, cursor, chat and test bi
   const original={...maker.initialMaker(),design,guide:{...maker.emptyGuide(),phase:'active',index:2,checks:['position']},
     debug:{panelOpen:true,intent:'wiring',runId:'synthetic-run'},conversation:[{role:'user',text:'GND 要接哪裡？'}]};
   let current=original;
-  let override;
   let inspection='previous inspection';
   let imageView='phone';
   const lastLiveView={current:'phone'};
   const setMaker=update=>{current=update(current);};
-  const setOverride=next=>{override=next;};
   const setInspection=next=>{inspection=next;};
   const setImageView=next=>{imageView=next;};
-  const changeImageView=new Function('setMaker','setDiagramCaptureOverride','setEvidenceDiagram','setImageView','lastLiveView',`${liveCode};return change;`)(setMaker,setOverride,setInspection,setImageView,lastLiveView);
-  const change=new Function('setMaker','setDiagramCaptureOverride','diagramCaptureKey','setEvidenceDiagram','setImageView','lastLiveView','projectWire','changeImageView',`${code};return change;`)(setMaker,setOverride,'capture-one',setInspection,setImageView,lastLiveView,design.wiring[2],changeImageView);
+  const changeImageView=new Function('setMaker','setEvidenceDiagram','setImageView','lastLiveView',`${liveCode};return change;`)(setMaker,setInspection,setImageView,lastLiveView);
+  const change=new Function('setMaker','setEvidenceDiagram','setImageView','lastLiveView','projectWire','changeImageView',`${code};return change;`)(setMaker,setInspection,setImageView,lastLiveView,design.wiring[2],changeImageView);
   const signature=componentTests.componentTestKey(design,original.guide,'hc-sr04');
   for(const view of ['diagram','live','photo','live']) {
     const mode=view==='diagram'?'2d':'camera';
@@ -172,7 +188,6 @@ test('the actual unified App switch retains the source, cursor, chat and test bi
     assert.deepEqual(current,{...original,guide:{...original.guide,mode}});
     assert.equal(current.debug,original.debug);assert.equal(current.conversation,original.conversation);
     assert.equal(current.guide.confirmed,original.guide.confirmed);
-    assert.equal(override,mode==='2d'?'capture-one':null);
     assert.equal(inspection,null,'the toolbar returns to the actual current step, not an old AI reference');
     assert.equal(imageView,view==='photo'?'photo':'phone','view changes keep the last live source');
     assert.equal(lastLiveView.current,'phone');

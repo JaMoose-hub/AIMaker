@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useMakerText } from "../lib/useMaker";
+import { ConversationGuideProvider } from "./ConversationGuideDock";
+import "./ConversationGuideDock.css";
 
 export const ASSISTANT_WIDTH_KEY = "boardvision.assistant-width.v1";
 export const clampAssistantWidth = (value: number) => Math.min(520, Math.max(320, Number.isFinite(value) ? value : 400));
@@ -29,11 +31,13 @@ export function AssistantWorkspace({ children, assistant, latestReply = "", open
   useEffect(() => { if (active && (mobile ? mobileView === "ai" : aiOpen)) setSeenReply(latestReply); }, [active, mobile, mobileView, aiOpen, latestReply]);
   useEffect(() => { if (openRequest) setMobileView("ai"); }, [openRequest]);
   const drag = useRef<{ x: number; width: number } | null>(null);
+  const revealGuide = useCallback(() => { setMobileView("ai"); onAiOpen(true); }, [onAiOpen]);
   const save = (next: number) => {
     setWidth(clampAssistantWidth(next));
     try { localStorage.setItem(ASSISTANT_WIDTH_KEY, String(clampAssistantWidth(next))); } catch { /* session-only */ }
   };
-  return <div className={`assistant-workspace${active ? " is-unified" : ""}${aiOpen ? "" : " ai-collapsed"}`}
+  return <ConversationGuideProvider enabled={active} showing={mobile ? mobileView === "ai" : aiOpen} onReveal={revealGuide}>
+    <div className={`assistant-workspace${active ? " is-unified" : ""}${aiOpen ? "" : " ai-collapsed"}`}
     data-mobile-view={mobileView} style={{ "--assistant-width": `${width}px` } as CSSProperties}>
     {active ? <div className="assistant-mobile-tabs" role="tablist" aria-label={tr("工作區與 AI", "Workspace and AI")}>
       <button role="tab" aria-selected={mobileView === "work"} aria-controls="assistant-work-surface" onClick={() => setMobileView("work")}>{tr("工作區", "Workspace")}</button>
@@ -69,5 +73,5 @@ export function AssistantWorkspace({ children, assistant, latestReply = "", open
         <div id="assistant-chat-content" className="assistant-chat-content">{assistant}</div>
       </aside>
     </> : null}
-  </div>;
+  </div></ConversationGuideProvider>;
 }

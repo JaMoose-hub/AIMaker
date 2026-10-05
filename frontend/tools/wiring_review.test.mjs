@@ -150,3 +150,42 @@ test('assistant tools hide an empty review body while retaining expanded or reco
   assert.match(html,/wiring-review-card/);assert.match(html,/開始接線照片核對/);
   assert.doesNotMatch(html,/ai-debug-current/);
 });
+
+const diagnosis = (status, extra={}) => ({status,observed_board_pin:'GPIO18',observed_physical_pin:12,
+  observed_component_pin:'TRIG',board_connector_id:'pi_side_a:wrong',component_connector_id:'component_header:trig',
+  evidence:'Visible wire route, not colour alone.',retake_roles:[],...extra});
+
+test('legacy matching or different colors cannot become a pin accusation or a pass',()=>{
+  for (const comparison of ['similar','different','ambiguous','unknown']) {
+    assert.equal(helpers.wiringFindingStatus({...base.results[0],comparison}),'uncertain');
+    assert.match(render({...base,results:[{...base.results[0],comparison}]}),/>需確認</);
+  }
+});
+
+test('suspected pins are shown first without mutating the original order or human decisions',()=>{
+  const rows=[{...base.results[0],wire_id:'ok',diagnosis:diagnosis('no_issue_seen')},
+    {...base.results[0],wire_id:'unclear'}, {...base.results[0],wire_id:'wrong',diagnosis:diagnosis('suspected')}];
+  assert.deepEqual(helpers.prioritiseWiringResults(rows).map(row=>row.wire_id),['wrong','unclear','ok']);
+  assert.deepEqual(rows.map(row=>row.wire_id),['ok','unclear','wrong']);
+  const html=render({...base,results:rows});
+  assert.match(html,/1 條優先檢查/);
+  assert.match(html,/data-finding="suspected"/);
+  assert.doesNotMatch(html,/aria-pressed="true"/);
+});
+
+test('result gives expected and possible actual pins with long evidence collapsed by default',()=>{
+  const row={...base.results[0],expected:{...base.results[0].expected,physical_pin:11,bcm:17,component_pin:'TRIG'},diagnosis:diagnosis('suspected')};
+  const html=render({...base,results:[row]});
+  assert.match(html,/TRIG.*Pi Pin 11/);
+  assert.match(html,/照片疑似：TRIG.*Pi Pin 12/);
+  assert.match(html,/先斷電/);
+  assert.match(html,/<details class="wr-finding-details"><summary>查看判斷依據/);
+  assert.doesNotMatch(html,/<details class="wr-finding-details" open/);
+});
+
+test('unclear endpoint offers only its missing view and never queues a retake on render',()=>{
+  const row={...base.results[0],diagnosis:diagnosis('uncertain',{retake_roles:['component_header']})};
+  const html=render({...base,results:[row]});
+  assert.match(html,/補拍零件接頭/);
+  assert.doesNotMatch(html,/補拍Pi 第一側|補拍Pi 另一側/);
+});

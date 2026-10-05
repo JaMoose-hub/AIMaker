@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { useMakerText } from "../lib/useMaker";
-import { boundWiringAction, cropFromPoints, imagePointFromClient, validWiringCrop, wiringPhotoRoles,
+import { boundWiringAction, cropFromPoints, imagePointFromClient, validWiringCrop, wiringPhotoRoles, prioritiseWiringResults, wiringFindingStatus,
   type WiringCrop, type WiringEndpoint, type WiringHumanDecision, type WiringPhotoRole, type WiringPhotoSlot,
   type WiringReviewAction, type WiringReviewState } from "../lib/wiringReview";
 import "./wiringReview.css";
@@ -23,6 +23,7 @@ export interface WiringReviewCardProps {
 }
 
 type Translate = (zh: string, en: string) => string;
+type PhotoMarker = { box: WiringCrop; label: string; kind: 'observed' | 'expected' };
 const roleLabel = (role: WiringPhotoRole, tr: Translate) => role === "pi_side_a" ? tr("Pi 第一側", "Pi first side")
   : role === "pi_side_b" ? tr("Pi 另一側", "Pi other side") : tr("零件接頭", "Module header");
 const colorLabel = (color: string | null, tr: Translate) => {
@@ -49,8 +50,9 @@ export function FramingGuide({ role }: { role: WiringPhotoRole }) {
   </svg>;
 }
 
-function CropDialog({ slot, initialCrop, disabled, onClose, onSave }: {
+function CropDialog({ slot, initialCrop, markers, disabled, onClose, onSave }: {
   slot: WiringPhotoSlot; initialCrop?: WiringCrop | null; disabled: boolean;
+  markers?: PhotoMarker[];
   onClose: () => void; onSave: (crop: WiringCrop | null) => Promise<void>;
 }) {
   const tr = useMakerText();
@@ -73,7 +75,7 @@ function CropDialog({ slot, initialCrop, disabled, onClose, onSave }: {
   const point = (event: PointerEvent<HTMLDivElement>, clamp = false) => image.current
     ? imagePointFromClient(event.clientX, event.clientY, image.current.getBoundingClientRect(), slot.size, clamp) : null;
   function begin(event: PointerEvent<HTMLDivElement>) {
-    if (disabled || saving || failed || !loaded || event.button !== 0) return;
+    if (markers || disabled || saving || failed || !loaded || event.button !== 0) return;
     const start = point(event);
     if (!start) return;
     drag.current = start;
@@ -97,18 +99,25 @@ function CropDialog({ slot, initialCrop, disabled, onClose, onSave }: {
   }
   // The SVG uses the same aspect ratio and contain behavior as the original image.
   return <dialog ref={dialog} className="wr-dialog" aria-labelledby={headingId} onCancel={event => { event.preventDefault(); if (!saving) onClose(); }}>
-    <div className="wr-dialog-heading"><h3 id={headingId}>{roleLabel(slot.role, tr)} · {tr("查看原圖與框選", "Original photo and crop")}</h3>
+    <div className="wr-dialog-heading"><h3 id={headingId}>{roleLabel(slot.role, tr)} · {markers ? tr("照片位置", "Photo positions") : tr("查看原圖與框選", "Original photo and crop")}</h3>
       <button type="button" autoFocus disabled={saving} onClick={onClose}>{tr("關閉", "Close")}</button></div>
-    <p>{tr("框入排針、插接底部、完整接頭與露出的線色。框選只指定分析區域，不代表腳號已確認。", "Include the header, insertion points, connectors and visible wire colors. A crop selects an area; it does not confirm pin identity.")}</p>
+    <p>{markers ? tr('橘框：照片位置；藍框：應接腳位的可見接頭。未定位的位置不畫框。', 'Orange: observed position. Blue: visible connector at the expected pin. Unlocated positions are not marked.')
+      : tr("框入排針、插接底部、完整接頭與露出的線色。框選只指定分析區域，不代表腳號已確認。", "Include the header, insertion points, connectors and visible wire colors. A crop selects an area; it does not confirm pin identity.")}</p>
     <div className="wr-crop-stage" onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={() => { drag.current = null; }}>
-      {!failed ? <><img ref={image} src={slot.image_url} draggable={false} alt={tr("供框選的原始接線照片", "Original wiring photo for cropping")}
+      {!failed ? <><img ref={image} src={slot.image_url} draggable={false} alt={markers ? tr("本輪接線照片與候選位置", "Current wiring photo and candidate positions") : tr("供框選的原始接線照片", "Original wiring photo for cropping")}
         onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />
         <svg className="wr-crop-overlay" viewBox={`0 0 ${slot.size[0]} ${slot.size[1]}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-          {crop ? <rect x={crop[0] * slot.size[0]} y={crop[1] * slot.size[1]} width={(crop[2] - crop[0]) * slot.size[0]} height={(crop[3] - crop[1]) * slot.size[1]}
+          {markers ? markers.map(marker => <g key={`${marker.kind}:${marker.label}`} className={`wr-marker-${marker.kind}`}>
+            <rect x={marker.box[0] * slot.size[0]} y={marker.box[1] * slot.size[1]} width={(marker.box[2] - marker.box[0]) * slot.size[0]}
+              height={(marker.box[3] - marker.box[1]) * slot.size[1]} fill="none" stroke="currentColor" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+            <text x={marker.box[0] * slot.size[0]} y={marker.kind === 'observed' ? Math.max(slot.size[0] * .036, marker.box[1] * slot.size[1] - slot.size[0] * .014)
+              : Math.min(slot.size[1] * .97, marker.box[3] * slot.size[1] + slot.size[0] * .045)}
+              fontSize={slot.size[0] * .036} fill="currentColor" stroke="var(--bg-inset, #10151c)" strokeWidth={slot.size[0] * .004} paintOrder="stroke">{marker.label}</text>
+          </g>) : crop ? <rect x={crop[0] * slot.size[0]} y={crop[1] * slot.size[1]} width={(crop[2] - crop[0]) * slot.size[0]} height={(crop[3] - crop[1]) * slot.size[1]}
             fill="#2cb5dc22" stroke="#00d2ff" strokeWidth="3" vectorEffect="non-scaling-stroke" /> : null}
         </svg></> : <p role="alert">{tr("原圖無法取得，請關閉後重拍此視角。", "Original photo unavailable. Close this view and retake the photo.")}</p>}
     </div>
-    <fieldset className="wr-crop-inputs" disabled={disabled || saving || failed}>
+    {!markers ? <><fieldset className="wr-crop-inputs" disabled={disabled || saving || failed}>
       <legend>{tr("拖曳框選，或輸入邊界百分比", "Drag a crop, or enter boundary percentages")}</legend>
       {([tr("左", "Left"), tr("上", "Top"), tr("右", "Right"), tr("下", "Bottom")] as string[]).map((label, index) => <label key={index}>{label}
         <input type="number" min={0} max={100} step={0.1} value={Math.round(input[index] * 1000) / 10} onChange={event => {
@@ -121,7 +130,7 @@ function CropDialog({ slot, initialCrop, disabled, onClose, onSave }: {
     {error ? <p role="alert">{error}</p> : null}
     <div className="wr-actions"><button type="button" disabled={disabled || saving || failed} onClick={() => void save(null)}>{tr("使用完整原圖", "Use full original")}</button>
       {validWiringCrop(slot.suggested_crop) ? <button type="button" disabled={disabled || saving || failed} onClick={() => setCrop(slot.suggested_crop!)}>{tr("預覽建議範圍", "Preview suggested crop")}</button> : null}
-      <button type="button" disabled={disabled || saving || failed || !validWiringCrop(crop)} onClick={() => void save(crop)}>{saving ? tr("儲存中…", "Saving…") : tr("儲存框選範圍", "Save crop")}</button></div>
+      <button type="button" disabled={disabled || saving || failed || !validWiringCrop(crop)} onClick={() => void save(crop)}>{saving ? tr("儲存中…", "Saving…") : tr("儲存框選範圍", "Save crop")}</button></div></> : null}
     <small>{slot.size[0]} × {slot.size[1]} · {tr("保留原始照片，框選不會修改原圖。", "The original photo is preserved.")}</small>
   </dialog>;
 }
@@ -146,7 +155,7 @@ export function WiringReviewCard({ review, components, componentId, busy = false
   onAction, onReview, onSelectComponent, onRetest, onInspectWire }: WiringReviewCardProps) {
   const tr = useMakerText();
   const [selectedId, setSelectedId] = useState(componentId ?? review?.component_id ?? components[0]?.id ?? "");
-  const [opened, setOpened] = useState<{ slot: WiringPhotoSlot; crop?: WiringCrop | null; revision: number } | null>(null);
+  const [opened, setOpened] = useState<{ slot: WiringPhotoSlot; crop?: WiringCrop | null; markers?: PhotoMarker[]; revision: number } | null>(null);
   const [pending, setPending] = useState(false);
   const [localError, setLocalError] = useState("");
   const [failedCaptures, setFailedCaptures] = useState<string[]>([]);
@@ -174,21 +183,25 @@ export function WiringReviewCard({ review, components, componentId, busy = false
   const allConfirmed = Boolean(canReview && usable?.results.length && usable.results.every(row => usable.reviews[row.wire_id]?.decision === "confirmed"
     && !usable.reviews[row.wire_id]?.evidence_stale));
   const resultKey = usable ? `${usable.id}:${usable.round}:${usable.component_id}:${usable.analysis_revision ?? ''}` : '';
-  const currentRow = usable?.results.find(row => wireChoice?.key === resultKey && row.wire_id === wireChoice.id)
-    ?? usable?.results.find(row => usable.reviews[row.wire_id]?.decision !== 'confirmed' || usable.reviews[row.wire_id]?.evidence_stale)
-    ?? usable?.results[0];
-  const rowIndex = usable?.results.findIndex(row => row.wire_id === currentRow?.wire_id) ?? -1;
+  const orderedRows = prioritiseWiringResults(usable?.results ?? []);
+  const currentRow = orderedRows.find(row => wireChoice?.key === resultKey && row.wire_id === wireChoice.id)
+    ?? orderedRows.find(row => usable?.reviews[row.wire_id]?.decision !== 'confirmed' || usable.reviews[row.wire_id]?.evidence_stale)
+    ?? orderedRows[0];
+  const rowIndex = orderedRows.findIndex(row => row.wire_id === currentRow?.wire_id);
+  const suspectedCount = orderedRows.filter(row => wiringFindingStatus(row) === 'suspected').length;
+  const unclearCount = orderedRows.filter(row => wiringFindingStatus(row) === 'uncertain').length;
   const collectingPhotos = Boolean(usable && (!usable.results.length || ['collecting', 'analysing', 'error'].includes(usable.status)));
   const statusLabel = review?.status === "analysing" ? tr("正在分析照片", "Analysing photos")
     : inactive ? tr("本輪已過期", "This round is stale") : review?.status === "needs_human" ? tr("需要人工沿線核對", "Human wire tracing needed")
-    : usable?.results.length ? tr("請逐線核對", "Review each wire") : tr("收集接線照片", "Collect wiring photos");
+    : usable?.results.length ? tr("分析完成", "Analysis complete") : tr("收集接線照片", "Collect wiring photos");
   const componentPicker = <label className="wr-component">{tr("檢查零件", "Module to inspect")}<select value={selected} disabled={waiting || !components.length} onChange={event => {
     setSelectedId(event.target.value); onSelectComponent?.(event.target.value); setOpened(null);
   }}>{components.map(component => <option key={component.id} value={component.id}>{component.label}</option>)}</select></label>;
   return <section className="wiring-review-card" data-dialogue={collectingPhotos && !inactive} aria-label={tr("接線照片輔助核對", "Guided wiring photo review")} aria-busy={waiting}>
-    {!collectingPhotos || inactive ? <><header className="wr-heading"><div><strong>{tr("接線照片輔助核對", "Guided wiring photo review")}</strong><p>{tr("AI 整理照片依據，由你親自確認接線。", "AI organises photo evidence; you confirm the actual wiring.")}</p></div>
+    {!collectingPhotos || inactive ? <><header className="wr-heading"><div><strong>{tr("接線檢查", "Wiring check")}</strong></div>
       {usable ? <span className="wr-round">{tr("第", "Round")} {usable.round} {tr("輪", "")}</span> : null}</header>
-      {componentPicker}<p className="wr-status" role="status">{statusLabel}</p></> : <details className="wr-dialogue-context">
+      <details className="wr-dialogue-context"><summary>{components.find(component => component.id === selected)?.label} · {statusLabel}</summary>{componentPicker}</details>
+      {inactive ? <p className="wr-status" role="status">{statusLabel}</p> : null}</> : <details className="wr-dialogue-context">
       <summary>{components.find(component => component.id === selected)?.label} · {tr("第", "Round")} {usable?.round} {tr("輪", "")}</summary>{componentPicker}
       <small>{tr("同一輪保持接線不變，選用照片不代表確認接線。", "Keep this round’s wiring unchanged. Selecting photos does not confirm wiring.")}</small>
     </details>}
@@ -226,10 +239,14 @@ export function WiringReviewCard({ review, components, componentId, busy = false
         <button type="button" disabled={disabled} onClick={() => void act({ op: "changed" })}>{tr("改動範圍不確定，全部重新核對", "Change scope unclear — review all wiring")}</button></div></details>
       {usable.no_progress_count >= 2 || usable.status === "needs_human" ? <p className="wr-note">{tr("補查仍沒有足夠的新證據。請沿著同一條線親自核對兩端，必要時貼上相同編號。", "Follow the same wire and inspect both ends yourself. Further photo checks have not added enough evidence; matching labels can help.")}</p> : null}
       {!collectingPhotos && usable.results.length ? <div className="wr-results">
-        <div className="wr-step-heading"><strong>{allConfirmed ? tr('本零件接線已由你核對', 'You reviewed this module’s wiring') : tr('接著，一次核對一條線', 'Next, review one wire at a time')}</strong>
+        <div className="wr-result-summary" role="status"><strong>{suspectedCount ? tr(`${suspectedCount} 條優先檢查`, `${suspectedCount} to check first`)
+          : unclearCount ? tr(`${unclearCount} 條需確認`, `${unclearCount} need a closer check`) : tr('未見明顯錯接', 'No obvious mismatch seen')}</strong>
+          <small>{tr('照片判讀，非功能驗證', 'Photo clues, not a functional pass')}</small></div>
+        <div className="wr-step-heading"><strong>{allConfirmed ? tr('本零件接線已由你核對', 'You reviewed this module’s wiring') : tr('先看這條線', 'Check this wire first')}</strong>
           <small>{rowIndex + 1} / {usable.results.length}</small></div>
-        <div className="wr-wire-progress" role="group" aria-label={tr('選擇核對的線路', 'Choose a wire to review')}>{usable.results.map(row =>
+        <div className="wr-wire-progress" role="group" aria-label={tr('選擇核對的線路', 'Choose a wire to review')}>{orderedRows.map(row =>
           <button type="button" key={row.wire_id} disabled={waiting} aria-current={row === currentRow ? 'step' : undefined}
+            data-finding={wiringFindingStatus(row)}
             data-confirmed={usable.reviews[row.wire_id]?.decision === 'confirmed' && !usable.reviews[row.wire_id]?.evidence_stale}
             onClick={() => setWireChoice({ key: resultKey, id: row.wire_id })}>{row.expected.component_pin}</button>)}</div>
         {usable.results.filter(row => row === currentRow).map(row => {
@@ -237,27 +254,50 @@ export function WiringReviewCard({ review, components, componentId, busy = false
         const decision = humanReview?.decision;
         const comparison = row.comparison === "similar" ? tr("線色相符", "Similar colors") : row.comparison === "different" ? tr("線色不同", "Different colors")
           : row.comparison === "ambiguous" ? tr("多個候選", "Multiple candidates") : tr("資訊不足", "Insufficient evidence");
-        return <article className="wr-wire" key={row.wire_id}><header><h4>{row.expected.component_pin}</h4><span className={`wr-comparison wr-${row.comparison}`}>{comparison}</span></header>
-          <div className="wr-expected"><strong>{tr("預期接法", "Expected connection")}</strong><p>{row.expected.physical_pin !== null ? `${tr("Pi 實體 Pin", "Pi physical pin")} ${row.expected.physical_pin}` : row.expected.board_pin || tr("Pi 腳位待確認", "Pi pin unconfirmed")}
-            {row.expected.bcm !== null ? ` · BCM ${row.expected.bcm}` : ""} → {row.expected.component_pin}</p></div>
+        const status = wiringFindingStatus(row);
+        const finding = row.diagnosis;
+        const moduleWrong = status === 'suspected' && finding?.observed_component_pin !== row.expected.component_pin;
+        const observedCandidate = usable.observations.find(c => c.id === (moduleWrong ? finding?.component_connector_id : finding?.board_connector_id));
+        const observedSlot = Object.values(usable.slots).find(slot => slot?.capture_id === observedCandidate?.capture_id);
+        const expectedCandidate = usable.observations.find(c => c.capture_id === observedCandidate?.capture_id
+          && c.pin_id === (moduleWrong ? row.expected.component_pin : row.expected.board_pin));
+        const retakeRole = finding?.retake_roles[0];
+        return <article className="wr-wire wr-finding" data-finding={status} key={row.wire_id}><header><h4>{row.expected.component_pin}</h4>
+          <span className={`wr-comparison wr-finding-${status}`}>{status === 'suspected' ? tr('疑似接錯', 'Possible wrong pin')
+            : status === 'no_issue_seen' ? tr('未見明顯錯接', 'No obvious mismatch') : tr('需確認', 'Needs a closer check')}</span></header>
+          <div className="wr-expected"><strong>{tr("應接", "Connect to")}</strong><p>{row.expected.component_pin} <span aria-hidden="true">→</span> {row.expected.physical_pin !== null ? `Pi Pin ${row.expected.physical_pin}` : row.expected.board_pin || tr("Pi 腳位待確認", "Pi pin unconfirmed")}</p></div>
+          {status === 'suspected' ? <p className="wr-suspected-position">{tr('照片疑似：', 'Photo suggests: ')}{finding?.observed_component_pin} → Pi Pin {finding?.observed_physical_pin}</p>
+            : status === 'uncertain' ? <p className="wr-muted">{tr('腳位或線路看不清，先核對這條。', 'Pin or route unclear. Check this wire first.')}</p> : null}
+          {status === 'suspected' ? <small className="wr-power-off">{tr('先斷電，再沿線核對或調整。', 'Power off before tracing or changing wires.')}</small> : null}
+          <div className="wr-actions wr-finding-actions">
+            {observedSlot?.available !== false && observedSlot && validWiringCrop(observedCandidate?.box) ? <button type="button" className="wr-primary" onClick={() => {
+              const markers: PhotoMarker[] = [{ box: observedCandidate!.box!, kind: 'observed', label: moduleWrong ? `${finding?.observed_component_pin}` : `Pin ${finding?.observed_physical_pin}` }];
+              if (expectedCandidate !== observedCandidate && validWiringCrop(expectedCandidate?.box)) markers.push({ box: expectedCandidate!.box!, kind: 'expected', label: moduleWrong ? row.expected.component_pin : `Pin ${row.expected.physical_pin}` });
+              setOpened({ slot: observedSlot, markers, revision: usable.revision });
+            }}>{tr('查看照片位置', 'View position in photo')}</button> : null}
+            {onInspectWire ? <button type="button" onClick={() => onInspectWire(row.wire_id)}>{tr('看應接腳位', 'View expected pin')}</button> : null}
+            {status === 'uncertain' && retakeRole ? <button type="button" disabled={disabled || humanOnly || !captureReady}
+              onClick={() => void act({ op: 'capture', role: retakeRole })}>{tr(`補拍${roleLabel(retakeRole, tr)}`, `Retake ${roleLabel(retakeRole, tr)}`)}</button> : null}
+          </div>
+          <details className="wr-finding-details"><summary>{tr('查看判斷依據', 'Evidence details')}</summary>
+          <p>{row.expected.physical_pin !== null ? `${tr('Pi 實體 Pin', 'Pi physical pin')} ${row.expected.physical_pin}` : row.expected.board_pin}{row.expected.bcm !== null ? ` · BCM ${row.expected.bcm}` : ''} · {comparison}</p>
           <div className="wr-observations"><div><h5>{tr("Pi 端照片觀察", "Pi photo observations")}</h5><EndpointList candidates={row.pi_candidates} slots={usable.slots} onPhoto={photo} /></div>
             <div><h5>{tr("零件端照片觀察", "Module photo observations")}</h5><EndpointList candidates={row.component_candidates} slots={usable.slots} onPhoto={photo} /></div></div>
           {row.evidence ? <p>{row.evidence}</p> : null}
           {row.comparison === "similar" ? <small>{tr("線色相符只提供線索，請確認兩端是否為同一條線。", "Matching colors are a clue. Check that both ends belong to the same wire.")}</small> : null}
           {row.expected.connection_kind && row.expected.connection_kind !== "direct" ? <small>{tr("此接法含中間連接，兩端線色可能不同。", "This connection has an intermediate link; end colors may differ.")}</small> : null}
-          <p className="wr-next"><strong>{tr("下一步：", "Next: ")}</strong>{row.next_step}</p>
-          {onInspectWire ? <button type="button" onClick={() => onInspectWire(row.wire_id)}>{tr("查看預期腳位圖", "View expected pin diagram")}</button> : null}
+          <p className="wr-next"><strong>{tr("下一步：", "Next: ")}</strong>{row.next_step}</p></details>
           <fieldset className="wr-human" disabled={!canReview}><legend>{tr("你的實際核對", "Your physical check")}</legend>
             <p>{humanReview?.evidence_stale ? tr("保留先前的人工決定；照片已更新，請對照新證據再確認。", "Your earlier decision is retained; photos changed. Review the new evidence and confirm again.")
               : decision === "confirmed" ? tr("你已親自確認接對", "You confirmed the wiring") : decision === "needs_change" ? tr("你指出需要修正", "You reported a needed change") : tr("尚未確認接對", "Not yet confirmed")}</p>
-            <div className="wr-actions"><button type="button" aria-pressed={decision === "confirmed" && !humanReview?.evidence_stale} onClick={() => void perform(() => onReview(row.wire_id, "confirmed"))}>{tr("我已親自確認接對", "I checked: connected correctly")}</button>
-              <button type="button" aria-pressed={decision === "needs_change"} onClick={() => void perform(() => onReview(row.wire_id, "needs_change"))}>{tr("我發現接錯，準備修正", "I found an error; prepare a fix")}</button>
-              <button type="button" aria-pressed={decision === "unsure"} onClick={() => void perform(() => onReview(row.wire_id, "unsure"))}>{tr("仍無法確定", "Still unsure")}</button></div>
+            <div className="wr-actions"><button type="button" aria-pressed={decision === "confirmed" && !humanReview?.evidence_stale} onClick={() => void perform(() => onReview(row.wire_id, "confirmed"))}>{tr("我已核對接對", "I checked: connected correctly")}</button>
+              <button type="button" aria-pressed={decision === "needs_change"} onClick={() => void perform(() => onReview(row.wire_id, "needs_change"))}>{tr("需要修正", "I found an error; prepare a fix")}</button>
+              <button type="button" aria-pressed={decision === "unsure"} onClick={() => void perform(() => onReview(row.wire_id, "unsure"))}>{tr("仍不確定", "Still unsure")}</button></div>
           </fieldset>
         </article>;
       })}<div className="wr-wire-navigation">
-        <button type="button" disabled={waiting || rowIndex <= 0} onClick={() => setWireChoice({ key: resultKey, id: usable.results[rowIndex - 1].wire_id })}>{tr('上一條', 'Previous wire')}</button>
-        <button type="button" disabled={waiting || rowIndex >= usable.results.length - 1} onClick={() => setWireChoice({ key: resultKey, id: usable.results[rowIndex + 1].wire_id })}>{tr('下一條', 'Next wire')}</button>
+        <button type="button" disabled={waiting || rowIndex <= 0} onClick={() => setWireChoice({ key: resultKey, id: orderedRows[rowIndex - 1].wire_id })}>{tr('上一條', 'Previous wire')}</button>
+        <button type="button" disabled={waiting || rowIndex >= orderedRows.length - 1} onClick={() => setWireChoice({ key: resultKey, id: orderedRows[rowIndex + 1].wire_id })}>{tr('下一條', 'Next wire')}</button>
       </div></div> : null}
       {usable.observations.length ? <details className="wr-inventory"><summary>{tr("查看全部接頭候選（含腳號未知）", "All connector candidates, including unknown pins")}</summary>
         <EndpointList candidates={usable.observations} slots={usable.slots} onPhoto={photo} /></details> : null}
@@ -265,7 +305,7 @@ export function WiringReviewCard({ review, components, componentId, busy = false
         {onRetest ? <button type="button" disabled={disabled} onClick={() => onRetest(usable.component_id)}>{tr("重新測試這個零件", "Retest this module")}</button> : null}</div> : null}
     </>}
     {opened && review && opened.revision === review.revision && Object.values(review.slots).some(slot => slot?.capture_id === opened.slot.capture_id) ? <CropDialog
-      key={`${opened.slot.capture_id}:${opened.revision}`} slot={opened.slot} initialCrop={opened.crop} disabled={disabled || humanOnly} onClose={() => setOpened(null)} onSave={async crop => {
+      key={`${opened.slot.capture_id}:${opened.revision}`} slot={opened.slot} initialCrop={opened.crop} markers={opened.markers} disabled={disabled || humanOnly} onClose={() => setOpened(null)} onSave={async crop => {
         const result = await onAction(boundWiringAction(review, { op: "crop", role: opened.slot.role, crop }));
         if (result === null || result === false) throw new Error(tr("框選未儲存，請關閉並查看操作訊息後重試。", "Crop was not saved. Close this view, check the action message and try again."));
         setOpened(null);

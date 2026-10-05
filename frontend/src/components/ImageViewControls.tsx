@@ -7,22 +7,40 @@ export type ImageViewMode = 'live' | 'diagram' | 'photo';
 export type ImageSource = 'webcam' | 'phone';
 
 /** Viewing a reference does not acquire a camera or change the selected source. */
-export function ImageViewControls({ view, disabled, photoDisabled = false, diagramAvailable, onChange }: {
+export function ImageViewControls({ view, disabled, photoDisabled = false, diagramAvailable,
+  photoView = 'live', savedPhotoAvailable = false, onChange }: {
   view: ImageViewMode; disabled: boolean; photoDisabled?: boolean; diagramAvailable: boolean;
+  photoView?: 'live' | 'photo'; savedPhotoAvailable?: boolean;
   onChange: (view: ImageViewMode) => void;
 }) {
   const tr = useMakerText();
+  const photoGuideActive = view !== 'diagram';
+  const preferredPhotoView = photoView === 'photo' && savedPhotoAvailable ? 'photo' : 'live';
   const views: Array<{ id: ImageViewMode; label: string; hint: string }> = [
-    { id: 'live', label: tr('即時畫面', 'Live view'), hint: tr('查看目前來源的即時影像與辨識', 'Live image and recognition from the selected source') },
-    { id: 'diagram', label: tr('接線圖', 'Wiring diagram'), hint: tr('查看這一步的預期接法', 'Intended wiring for this step') },
-    { id: 'photo', label: tr('接線照片', 'Wiring photo'), hint: tr('查看拍攝當下的接線與 GPIO 標示', 'Captured wiring with GPIO markers') },
+    { id: 'photo', label: tr('照片引導', 'Photo guide'), hint: tr('即時取景、拍照與照片接線引導', 'Live framing, capture and photo wiring guidance') },
+    { id: 'diagram', label: tr('圖解引導', 'Diagram guide'), hint: tr('透過示意圖查看這一步的預期接法', 'Follow the diagram for this step\'s intended wiring') },
   ];
   return <div className="image-view-controls">
     <div className="image-view-segments" role="group" aria-label={tr('畫面檢視', 'View mode')}>
-      {views.map(item => <button type="button" key={item.id} aria-pressed={view === item.id}
+      {views.map(item => <button type="button" key={item.id} aria-pressed={item.id === 'photo' ? photoGuideActive : view === item.id}
         title={item.hint} disabled={disabled || (item.id === 'diagram' && !diagramAvailable) || (item.id === 'photo' && photoDisabled)}
-        onClick={() => onChange(item.id)}>{item.label}</button>)}
+        onClick={() => onChange(item.id === 'photo' ? preferredPhotoView : item.id)}>{item.label}</button>)}
     </div>
+    {photoGuideActive ? <div className="photo-guide-view-switch" role="group" aria-label={tr('照片引導畫面', 'Photo guide view')}>
+      <button type="button" aria-label={tr('即時取景', 'Live framing')} title={tr('即時取景', 'Live framing')}
+        aria-pressed={view === 'live'} disabled={disabled || photoDisabled} onClick={() => onChange('live')}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="5" width="13" height="14" rx="3"/><path d="m16 9 5-3v12l-5-3"/>
+        </svg>
+      </button>
+      <button type="button" aria-label={tr('已拍照片', 'Captured photo')}
+        title={savedPhotoAvailable ? tr('查看已拍照片', 'View captured photo') : tr('拍照後可查看照片', 'Capture a photo to view it here')}
+        aria-pressed={view === 'photo'} disabled={disabled || photoDisabled || !savedPhotoAvailable} onClick={() => onChange('photo')}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 16 5-5 4 4 4-6 5 7"/>
+        </svg>
+      </button>
+    </div> : null}
   </div>;
 }
 

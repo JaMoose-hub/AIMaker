@@ -297,6 +297,10 @@ class MobileService:
 
     def publish_context(self, payload):
         payload = _clean(deepcopy(payload))
+        # Desktop-only presentation intent must not replace the wiring context,
+        # invalidate captures, or interrupt an already paired phone's stream.
+        ui = payload.pop("ui", {})
+        parts_check = payload.get("stage") == "design" and isinstance(ui, dict) and ui.get("parts_check") is True
         # Desktop debug controllers may restore a new runtime case ID without
         # changing this workspace. Do not bind phone messages/photos to that
         # webcam case, or persist it under an otherwise stable context hash.
@@ -309,7 +313,7 @@ class MobileService:
         payload["context_epoch"] = self.state.assistant.read(cid).get("context_epoch", 0)
         identifier = _digest(payload)[:32]
         with self.lock:
-            record = {**payload, "context_id": identifier, "published_at": self.wall()}
+            record = {**payload, "ui": {"parts_check": parts_check}, "context_id": identifier, "published_at": self.wall()}
             self.contexts[identifier] = record
             _write_json(self.root / "contexts" / (identifier + ".json"), record)
             self.latest = record
@@ -540,8 +544,15 @@ class MobileService:
                 raise HTTPException(409, "mobile_context_changed")
             context = self.context(body["context_id"])
             ids = body.get("asset_ids", [])
+            parts_check = body.get("purpose") == "parts_check"
+            if parts_check and context["stage"] != "design":
+                raise HTTPException(409, "mobile_parts_check_requires_design_stage")
+            if parts_check and (not ids or any(body.get(key) for key in ("capture_id", "check_scope", "wire_id"))):
+                raise HTTPException(422, "mobile_parts_check_requires_current_photos")
             for aid in ids:
                 self.assets.authorize(aid, session["conversation_id"])
+                if parts_check and self.assets.describe(aid)["type"] != "image":
+                    raise HTTPException(422, "mobile_parts_check_requires_images")
             self.assets.resolve_images(ids)
             capture = self.capture(body["capture_id"], sid) if body.get("capture_id") else None
             if capture and capture["context_id"] != body["context_id"]:
@@ -552,13 +563,20 @@ class MobileService:
                     raise HTTPException(422, "mobile_message_requires_text_or_media")
                 # Phone chat accepts photos without typing. Normalize on the
                 # server so saved failed outboxes can retry unchanged.
-                text = ("Please analyze the attached images or video and describe the visible components and wiring."
-                        if context["design"]["locale"] == "en" else
-                        "請分析附上的照片或影片，說明看見的零件與目前接線狀況。")
+                if parts_check:
+                    text = ("Please compare only the hardware types in these photos: a Raspberry Pi 5-like controller board, an ultrasonic module such as HC-SR04+, and a TFT screen such as MRD_TFT240_8P_CS / ILI9341. Similar appearance and purpose count as Right part; exact variants are not required. Reply with exactly three short bullets: **part: Right part / Wrong part / Cannot confirm**. Right part needs no explanation. Wrong part is only for a different type; Cannot confirm is only when the type cannot be seen. No table or long explanation. This is type recognition, not compatibility verification, wiring inspection or project redesign."
+                            if context["design"]["locale"] == "en" else
+                            "請核對本次照片的零件類型：Raspberry Pi 5 類控制板、HC-SR04+ 類超音波模組、MRD_TFT240_8P_CS／ILI9341 類 TFT 螢幕。外觀與用途接近就說買對，不要求版本完全相同。只回覆三個短條列：**零件：買對／買錯／還不能確認**。買對不用解釋。明顯是不同類型才說買錯；看不清零件類型才說還不能確認並指出要補拍的角度。不用表格或長篇說明。這是類型辨識，不是相容性驗證、接線檢查或重新設計作品。")
+                else:
+                    text = ("Please analyze the attached images or video and describe the visible components and wiring."
+                            if context["design"]["locale"] == "en" else
+                            "請分析附上的照片或影片，說明看見的零件與目前接線狀況。")
             payload = {"request_id": body["request_id"], "text": text,
-                       "stage": context["stage"], "target": context["target"], "design": context["design"],
+                       "stage": context["stage"], "target": "answer" if parts_check else context["target"], "design": context["design"],
                        "context": {**context["context"], "mobile_context_id": context["context_id"]},
-                       "round": context["round"], "asset_ids": ids, "inherit_media": body.get("inherit_media", True), "source": "mobile"}
+                       "round": context["round"], "asset_ids": ids, "inherit_media": False if parts_check else body.get("inherit_media", True), "source": "mobile"}
+            if parts_check:
+                payload["context"]["parts_check"] = {"scope": "demo-three-hardware"}
             for key in ("capture_id", "check_scope", "wire_id"):
                 if body.get(key) is not None:
                     payload[key] = body[key]
@@ -598,7 +616,7 @@ class MobileService:
             return False
         with owner.lock:
             for session in owner.sessions.values():
-                if owner.replaceable_photo_history(session):
+                if owner.replaceable_collection_history(session):
                     continue
                 if (session.get("status") not in {"complete", "stopped", "error"}
                         and session.get("binding", {}).get("target_id") == self.state.component_tests.target

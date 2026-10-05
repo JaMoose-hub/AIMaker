@@ -144,6 +144,24 @@ test('text references freeze an exact media identity and explicit empty referenc
   for(const result of [domain.browserMediaReference(chat,3,0),domain.browserMediaReference(chat,2,1),domain.browserMediaReference(null,2,0),domain.browserMediaReference(chat,2,0,'explicit')]){assert.deepEqual(result.asset_ids,[]);assert.equal(result.inherit_media,false);assert.equal(result.label,null);}
   assert.equal(domain.browserMediaReference({...chat,context_epoch:6},2,0).label,null);
 });
+test('cancelled phone media excludes both assets and capture while preserving shared evidence',()=>{
+  const chat={id:'chat',context_epoch:5,active_media:{epoch:5,round:2,asset_ids:['a'],capture_id:'c',attachments:[{asset_id:'a',filename:'Pi.jpg',type:'image'}]}};
+  const original=structuredClone(chat),key=domain.browserMediaReference(chat,2,0).reference_key;
+  assert.ok(key);
+  assert.deepEqual(domain.browserMediaReference(chat,2,0,undefined,key),{asset_ids:[],inherit_media:false,label:null});
+  assert.deepEqual(chat,original,'cancel must not clear the desktop shared photo or history');
+  assert.equal(domain.browserMediaReference(chat,2,0,'explicit',key).capture_id,undefined,'explicit capture stays a send option, never inherited');
+});
+test('cancelled reference survives same-media polling but never suppresses a different photo or context',()=>{
+  const chat={id:'chat',context_epoch:5,active_media:{epoch:5,round:2,asset_ids:['a'],capture_id:'c',attachments:[{asset_id:'a',filename:'Pi.jpg',type:'image'}]}};
+  const key=domain.browserMediaReference(chat,2,0).reference_key;
+  assert.equal(domain.browserMediaReference(structuredClone(chat),2,0,undefined,key).label,null);
+  for(const change of [c=>c.id='other',c=>c.active_media.capture_id='new',c=>c.active_media.asset_ids=['new'],
+    c=>{c.context_epoch++;c.active_media.epoch++;},c=>c.active_media.round++]) {
+    const next=structuredClone(chat);change(next);
+    assert.ok(domain.browserMediaReference(next,next.active_media.round,0,undefined,key).label);
+  }
+});
 test('media accepts four photos or one bounded video without resizing or MIME relabeling',()=>{
   const image={type:'image',size:123};assert.equal(domain.validateBrowserAttachments(Array(4).fill(image)),null);assert.ok(domain.validateBrowserAttachments(Array(5).fill(image)));
   assert.equal(domain.validateBrowserAttachments([{type:'video',size:200*1024*1024,duration:60}]),null);

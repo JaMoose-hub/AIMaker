@@ -1,4 +1,16 @@
 /* Shared message content: no separate panel, composer, or scrolling region. */
+.wiring-chat-finding { display: inline-block; padding: 4px 8px; border-radius: 6px; background: var(--bg-inset); font-size: 12px; }
+.wiring-chat-finding.is-suspected, .wiring-chat-suspected { color: var(--status-warn, #ffc078); }
+.wiring-chat-finding.is-uncertain { color: var(--ink-secondary); }
+.wiring-chat-finding.is-no_issue_seen { color: var(--brand-link); }
+.wiring-chat-suspected { font-weight: 650; }
+.wiring-chat-position { margin: 10px 0; }
+.wiring-chat-position .wiring-chat-crop-stage { position: relative; width: 100%; }
+.wiring-chat-position .wiring-chat-crop-stage img { display: block; width: 100%; max-height: 320px; object-fit: contain; }
+.wiring-chat-position .wiring-chat-crop-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.wiring-chat-position figcaption { margin-top: 6px; color: var(--ink-secondary); font-size: 11px; }
+.wiring-chat-marker-observed { color: #ffc078; }
+.wiring-chat-marker-expected { color: #75c7ff; }
 .wiring-chat-framing { margin-top: 10px; font-size: 12px; }
 .wiring-chat-framing > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .wiring-chat-framing > p { margin: 8px 0; line-height: 1.55; }

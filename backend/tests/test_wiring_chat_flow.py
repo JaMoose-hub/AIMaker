@@ -297,8 +297,9 @@ def test_summary_prioritises_different_and_uncertain_wires(chat):
     state.debug_sessions.tick(sid)
     message = current(state)
     assert message['wiring_flow']['wire_id'] == wires[2]['id']
-    assert '1 條異色' in message['text'] and '1 條證據不足' in message['text']
-    assert '優先核對' in message['text']
+    assert '照片分析完成' in message['text'] and '不能判定接錯' in message['text']
+    assert message['wiring_flow']['result']['diagnosis']['status'] == 'uncertain'
+    assert '1 條異色' not in message['text']
     assert len(state.design_service.bridge.calls) == 1
 
 

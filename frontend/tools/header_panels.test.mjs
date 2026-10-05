@@ -29,12 +29,26 @@ function harness() {
     context.value=tree.props.value;
     return Object.fromEntries(panels.map(panel=>[panel,run(`${owner}:${panel}`,()=>exports.useHeaderPanel(panel))]));
   }
-  return{render,standalone(initial){context.value=null;return run('standalone',()=>exports.useHeaderPanel('pi',initial));}};
+  return{render,upload:()=>run('upload',()=>exports.usePhoneUploadEntry()),standalone(initial){context.value=null;return run('standalone',()=>exports.useHeaderPanel('pi',initial));}};
 }
 
 test('header panels start closed and retain the existing workspace children',()=>{
   const h=harness(),state=h.render();
   assert.deepEqual(panels.filter(panel=>state[panel][0]),[]);
+});
+
+test('hardware upload entry shares the phone panel and repeats an explicit request without overlapping settings',()=>{
+  const h=harness();h.render().settings[1](true);h.render();
+  h.upload().open();assert.deepEqual(panels.filter(panel=>h.render()[panel][0]),['phone']);
+  assert.equal(h.upload().request,1);h.upload().open();h.render();assert.equal(h.upload().request,2);
+});
+
+test('hardware upload is opt-in and project-scoped, while the normal phone control never requests it',()=>{
+  const h=harness();h.render();assert.equal(h.upload().scope,null);
+  h.render().phone[1](true);h.render();assert.equal(h.upload().scope,null);
+  h.upload().open('project:7');h.render();assert.equal(h.upload().scope,'project:7');
+  h.upload().clear();h.render();assert.equal(h.upload().scope,null);
+  assert.deepEqual(panels.filter(panel=>h.render()[panel][0]),['phone']);
 });
 
 test('every direction between phone, Pi and Settings opens only the requested panel',()=>{

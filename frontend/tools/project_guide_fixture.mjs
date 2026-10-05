@@ -58,6 +58,7 @@ export async function renderGuide({design = designFor(), session = maker.initial
   const checkModule = await import(checkUrl);
   checkModule.calls.length = 0;
   const projectUrl = compile('components/ProjectGuidePanel.tsx', {
+    './ConversationGuideDock': dataUrl('export const useConversationGuideDock=()=>null;'),
     '../lib/componentTests': testsUrl,
     '../lib/useComponentTests': dataUrl(`export const useComponentTests = () => ({status:{connected:true,active:null,results:[],test_busy:false},error:null,pending:false,...${JSON.stringify(tests)},start(){throw Error('No hardware action during render');},connect(){},action(){},invalidate(){}});`),
     './ComponentTestCard': compile('components/ComponentTestCard.tsx', {'../lib/useMaker':textUrl, '../lib/componentTests':testsUrl}),

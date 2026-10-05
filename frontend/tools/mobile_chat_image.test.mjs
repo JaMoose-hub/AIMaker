@@ -5,6 +5,7 @@ import ts from 'typescript';
 import React from 'react';
 import * as jsx from 'react/jsx-runtime';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { markdownFixture } from './assistant_markdown_fixture.mjs';
 
 function load(file, modules = {}) {
   const exports = {};
@@ -25,6 +26,8 @@ function components(locale = 'zh-TW', hooks = {}, media = path => ({ url: path ?
     '../lib/useMobileBrowser': { useMobileAssetUrl: (_, path) => media(path), mobileTestHelpOffer: () => null, mobileWiringPhotoFlow: () => null },
     '../lib/mobile': {}, '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {},
     './AssistantAnalysisTime': { AssistantAnalysisTime: () => null },
+    './AssistantMarkdown': markdownFixture(locale),
+    './MobileWiringAlbumPanel': {}, '../lib/useMobileWiringAlbum': {},
     './WiringChatMessage': { WiringCaptureFraming: () => null }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
   });
 }

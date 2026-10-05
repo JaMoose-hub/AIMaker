@@ -205,6 +205,120 @@ def test_photo_only_message_accepts_uploaded_images_without_a_typed_prompt(app, 
     assert sent["text"].startswith("請分析" if locale == "zh-TW" else "Please analyze")
 
 
+@pytest.mark.parametrize("locale,text", [("en", ""), ("zh-TW", ""), ("zh-TW", "請幫我核對螢幕型號")])
+def test_parts_photo_message_uses_read_only_comparison_not_general_wiring(app, setup, locale, text):
+    service, phone, _ = setup
+    published = context(stage="design")
+    published["design"]["locale"] = locale
+    frozen = deepcopy(published)
+    service.publish_context(published)
+    pair = service.create_pairing(phone["conversation_id"], "http://192.168.1.5:8100")
+    phone = service.pair(pair["code"], "Test phone")
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        ids = [client.post("/api/mobile/assets", headers=auth(phone), data={"upload_id": f"parts-{index}"},
+            files={"file": (f"parts-{index}.jpg", jpeg(), "image/jpeg")}).json()["id"] for index in range(3)]
+        response = client.post("/api/mobile/messages", headers=auth(phone), json=dict(request_id="parts-check",
+            text=text, asset_ids=ids, context_id=phone["context_id"], purpose="parts_check", inherit_media=True))
+        assert response.status_code == 202
+    sent = service.state.assistant.sent[0][1]
+    assert sent["target"] == "answer" and sent["source"] == "mobile"
+    assert sent["context"]["parts_check"] == {"scope": "demo-three-hardware"}
+    assert sent["asset_ids"] == ids and sent["inherit_media"] is False
+    assert not sent.get("capture_id") and not sent.get("check_scope") and not sent.get("wire_id")
+    if text:
+        assert sent["text"] == text
+    else:
+        assert sent["text"].startswith("請核對" if locale == "zh-TW" else "Please compare")
+        assert "Raspberry Pi 5" in sent["text"] and "HC-SR04+" in sent["text"] and "ILI9341" in sent["text"]
+        assert ("買對／買錯／還不能確認" if locale == "zh-TW" else "Right part / Wrong part / Cannot confirm") in sent["text"]
+        assert ("只回覆三個短條列" if locale == "zh-TW" else "exactly three short bullets") in sent["text"]
+        assert ("外觀與用途接近就說買對" if locale == "zh-TW" else "Similar appearance and purpose count as Right part") in sent["text"]
+        assert ("買對不用解釋" if locale == "zh-TW" else "Right part needs no explanation") in sent["text"]
+    assert published == frozen and service.state.mobile_photo.calls == []
+
+
+@pytest.mark.parametrize("extra", [{}, {"capture_id": "old-capture"}, {"check_scope": "all"}, {"wire_id": "wire-1"}])
+def test_parts_check_rejects_missing_photos_or_wiring_options(app, setup, extra):
+    service, phone, _ = setup
+    service.publish_context(context(stage="design"))
+    pair = service.create_pairing(phone["conversation_id"], "http://192.168.1.5:8100")
+    phone = service.pair(pair["code"], "Test phone")
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        ids = []
+        if extra:
+            ids = [client.post("/api/mobile/assets", headers=auth(phone), data={"upload_id": "parts-guard"},
+                files={"file": ("parts.jpg", jpeg(), "image/jpeg")}).json()["id"]]
+        response = client.post("/api/mobile/messages", headers=auth(phone), json=dict(request_id="invalid-parts",
+            text="compare", asset_ids=ids, context_id=phone["context_id"], purpose="parts_check", **extra))
+        assert response.status_code == 422 and response.json()["detail"] == "mobile_parts_check_requires_current_photos"
+    assert service.state.assistant.sent == []
+
+
+def test_parts_check_cannot_be_requested_from_wiring_stage(app, setup):
+    service, phone, _ = setup
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        response = client.post("/api/mobile/messages", headers=auth(phone), json=dict(request_id="wrong-stage",
+            text="compare", context_id=phone["context_id"], purpose="parts_check"))
+        assert response.status_code == 409 and response.json()["detail"] == "mobile_parts_check_requires_design_stage"
+    assert service.state.assistant.sent == []
+
+
+def test_parts_photo_retry_shares_one_read_only_reply_with_desktop(app, setup, tmp_path):
+    from app.assistant import AssistantService
+    from app.api.assistant import router as assistant_router
+    from test_assistant import FakeDesigns, settled
+
+    service, phone, _ = setup
+    service.publish_context(context(stage="design"))
+    pair = service.create_pairing(phone["conversation_id"], "http://192.168.1.5:8100")
+    phone = service.pair(pair["code"], "Test phone")
+    service.state.design_service = FakeDesigns()
+    service.state.design_service.bridge.reply = {"answer": "Cannot confirm the sensor rating without its label."}
+    service.state.mobile_service = service
+    assistant = AssistantService(service.state, tmp_path / "parts-history")
+    assistant.create(phone["conversation_id"])
+    service.state.assistant = app.state.assistant = assistant
+    app.include_router(assistant_router)
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        ids = [client.post("/api/mobile/assets", headers=auth(phone), data={"upload_id": f"parts-retry-{index}"},
+            files={"file": (f"parts-{index}.jpg", jpeg(), "image/jpeg")}).json()["id"] for index in range(3)]
+        payload = dict(request_id="parts-retry", text="", asset_ids=ids, context_id=phone["context_id"],
+            purpose="parts_check", inherit_media=False)
+        assert client.post("/api/mobile/messages", headers=auth(phone), json=payload).status_code == 202
+        settled(assistant, phone["conversation_id"])
+        assert client.post("/api/mobile/messages", headers=auth(phone), json=payload).status_code == 202
+        mobile = client.get("/api/mobile/conversation", headers=auth(phone)).json()
+        desktop = client.get(f"/api/assistant/conversations/{phone['conversation_id']}").json()
+    assert mobile == desktop and len(mobile["jobs"]) == 1
+    job = mobile["jobs"][0]
+    assert job["status"] == "completed" and not job.get("design_job_id") and not job.get("debug_session_id")
+    assert mobile["messages"][0]["text"].startswith("Please compare")
+    assert [item["asset_id"] for item in mobile["messages"][0]["attachments"]] == ids
+    prompt, _, options = service.state.design_service.bridge.calls[0]
+    assert len(service.state.design_service.bridge.calls) == 1
+    assert "Read-only comparison" in prompt and "Compare only these three" in prompt
+    assert options["image_paths"] == [service.assets.path(aid) for aid in ids] and options["restricted_tools"]
+    assert service.state.design_service.calls == [] and service.state.mobile_photo.calls == []
+
+
+def test_parts_check_rejects_video_and_unknown_purpose(app, setup, monkeypatch):
+    service, phone, _ = setup
+    service.publish_context(context(stage="design"))
+    pair = service.create_pairing(phone["conversation_id"], "http://192.168.1.5:8100")
+    phone = service.pair(pair["code"], "Test phone")
+    with TestClient(app, client=("192.168.1.10", 5000)) as client:
+        aid = client.post("/api/mobile/assets", headers=auth(phone), data={"upload_id": "parts-media-guard"},
+            files={"file": ("parts.jpg", jpeg(), "image/jpeg")}).json()["id"]
+        original = service.assets.describe
+        monkeypatch.setattr(service.assets, "describe", lambda asset: {**original(asset), "type": "video"})
+        payload = dict(request_id="guard", asset_ids=[aid], context_id=phone["context_id"], purpose="parts_check")
+        response = client.post("/api/mobile/messages", headers=auth(phone), json=payload)
+        assert response.status_code == 422 and response.json()["detail"] == "mobile_parts_check_requires_images"
+        response = client.post("/api/mobile/messages", headers=auth(phone), json={**payload, "purpose": "deploy"})
+        assert response.status_code == 422
+    assert service.state.assistant.sent == []
+
+
 def test_blank_message_without_explicit_media_is_a_client_error(app, setup):
     service, phone, _ = setup
     with TestClient(app, client=("192.168.1.10", 5000), raise_server_exceptions=False) as client:

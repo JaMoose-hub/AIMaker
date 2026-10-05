@@ -1,10 +1,16 @@
-.image-view-controls { display:flex; align-items:center; flex-wrap:wrap; gap:10px; min-width:0; }
+.image-view-controls { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-width:0; }
 .image-view-segments { display:flex; align-items:center; padding:3px; gap:2px; border:1px solid var(--border); border-radius:9px; background:var(--bg-panel); }
 .app.tinkro-theme:not(.display-mode-active) .image-view-segments>button { appearance:none; border:1px solid transparent; background:transparent; border-radius:6px; color:var(--muted); padding:5px 10px; font:inherit; font-size:11px; line-height:1.4; white-space:nowrap; cursor:pointer; }
 .app.tinkro-theme:not(.display-mode-active) .image-view-segments>button[aria-pressed="true"] { color:var(--brand-link); background:var(--surface-blue); border-color:var(--line-blue); }
 .app.tinkro-theme:not(.display-mode-active) .image-view-segments>button:not(:disabled):hover { color:var(--brand-link); background:var(--surface-blue); }
 .image-view-segments>button:disabled { cursor:not-allowed; opacity:.5; }
 .image-view-segments>button:focus-visible { outline:2px solid var(--brand-link); outline-offset:2px; }
+.photo-guide-view-switch { display:flex; align-items:center; gap:2px; padding:3px; border:1px solid var(--border); border-radius:9px; background:var(--bg-panel); }
+.app.tinkro-theme:not(.display-mode-active) .photo-guide-view-switch>button { display:grid; place-items:center; width:28px; height:26px; padding:0; border:1px solid transparent; border-radius:6px; color:var(--muted); background:transparent; cursor:pointer; }
+.app.tinkro-theme:not(.display-mode-active) .photo-guide-view-switch>button:is([aria-pressed="true"],:hover):not(:disabled) { color:var(--brand-link); background:var(--surface-blue); border-color:var(--line-blue); }
+.photo-guide-view-switch>button:disabled { opacity:.45; cursor:not-allowed; }
+.photo-guide-view-switch>button:focus-visible { outline:2px solid var(--brand-link); outline-offset:2px; }
+@media(max-width:700px) { .app.tinkro-theme:not(.display-mode-active) .photo-guide-view-switch>button { width:38px; height:36px; } }
 .image-source-host[hidden] { display:none; }
 .image-source-select { position:relative; width:146px; }
 .app.tinkro-theme:not(.display-mode-active) .image-source-trigger { appearance:none; display:flex; align-items:center; gap:8px; width:100%; min-height:34px; padding:0 11px; font:inherit; font-size:12px; font-weight:500; white-space:nowrap; color:#e3edf4; border:1px solid rgba(174,204,225,.24); border-radius:999px; background:rgba(16,24,35,.86); backdrop-filter:blur(14px); box-shadow:0 2px 10px #0002; cursor:pointer; }

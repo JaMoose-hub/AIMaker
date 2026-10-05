@@ -37,6 +37,25 @@ function fixture() {
 }
 const render=props=>renderToStaticMarkup(React.createElement(PhotoPins,props));
 
+test('photos show Pi and both modules before wiring, then only the focused module without altering capture evidence',()=>{
+  const props=fixture();
+  props.capture.components.push({...structuredClone(props.capture.components[0]),component_id:'mrd-tf240-8p-cs'});
+  props.capture.localization.push({...structuredClone(props.capture.localization[1]),object_id:'mrd-tf240-8p-cs'});
+  const before=structuredClone(props.capture);
+  const overview=render({...props,wire:undefined});
+  for(const id of ['raspberry-pi-5','hc-sr04','mrd-tf240-8p-cs'])assert.ok(overview.includes(`data-component-id="${id}"`));
+  for(const id of ['hc-sr04','mrd-tf240-8p-cs']) {
+    const html=render({...props,wire:undefined,overlayComponentId:id});
+    assert.match(html,/data-component-id="raspberry-pi-5"/);
+    assert.ok(html.includes(`data-component-id="${id}"`));
+    assert.equal((html.match(/data-component-id=/g)??[]).length,2);
+    assert.doesNotMatch(html,/photo-poc-target-link/);
+  }
+  const missing=render({...props,wire:undefined,overlayComponentId:'absent'});
+  assert.equal((missing.match(/data-component-id=/g)??[]).length,1);
+  assert.deepEqual(props.capture,before);
+});
+
 test('live and photo imports share the unchanged connection and component palettes',()=>{
   for(const [pin,color] of Object.entries({VCC:'#ff9a56',GND:'#b4becd',AO:'#5ee0b2',ECHO:'#66dfff',CS:'#66dfff'}))
     assert.equal(palette.guideConnectionColor(pin),color);

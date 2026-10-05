@@ -35,6 +35,43 @@ function elements(tree,type) { const out=[]; const visit=node=>{if(!node||typeof
   if(Array.isArray(node)){node.forEach(visit);return;}if(node.type===type)out.push(node);visit(node.props?.children);};visit(tree);return out; }
 const deferred=()=>{let resolve;const promise=new Promise(y=>resolve=y);return{promise,resolve};};
 
+test('short pin finding keeps detailed BCM collapsed and photo positions never submit decisions',()=>{
+  const h=harness(),calls=[];
+  const observed={id:'pi_side_a:actual',capture_id:slot.capture_id,role:'pi_side_a',pin_id:'GPIO18',physical_pin:12,pin_label:'GPIO18',box:[.4,.3,.5,.6]};
+  const expected={...observed,id:'pi_side_a:expected',pin_id:'GPIO17',physical_pin:11,box:[.2,.3,.3,.6]};
+  const result={wire_id:'trig',expected:{board_pin:'GPIO17',physical_pin:11,bcm:17,component_pin:'TRIG'},comparison:'similar',next_step:'Trace the wire.',
+    pi_candidates:[],component_candidates:[],diagnosis:{status:'suspected',observed_component_pin:'TRIG',observed_physical_pin:12,
+      board_connector_id:observed.id,component_connector_id:'component_header:trig',retake_roles:[]}};
+  const props={message:message({wiring_flow:flow({kind:'wire_review',wire_id:'trig',result,actions:['review']})}),
+    review:review({status:'ready',observations:[observed,expected]}),onAction:async()=>{calls.push('action');return true;}};
+  let tree=h.render(props);
+  const html=renderToStaticMarkup(tree);
+  assert.match(html,/Possible wrong pin/);assert.match(html,/Photo suggests: TRIG.*Pi Pin 12/);
+  assert.match(html,/<details><summary>View pin and color evidence<\/summary><small>BCM 17<\/small>/);
+  const button=elements(tree,'button').find(node=>node.props.children==='View position in photo');
+  button.props.onClick(); tree=h.render(props);
+  assert.equal(elements(tree,'rect').length,2);
+  assert.deepEqual(elements(tree,'text').map(node=>node.props.children),['Pin 12','Pin 11']);
+  elements(tree,'img')[0].props.onError(); tree=h.render(props);
+  assert.equal(elements(tree,'rect').length,0);
+  assert.match(renderToStaticMarkup(tree),/Photo unavailable/);
+  assert.deepEqual(calls,[]);
+});
+
+test('unlocated expected pin and stale photo revision cannot fabricate a position marker',()=>{
+  const h=harness();
+  const observed={id:'pi_side_a:actual',capture_id:slot.capture_id,pin_id:'GPIO18',physical_pin:12,box:[.4,.3,.5,.6]};
+  const result={wire_id:'trig',expected:{board_pin:'GPIO17',physical_pin:11,bcm:17,component_pin:'TRIG'},comparison:'unknown',next_step:'Trace.',
+    pi_candidates:[],component_candidates:[],diagnosis:{status:'suspected',observed_component_pin:'TRIG',observed_physical_pin:12,
+      board_connector_id:observed.id,retake_roles:[]}};
+  const props={message:message({wiring_flow:flow({kind:'wire_review',wire_id:'trig',result,actions:['review']})}),review:review({observations:[observed]})};
+  elements(h.render(props),'button').find(node=>node.props.children==='View position in photo').props.onClick();
+  assert.equal(elements(h.render(props),'rect').length,1);
+  const changed=h.render({...props,review:{...props.review,revision:5}});
+  assert.equal(elements(changed,'rect').length,0);
+  assert.ok(!elements(changed,'button').some(node=>node.props.children==='View position in photo'));
+});
+
 test('analysis feedback messages retain completed duration without restarting historical clocks',()=>{
   const h=harness();
   const complete=renderToStaticMarkup(h.render({message:message({wiring_flow:flow({kind:'analysing',current:false,
@@ -156,6 +193,8 @@ test('the unified assistant keeps photo guidance in ordinary messages, one compo
     '../lib/maker':{currentWire:()=>null,fillStarterPrompt:s=>s,makerCatalog:{modules:[]}},'../lib/assistant':{currentAssistantMedia:()=>null},
     '../lib/assistantHistory':{conversationMessages:r=>r.messages,conversationMessageNote:()=>null},
     './ProjectConcept':{ProjectConcept:()=>null},'./MakerModelMenu':{MakerModelMenu:()=>null},
+    './AssistantMarkdown':{AssistantMarkdown:({text})=>React.createElement('div',null,text)},
+    './ConversationGuideDock':{ConversationGuideHost:()=>null},
     './MobileCompanion':{MobileCompanion:()=>null,MobileAttachmentCards:()=>null},'./WiringChatMessage':h.mod,
     './AssistantAnalysisTime':analysisComponent,'../lib/assistantProgress':progressHelpers,'./AssistantJobProgress':progressComponent});
   const calls=[];const controller={record:{id:'chat',context_epoch:0,before:null,messages:[ordinary,invite,m],jobs:[]},

@@ -5,6 +5,7 @@ import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import * as jsx from 'react/jsx-runtime';
+import {markdownFixture} from './assistant_markdown_fixture.mjs';
 
 function load(file,modules={}) {
   const js=ts.transpileModule(readFileSync(new URL(file,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
@@ -87,15 +88,18 @@ function workspace(){return {ready:true,pairing:{session_id:'s'},connected:true,
   session:{session_id:'s',conversation_id:'conversation-1',title:'Desk project',context:{stage:'guide'},context_id:'ctx',view:{wire_id:'wire'},stream:{active:false,state:'finding'}},
   conversation:{id:'conversation-1',context_epoch:1,round:3,messages:[],jobs:[],before:null},draft:'Preserve this draft',attachments:[],outbox:[],capture:null,captureJob:null,captureTicket:null,
   rtc:{stream:null,settings:null,stats:{},status:'off'},canCapture:false,inheritedMediaLabel:null,
-  setDraft(){},pair:async()=>{},send:async()=>{},disconnect:async()=>{},stopStream:async()=>{},openCapture:async()=>{},older:async()=>{},addFiles:async()=>{},removeAttachment(){},retry:async()=>{},removeOutbox(){}};}
-function components(locale='en',reactOverrides={},captureOverrides={},assetHook=()=>({url:null,error:'',retry(){}})) {
+  setDraft(){},pair:async()=>{},send:async()=>{},removeMediaReference(){},disconnect:async()=>{},stopStream:async()=>{},openCapture:async()=>{},older:async()=>{},addFiles:async()=>{},removeAttachment(){},retry:async()=>{},removeOutbox(){}};}
+function components(locale='en',reactOverrides={},captureOverrides={},assetHook=()=>({url:null,error:'',retry(){}}),setLocale=()=>{}) {
   return load('../src/components/MobileWebApp.tsx',{
-    react:{...React,useLayoutEffect(){},...reactOverrides},'react/jsx-runtime':jsx,'../lib/i18n':{useI18n:()=>({locale})},
+    react:{...React,useLayoutEffect(){},...reactOverrides},'react/jsx-runtime':jsx,'../lib/i18n':{useI18n:()=>({locale,setLocale})},
     '../lib/mobile':mobile,'../lib/mobileWebView':view,'../lib/assistantHistory':history,'../lib/mobileBrowserCapture':{...localCapture,...captureOverrides},'../lib/useMobileBrowser':{useMobileBrowser:workspace,useMobileAssetUrl:assetHook,
       mobileTestHelpOffer:()=>null,mobileWiringPhotoFlow},
     '../lib/wiringReview':wiringReview,'./WiringPhotoSequence':{WiringPhotoSequence},'./WiringReviewCard':{FramingGuide},'./wiringReview.css':{},'../mobileWeb.css':{},
     './AssistantAnalysisTime':{AssistantAnalysisTime:()=>null},
+    './AssistantMarkdown':markdownFixture(locale),
     './WiringChatMessage':{WiringCaptureFraming:()=>null},
+    './MobileWiringAlbumPanel':{MobileWiringAlbumPanel:()=>null},
+    '../lib/useMobileWiringAlbum':load('../src/lib/useMobileWiringAlbum.ts',{react:{...React,...reactOverrides},'./wiringReview':wiringReview}),
     './PhoneCameraAutoTune':{PhoneCameraAutoTune:()=>null},
   });
 }
@@ -108,6 +112,49 @@ function hookHarness() {
   }};
 }
 const treeNodes=element=>!React.isValidElement(element)?[]:[element,...React.Children.toArray(element.props.children).flatMap(treeNodes)];
+
+test('phone language switch exposes Traditional Chinese and English with the selected language announced',()=>{
+  for(const locale of ['zh-TW','en']) {
+    const {MobileLanguageSwitch}=components(locale);
+    const buttons=treeNodes(MobileLanguageSwitch()).filter(node=>node.type==='button');
+    assert.deepEqual(buttons.map(node=>node.props.children),['繁中','English']);
+    assert.deepEqual(buttons.map(node=>node.props['aria-pressed']),[locale==='zh-TW',locale==='en']);
+    assert.ok(buttons.every(node=>node.props.type==='button'));
+    assert.deepEqual(buttons.map(node=>node.props.lang),['zh-Hant','en']);
+  }
+});
+
+test('phone language change uses the existing saved locale without workspace or camera actions',()=>{
+  const calls=[],{MobileLanguageSwitch}=components('zh-TW',{}, {},undefined,locale=>calls.push(locale));
+  const buttons=treeNodes(MobileLanguageSwitch()).filter(node=>node.type==='button');
+  assert.deepEqual(calls,[]);
+  buttons[1].props.onClick();buttons[0].props.onClick();
+  assert.deepEqual(calls,['en','zh-TW']);
+});
+
+test('phone language control is available before pairing and throughout the paired workspace',()=>{
+  const {MobileWebSurface}=components('en');
+  for(const pairing of [null,{session_id:'s'}]) {
+    const w={...workspace(),pairing};
+    const html=renderToStaticMarkup(React.createElement(MobileWebSurface,{workspace:w}));
+    assert.equal((html.match(/aria-label="語言 \/ Language"/g)||[]).length,1);
+    assert.match(html,/>繁中<\/button>/);assert.match(html,/>English<\/button>/);
+    assert.equal(w.draft,'Preserve this draft');
+  }
+});
+
+test('phone stream keeps the language control in its compact header without changing the active tab',()=>{
+  const h=hookHarness(),{MobileWebSurface}=components('en',h.hooks),w=workspace();
+  h.reset();const first=MobileWebSurface({workspace:w});
+  treeNodes(first).find(node=>node.type==='button'&&node.props.children?.some?.(child=>child?.props?.children==='Stream')).props.onClick();
+  h.reset();const camera=MobileWebSurface({workspace:w});
+  const header=treeNodes(camera).find(node=>node.type==='header'&&node.props.className==='mw-header');
+  const html=renderToStaticMarkup(header);
+  assert.equal((html.match(/aria-label="語言 \/ Language"/g)||[]).length,1);
+  assert.equal(camera.props['data-tab'],'camera');
+  assert.equal(w.draft,'Preserve this draft');
+  assert.equal(w.rtc.status,'off');
+});
 
 function localVideoScene(width=1080,height=1920) {
   const draws=[],track={readyState:'live'},stream={getVideoTracks:()=>[track]};
@@ -147,6 +194,88 @@ test('paired phone shared question captures each requested native-camera view wi
   }
 });
 
+test('paired phone album selects each requested view through the same role-bound upload without forcing a camera',async()=>{
+  for(const locale of ['zh-TW','en']) for(const role of ['pi_side_a','pi_side_b','component_header']) {
+    const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review,role),request={message_id:message.id,flow_id:'flow-1',role,review};
+    const {MobileWiringChatActions}=components(locale,h.hooks);
+    const w={...photoWorkspace(review),prepareWiringChatPhoto(question){assert.equal(question,message);return request;},
+      uploadWiringChatPhoto:async(...args)=>calls.push(['upload',...args]),
+      beginCapture(){throw Error('Album photos must not require a GPIO ticket');},send(){throw Error('Album photos must not become ordinary chat');}};
+    h.reset();const tree=MobileWiringChatActions({w,message}),nodes=treeNodes(tree);
+    const input=nodes.find(node=>node.type==='input'&&node.props.type==='file'&&!node.props.capture);
+    assert.equal(input.props.accept,'image/*');assert.notEqual(input.props.multiple,true,'standalone one-view actions remain single selection');
+    input.ref.current={click:()=>calls.push(['album'])};
+    const label=locale==='en'?'Choose from album':'從相簿選擇';
+    const button=nodes.find(node=>node.type==='button'&&React.Children.toArray(node.props.children).includes(label));
+    assert.ok(button);assert.equal(button.props.disabled,false);button.props.onClick();
+    const file={name:`saved-${role}.jpg`},event={target:{files:[file],value:'selected-album-photo'}};
+    input.props.onChange(event);await nextTurn();
+    assert.deepEqual(calls,[['album'],['upload',file,request]]);assert.equal(event.target.value,'');
+    button.props.onClick();input.props.onChange({target:{files:[],value:''}});await nextTurn();
+    assert.equal(calls.length,3,'cancelling the album leaves the question unanswered');
+    input.props.onChange({target:{files:[file],value:'late'}});assert.equal(calls.length,3,'unrequested selection cannot upload');
+    button.props.onClick();input.props.onChange({target:{files:[file],value:'same-file'}});await nextTurn();
+    assert.deepEqual(calls.at(-1),['upload',file,request],'the same saved file can be explicitly selected again');
+    assert.match(renderToStaticMarkup(tree),locale==='en'?/Use new photos if the wiring changed/:/接線改過請用新照片/);
+  }
+});
+
+test('album and camera keep independent frozen question requests and refuse unavailable requests',async()=>{
+  const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review),{MobileWiringChatActions}=components('en',h.hooks);
+  let request={role:'pi_side_a',request_id:'album-request',review};
+  const w={...photoWorkspace(review),prepareWiringChatPhoto:()=>request,uploadWiringChatPhoto:async(...args)=>calls.push(args)};
+  h.reset();const tree=MobileWiringChatActions({w,message}),nodes=treeNodes(tree);
+  const camera=nodes.find(node=>node.type==='input'&&node.props.capture==='environment');
+  const album=nodes.find(node=>node.type==='input'&&node.props.type==='file'&&!node.props.capture);
+  let cameraOpened=0,albumOpened=0;camera.ref.current={click:()=>cameraOpened++};album.ref.current={click:()=>albumOpened++};
+  const buttons=nodes.filter(node=>node.type==='button');
+  buttons[1].props.onClick();const frozen=request;
+  request={role:'component_header',request_id:'camera-request',review};buttons[0].props.onClick();
+  const albumFile={name:'album.jpg'},cameraFile={name:'camera.jpg'};
+  album.props.onChange({target:{files:[albumFile],value:'selected'}});
+  camera.props.onChange({target:{files:[cameraFile],value:'selected'}});await nextTurn();
+  assert.deepEqual(calls,[[albumFile,frozen],[cameraFile,request]]);
+  request=null;buttons[0].props.onClick();buttons[1].props.onClick();
+  assert.equal(cameraOpened,1);assert.equal(albumOpened,1);
+  album.props.onChange({target:{files:[albumFile],value:'late'}});assert.equal(calls.length,2);
+});
+
+test('mobile multi-select stages three photos without uploading and sends only the current fresh question',async()=>{
+  const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review),{MobileWiringChatActions}=components('en',h.hooks);
+  const files=[{name:'side-a.jpg'},{name:'side-b.jpg'},{name:'header.jpg'}];
+  let selected=null,confirmed=false,request={message_id:message.id,role:'pi_side_a',request_id:'picker',review};
+  const photoAlbum={selection:{photos:[]},stage(values,target){selected=values;calls.push(['stage',values,target]);return true;},
+    fileFor(target){assert.equal(target,request);return confirmed?selected[0]:null;},submitted:target=>calls.push(['submitted',target])};
+  const w={...photoWorkspace(review),prepareWiringChatPhoto:()=>request,uploadWiringChatPhoto:async(...args)=>{calls.push(['upload',...args]);return true;}};
+  h.reset();let tree=MobileWiringChatActions({w,message,photoAlbum});
+  const input=treeNodes(tree).find(node=>node.type==='input'&&node.props.type==='file'&&!node.props.capture);
+  assert.equal(input.props.multiple,true);input.ref.current={click(){}};
+  treeNodes(tree).filter(node=>node.type==='button')[1].props.onClick();
+  input.props.onChange({target:{files,value:'three'}});await nextTurn();
+  assert.deepEqual(calls,[['stage',files,request]],'multi-selection is local only');
+  request={...request,request_id:'fresh-question',review:{...review,revision:8}};
+  h.reset();tree=MobileWiringChatActions({w,message,photoAlbum});
+  const panel=treeNodes(tree).find(node=>node.props.album===photoAlbum);
+  panel.props.onUse();await nextTurn();assert.equal(calls.length,1,'no upload until views are confirmed');
+  confirmed=true;panel.props.onUse();await nextTurn();
+  assert.deepEqual(calls.slice(1),[['upload',files[0],request],['submitted',request]]);
+});
+
+test('three selected album photos survive switching phone tabs without any automatic upload',()=>{
+  const h=hookHarness(),review=photoRound(),{MobileWebSurface,ChatView}=components('en',h.hooks);
+  const w=photoWorkspace(review),files=[{name:'a.jpg'},{name:'b.jpg'},{name:'module.jpg'}];
+  const render=()=>{h.reset();return MobileWebSurface({workspace:w});};
+  let tree=render(),chat=treeNodes(tree).find(node=>node.type===ChatView);
+  const request={contextId:w.session.context_id,conversationId:w.conversation.id,epoch:w.conversation.context_epoch,review,role:'pi_side_a'};
+  assert.equal(chat.props.photoAlbum.stage(files,request),true);tree=render();
+  const navigate=name=>treeNodes(tree).find(node=>node.type==='nav').props.children.find(node=>React.Children.toArray(node.props.children)
+    .some(child=>React.isValidElement(child)&&child.type==='span'&&child.props.children===name)).props.onClick();
+  navigate('Stream');tree=render();assert.equal(tree.props['data-tab'],'camera');
+  navigate('Chat');tree=render();chat=treeNodes(tree).find(node=>node.type===ChatView);
+  assert.deepEqual(chat.props.photoAlbum.selection.photos.map(photo=>photo.file),files);
+  assert.equal(chat.props.photoAlbum.selection.confirmed,false);
+});
+
 test('shared photo retry stays bound to its question and offers no manual confirmation or analysis panel',async()=>{
   const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review),{MobileWiringChatActions}=components('en',h.hooks);
   const w={...photoWorkspace(review),pendingWiringPhoto:{dialogue:{message_id:message.id},attachment:{progress:.5}},
@@ -166,7 +295,8 @@ test('phone round and workspace changes make old shared photo questions inert',(
   }
   for(const busy of ['busy','wiringReviewBusy']) {
     const h=hookHarness(),{MobileWiringChatActions}=components('en',h.hooks),w=photoWorkspace(review);w[busy]=true;
-    h.reset();assert.equal(treeNodes(MobileWiringChatActions({w,message})).find(node=>node.type==='button').props.disabled,true);
+    h.reset();const buttons=treeNodes(MobileWiringChatActions({w,message})).filter(node=>node.type==='button');
+    assert.equal(buttons.length,2);assert.ok(buttons.every(node=>node.props.disabled),'camera and album share the in-flight guard');
   }
 });
 
@@ -375,6 +505,21 @@ test('Safari standalone entry offers pairing and the correct HTTPS link without 
   assert.doesNotMatch(html,/unified-assistant|webcam|PiDeployPanel|canvas/);
 });
 
+test('phone reference has an accessible cancel action without submitting or deleting the draft',()=>{
+  for(const locale of ['en','zh-TW']) {
+    const h=hookHarness(),{ChatView}=components(locale,h.hooks),w=workspace(),calls=[];
+    w.inheritedMediaLabel='Reference: latest-photo.jpg';
+    w.removeMediaReference=()=>{calls.push('remove');w.inheritedMediaLabel=null;};
+    w.send=async()=>calls.push('send');
+    h.reset();const before=ChatView({w,onPhoto(){}}),label=locale==='en'?'Remove reference':'取消引用';
+    const cancel=treeNodes(before).find(node=>node.type==='button'&&node.props['aria-label']===label);
+    assert.ok(cancel);assert.equal(cancel.props.type,'button');assert.equal(cancel.props.disabled,false);
+    cancel.props.onClick();h.reset();const after=ChatView({w,onPhoto(){}});
+    assert.deepEqual(calls,['remove']);assert.equal(w.draft,'Preserve this draft');
+    assert.equal(treeNodes(after).some(node=>node.props.className==='mw-reference is-removable'),false);
+  }
+});
+
 test('shared phone chat shows current draft, inherited reference and durable upload retry',()=>{
   for(const locale of ['en','zh-TW']) {
     const {MobileWebSurface}=components(locale),w=workspace();w.inheritedMediaLabel='Reference: latest-photo.jpg';
@@ -410,6 +555,38 @@ test('phone chat keeps earlier-round 安安 visible and only reveals cleared con
     toggle();tree=render();assert.doesNotMatch(renderToStaticMarkup(tree),/Already cleared question/);
     toggle();tree=render();w.conversation.context_epoch=2;tree=render();html=renderToStaticMarkup(tree);
     assert.doesNotMatch(html,/Already cleared question|安安|Current round reply/);assert.match(html,locale==='en'?/View cleared history/:/查看已清除紀錄/);
+  }
+});
+
+test('design-stage part camera and albums use shared attachments without sending or requiring GPIO lock',async()=>{
+  const h=hookHarness(),calls=[],{ChatView}=components('en',h.hooks);
+  const w={session:{context:{stage:'design',ui:{parts_check:true}}},conversation:null,attachments:[],outbox:[],draft:'existing draft',busy:false,chatSendBlocked:false,
+    addFiles:async (files,purpose)=>calls.push(['files',files,purpose]),send:()=>calls.push(['send'])};
+  h.reset();let tree=ChatView({w,onPhoto(){}});
+  const fileInputs=treeNodes(tree).filter(n=>n.type==='input'&&n.props.type==='file');
+  const camera=fileInputs.find(n=>n.props['aria-label']==='Photograph part labels');assert.equal(camera.props.capture,'environment');
+  const album=fileInputs.find(n=>n.props['aria-label']==='Select part photographs');assert.equal(album.props.multiple,true);
+  for(const input of [camera,album]){const event={target:{files:[{name:'parts.jpg'}],value:'selected'}};input.props.onChange(event);await Promise.resolve();assert.equal(event.target.value,'');}
+  assert.equal(calls.length,2);assert.ok(calls.every(call=>call[0]==='files'));assert.equal(w.draft,'existing draft');
+  assert.ok(calls.every(call=>call[2]==='parts_check'),'part camera and albums preserve the comparison purpose');
+  h.reset();tree=ChatView({w:{...w,attachments:[{id:'part',name:'part.jpg',purpose:'parts_check',type:'image',size:100}]},onPhoto(){}});
+  const send=treeNodes(tree).find(n=>n.props.className==='mw-send');
+  assert.equal(send.props['aria-label'],'Send hardware comparison');
+  assert.match(renderToStaticMarkup(tree),/hardware comparison, not project redesign/);
+  h.reset();tree=ChatView({w:{...w,session:{context:{stage:'guide'}}},onPhoto(){}});
+  assert.equal(treeNodes(tree).filter(n=>n.props.className==='mw-hardware-upload').length,0);
+});
+
+test('mobile hardware entry is hidden on startup and normal design chat until the desktop explicitly requests it',()=>{
+  const h=hookHarness(),{ChatView}=components('en',h.hooks);
+  for(const context of [{stage:'design'},{stage:'design',ui:{parts_check:false}},{stage:'guide',ui:{parts_check:true}},{stage:'deploy',ui:{parts_check:true}}]) {
+    const w={session:{context},conversation:null,attachments:[],outbox:[],draft:'kept draft',busy:false,chatSendBlocked:false};
+    h.reset();const tree=ChatView({w,onCamera(){}});
+    assert.equal(treeNodes(tree).filter(n=>n.props.className==='mw-hardware-upload').length,0);
+    const html=renderToStaticMarkup(tree);
+    assert.doesNotMatch(html,/Photograph parts|Select part photos/);
+    assert.match(html,/Add media|Photo for AI/);
+    assert.equal(w.draft,'kept draft');
   }
 });
 

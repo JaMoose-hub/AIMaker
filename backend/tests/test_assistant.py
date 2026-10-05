@@ -248,6 +248,48 @@ def test_direct_answer_does_not_start_another_capability(service):
     assert not service.state.design_service.calls
 
 
+@pytest.mark.parametrize("kind", ["project", "demo"])
+def test_explicit_hardware_answer_never_designs_or_changes_demo_confirmation(service, kind):
+    service.create("parts", kind, "en")
+    if kind == "demo":
+        service.confirm("parts", 1, "builtin", "confirm")
+    before = deepcopy(service.read("parts")["demo"])
+    service.state.design_service.bridge.reply = {"answer": "Cannot confirm the sensor rating without a label."}
+    request = body(target="answer", context={"parts_check": {"scope": "demo-three-hardware"}}, inherit_media=False)
+    service.send("parts", request)
+    result = settled(service, "parts")
+    assert result["demo"] == before
+    job = result["jobs"][-1]
+    assert job["status"] == "completed" and job["capability"] == "answer"
+    assert not job.get("design_job_id") and not job.get("debug_session_id")
+    assert not service.state.design_service.calls
+    assert len(service.state.design_service.bridge.calls) == 1
+    prompt, schema, options = service.state.design_service.bridge.calls[0]
+    assert "Read-only comparison" in prompt and "Raspberry Pi 5" in prompt and "ILI9341" in prompt
+    assert "Cannot confirm" in prompt and "ECHO" in prompt
+    assert "exactly three short bullet lines" in prompt
+    assert "Right part / Wrong part / Cannot confirm" in prompt
+    assert "No table, introduction, conclusion" in prompt
+    assert "Similar appearance and purpose count as Right part" in prompt
+    assert "Right part needs no explanation" in prompt
+    assert "not acceptance requirements for this type-recognition step" in prompt
+    assert "Never downgrade a recognizable type" in prompt
+    assert "not compatibility verification" in prompt
+    assert options["restricted_tools"] and options["fail_if_busy"]
+    service.send("parts", request)  # saved request deduplicates without another model call
+    assert len(service.state.design_service.bridge.calls) == 1
+
+
+def test_failed_explicit_answer_preserves_confirmed_demo(service):
+    service.create("parts", "demo", "en")
+    before = deepcopy(service.confirm("parts", 1, "builtin", "confirm")["demo"])
+    service.state.design_service.bridge.reply = RuntimeError("fake unavailable")
+    service.send("parts", body(target="answer", inherit_media=False))
+    result = settled(service, "parts")
+    assert result["jobs"][-1]["status"] == "failed"
+    assert result["demo"] == before and not service.state.design_service.calls
+
+
 def test_failed_planning_preserves_previous_checklist(service):
     before = service.create("demo", "demo", "en")["demo"]["checklist"]
     service.state.design_service.bridge.reply = RuntimeError("fake unavailable")

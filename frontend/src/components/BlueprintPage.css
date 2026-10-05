@@ -1,0 +1,118 @@
+/* One 01 workspace: every resource is reachable above the diagram, not beneath it. */
+.app .assistant-blueprint.blueprint-workspace { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.app .blueprint-workspace > .maker-blueprint-page { flex: 1; height: auto; min-height: 0; padding: 12px 16px; gap: 8px; overflow: hidden; }
+.app .blueprint-workspace .maker-view-heading { margin: 0; gap: 6px 10px; }
+.app .blueprint-workspace .maker-preview-heading { display: flex; flex-direction: row; align-items: center; margin: 0; gap: 8px 16px; flex-wrap: wrap; }
+.blueprint-workspace .blueprint-title { flex: 1 1 230px; min-width: 0; }
+.app.tinkro-theme:not(.display-mode-active) .blueprint-workspace .maker-preview-heading h2,
+.app .blueprint-workspace .maker-preview-heading h2 { margin: 0; font-size: 18px; line-height: 1.4; overflow-wrap: anywhere; }
+.blueprint-title-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 3px; }
+.app .blueprint-workspace .blueprint-title-meta > p { margin: 0; font-size: 11px; line-height: 1.5; }
+.blueprint-title-meta .blueprint-background-status { color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+.app .blueprint-workspace .blueprint-title-meta > .blueprint-revision-link {
+  display: inline-flex; align-items: center; gap: 5px; flex: none; width: auto; min-height: 24px;
+  margin: 0; padding: 2px 8px; border: 1px solid var(--line-ok); border-radius: 6px;
+  background: var(--surface-teal); color: var(--text); font-size: 11px; line-height: 1.5; box-shadow: none;
+}
+.blueprint-title-meta .blueprint-revision-link:hover { border-color: var(--accent); }
+.blueprint-title-meta .blueprint-revision-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.blueprint-workspace .blueprint-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.blueprint-workspace .blueprint-actions > button { min-height: 34px; padding: 7px 10px; font-size: 12px; }
+.app .blueprint-workspace .blueprint-tabs { flex: none; gap: 4px; padding: 0; position: static; border-bottom: 1px solid var(--border); }
+.app .blueprint-workspace .blueprint-tabs > button { flex: none; border: 0; border-radius: 6px 6px 0 0; padding: 10px 14px; background: transparent; color: var(--text-dim); border-bottom: 2px solid transparent; }
+.app .blueprint-workspace .blueprint-tabs > button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.blueprint-workspace .blueprint-panel { flex: 1; min-height: 0; overflow: auto; padding: 6px 2px; container-type: inline-size; }
+.blueprint-workspace .blueprint-panel[hidden] { display: none; }
+.app .blueprint-workspace .blueprint-overview:not([hidden]) { display: flex; flex-direction: column; padding: 0; }
+.app .blueprint-workspace .blueprint-overview > .maker-circuit { flex: 1; height: 100%; min-height: 260px; display: flex; flex-direction: column; overflow: hidden; }
+.app .blueprint-workspace .blueprint-overview .circuit-zoom { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.app .blueprint-workspace .blueprint-overview > .maker-circuit { padding: 0; margin: 0; border: 0; gap: 4px; }
+.app .blueprint-workspace .blueprint-overview .circuit-inspector { flex: none; margin: 0; font-size: 12px; }
+.app .blueprint-workspace .blueprint-overview .circuit-zoom-toolbar { flex: none; padding: 7px 0; }
+.app .blueprint-workspace .blueprint-overview > .maker-circuit > .circuit-zoom > .circuit-viewport { flex: 1; min-height: 0; height: auto; max-height: none; }
+.blueprint-workspace .circuit-workspace-notes { flex: none; font-size: 11px; color: var(--text-dim); border-top: 1px solid var(--border); }
+.blueprint-workspace .circuit-workspace-notes summary { padding: 7px 0; cursor: pointer; }
+.blueprint-workspace .circuit-workspace-notes > div { max-height: 160px; overflow: auto; }
+.blueprint-workspace .blueprint-wire-reference { align-self: flex-start; margin: 5px 0; font-size: 12px; }
+.blueprint-workspace .maker-bom { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); }
+.blueprint-hardware-check { max-width: 760px; margin: 6px auto; }
+.blueprint-hardware-check h3 { font-size: 21px; margin: 8px 0; }
+.blueprint-hardware-list { list-style: none; padding: 0; margin: 20px 0; display: grid; gap: 10px; }
+.blueprint-hardware-list > li { display: flex; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); }
+.blueprint-hardware-number { flex: none; width: 32px; height: 32px; display: grid; place-items: center; color: var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); font-size: 12px; }
+.blueprint-hardware-info { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.blueprint-hardware-info > span { color: var(--text-dim); font-size: 11px; }
+.blueprint-hardware-info > strong { font-size: 14px; overflow-wrap: anywhere; }
+.blueprint-hardware-info label { font-size: 11px; color: var(--text-dim); margin-top: 7px; }
+.app .blueprint-hardware-info input { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-inset); color: var(--text); font-size: 12px; }
+.blueprint-photo-choice { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; margin: 12px 0; }
+.blueprint-photo-choice small { display: block; color: var(--text-dim); margin-top: 4px; overflow-wrap: anywhere; }
+.blueprint-hardware-check footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
+.blueprint-hardware-check footer > div { flex: 1; min-width: 220px; color: var(--text-dim); }
+.blueprint-hardware-check footer small, .blueprint-hardware-check footer p { font-size: 11px; line-height: 1.7; }
+.blueprint-hardware-check footer > button { padding: 10px 14px; font-size: 12px; }
+.blueprint-hardware-check footer > .blueprint-chat-link { border: 0; background: transparent; color: var(--text-dim); }
+.blueprint-check-status { font-size: 12px; color: var(--accent); }
+.app .blueprint-workspace .blueprint-actions > .blueprint-check-shortcut { display: inline-flex; align-items: center; gap: 7px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius: 20px; background: color-mix(in srgb, var(--accent) 6%, transparent); box-shadow: none; color: var(--text); }
+.blueprint-check-shortcut svg { width: 17px; height: 17px; color: var(--accent); }
+.blueprint-upload-entry { display: flex; align-items: center; gap: 12px; padding: 14px; margin: 16px 0; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--accent) 5%, var(--bg-panel)); }
+.blueprint-upload-icon { flex: none; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+.blueprint-upload-icon svg { width: 24px; height: 24px; }
+.blueprint-upload-entry > div { flex: 1; min-width: 0; }
+.blueprint-upload-entry strong { display: block; font-size: 13px; }
+.blueprint-upload-entry small { display: block; margin-top: 5px; font-size: 11px; color: var(--text-dim); }
+.app .blueprint-workspace .blueprint-hardware-check .blueprint-upload-entry > button { flex: none; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; box-shadow: none; font-size: 12px; }
+.app .blueprint-workspace .blueprint-hardware-check footer > button:not(.blueprint-chat-link) { border-style: solid; border-width: 1px; box-shadow: none; }
+.blueprint-resource-heading { margin: 12px 0 14px; }
+.blueprint-resource-heading h3 { margin: 0 0 6px; font-size: 17px; }
+.blueprint-resource-heading p { font-size: 12px; }
+.blueprint-material-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.blueprint-material-heading h3 { margin: 0; }
+.blueprint-partner-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-dim); }
+.blueprint-partner-note > span { padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius: 20px; background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--accent); font-size: 11px; white-space: nowrap; }
+.blueprint-partner-note > small { font-size: 12px; }
+.blueprint-shop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; }
+.blueprint-shop-card { min-width: 0; position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); }
+.blueprint-shop-card > strong { padding-right: 38px; font-size: 14px; overflow-wrap: anywhere; }
+.blueprint-shop-card > small { font-size: 11px; color: var(--text-dim); }
+.blueprint-shop-quantity { position: absolute; right: 14px; top: 16px; font-size: 12px; color: var(--accent); }
+.blueprint-shop-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; margin-top: auto; border-top: 1px solid var(--border); }
+.blueprint-shop-footer > span { font-size: 10px; color: var(--text-dim); }
+.app .blueprint-shop-footer a { font-size: 12px; color: var(--accent); text-decoration: none; padding: 6px 0 6px 8px; }
+.blueprint-shop-footer a:hover { text-decoration: underline; }
+.blueprint-assembly-guide { max-width: 760px; margin: 10px auto; }
+.blueprint-assembly-guide > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.blueprint-assembly-guide h3 { margin: 8px 0; font-size: 20px; }
+.blueprint-assembly-guide output { color: var(--text-dim); font-size: 13px; }
+.blueprint-assembly-progress { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.app .blueprint-workspace .blueprint-panel .blueprint-assembly-progress > button { width: 36px; height: 36px; padding: 0; border: 1px solid var(--border); border-radius: 50%; box-shadow: none; font-size: 12px; color: var(--text-dim); }
+.app .blueprint-workspace .blueprint-panel .blueprint-assembly-progress > button[aria-current="step"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.blueprint-assembly-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--bg-panel); border-radius: 12px; padding: 24px; }
+.blueprint-assembly-card > span { font-size: 11px; color: var(--accent); }
+.blueprint-assembly-card ol { margin: 16px 0 0; padding-left: 22px; }
+.blueprint-assembly-card li { padding: 5px 0; font-size: 16px; line-height: 1.8; }
+.blueprint-assembly-guide > footer { display: flex; align-items: center; justify-content: space-between; margin: 16px 0; }
+.app .blueprint-workspace .blueprint-assembly-guide > footer button { padding: 10px 18px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; box-shadow: none; }
+.blueprint-reference { max-width: 760px; margin: 12px auto; color: var(--text-dim); font-size: 12px; border-top: 1px solid var(--border); }
+.blueprint-reference > summary { cursor: pointer; padding: 12px 0; }
+.blueprint-reference .blueprint-wire-steps { padding: 0; }
+@media (max-width: 960px), (max-height: 600px) {
+  .app .assistant-blueprint.blueprint-workspace { flex: none; overflow: visible; }
+  .app .blueprint-workspace > .maker-blueprint-page { overflow: visible; }
+  .blueprint-workspace .blueprint-panel { flex: none; overflow: visible; }
+  .app .blueprint-workspace .blueprint-overview > .maker-circuit { flex: none; height: clamp(320px, 58dvh, 600px); }
+}
+@media (max-width: 600px) {
+  .app .blueprint-workspace > .maker-blueprint-page { padding: 10px; }
+  .app .blueprint-workspace .blueprint-tabs > button { flex: 1; padding: 10px 5px; font-size: 11px; }
+  .blueprint-hardware-list > li { gap: 10px; padding: 12px; }
+  .blueprint-hardware-check footer > div { flex-basis: 100%; }
+  .blueprint-upload-entry { flex-wrap: wrap; }
+  .blueprint-assembly-card { padding: 18px; }
+}
+@container (min-width: 640px) {
+  .blueprint-hardware-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .blueprint-hardware-list > li { flex-direction: column; gap: 12px; }
+  .blueprint-hardware-info { width: 100%; }
+  .blueprint-hardware-info > strong { min-height: 38px; }
+}

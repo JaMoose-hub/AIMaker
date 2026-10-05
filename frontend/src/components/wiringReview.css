@@ -123,6 +123,26 @@
 .wr-inventory { margin: 12px 0; padding: 10px; border-top: 1px solid var(--wr-line); }
 .wr-inventory summary { cursor: pointer; margin-bottom: 10px; }
 .wr-retest { margin-top: 12px; border-top: 1px solid var(--wr-line); padding-top: 10px; }
+.wr-result-summary { display: grid; gap: 4px; padding: 12px 14px; border-radius: 9px; background: var(--wr-soft); }
+.wr-result-summary strong { font-size: 16px; }
+.wr-result-summary small, .wr-finding-details summary { color: var(--ink-secondary); font-size: 12px; }
+.wr-finding header { align-items: center; }
+.wr-finding header h4 { margin: 0; font-size: 19px; }
+.wr-finding .wr-expected { display: flex; align-items: center; gap: 12px; padding: 12px; }
+.wr-finding .wr-expected > strong { flex-shrink: 0; color: var(--ink-secondary); font-size: 12px; font-weight: 500; }
+.wr-finding .wr-expected p { margin: 0; font-size: 16px; font-weight: 650; }
+.wr-finding-suspected, .wr-wire-progress button[data-finding="suspected"] { color: var(--status-warn, #d69c52); border-color: var(--status-warn, #d69c52); }
+.wr-finding-uncertain { color: var(--ink-secondary); }
+.wr-finding-no_issue_seen { color: var(--brand-link); }
+.wr-suspected-position { font-weight: 650; color: var(--status-warn, #d69c52); }
+.wr-power-off { display: block; color: var(--ink-secondary); font-size: 12px; }
+.wr-finding-details { margin-top: 14px; border-top: 1px solid var(--wr-line); padding-top: 10px; }
+.wr-finding-details summary { cursor: pointer; }
+.wr-finding .wr-human { border: 0; padding: 0; }
+.wr-finding .wr-human legend { font-size: 12px; color: var(--ink-secondary); }
+.wr-finding .wr-human p { font-size: 12px; color: var(--ink-secondary); }
+.wr-marker-observed { color: #ffc078; }
+.wr-marker-expected { color: #75c7ff; }
 .wr-dialog { width: min(920px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; overflow-y: auto; padding: 18px; border: 1px solid var(--line-strong, #9baebc); border-radius: 14px; background: var(--surface-card, var(--bg-panel, #fff)); color: var(--ink-primary, var(--text, #283b4c)); color-scheme: var(--workspace-scheme, light); font-family: inherit; font-size: 14px; }
 .wr-dialog::backdrop { background: #112337aa; }
 .wr-dialog-heading h3 { margin: 0; font-size: 17px; }

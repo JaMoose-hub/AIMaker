@@ -7,6 +7,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import * as jsxRuntime from 'react/jsx-runtime';
 import {maker, designFor} from './project_guide_fixture.mjs';
+import {markdownFixture} from './assistant_markdown_fixture.mjs';
 
 const code = ts.transpileModule(readFileSync(new URL('../src/lib/assistant.ts', import.meta.url), 'utf8'), {
   compilerOptions: {target:ts.ScriptTarget.ES2022, module:ts.ModuleKind.CommonJS},
@@ -50,6 +51,41 @@ function harness(request, {demo=null, guard=async()=>true, brokenStorage=false, 
   return {render(debugSession=null){index=0;ref=0;return exports.useAssistant(state,update,null,debugSession);},update,state:()=>state,calls,values,persisted,exports};
 }
 const deferred=()=>{let resolve,reject;const promise=new Promise((y,n)=>{resolve=y;reject=n;});return{promise,resolve,reject};};
+test('hardware comparison uses read-only project chat, preserves the draft and does not inherit old photos',async()=>{
+  const h=harness(()=>record());h.update(s=>({...s,stage:'design'}));
+  const snapshot=h.state(),before=JSON.stringify(snapshot),controller=h.render();
+  assert.equal(await controller.sendPartsCheck(snapshot,'Check my three purchased parts'),true);
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].path,'assistant/conversations/project/messages');
+  assert.equal(h.calls[0].body.target,'answer');assert.equal(h.calls[0].body.inherit_media,false);
+  assert.deepEqual(h.calls[0].body.asset_ids,[]);assert.equal(h.calls[0].body.capture_id,null);
+  assert.deepEqual(h.calls[0].body.context.parts_check,{scope:'demo-three-hardware'});
+  assert.equal(h.calls[0].body.context.debug_session_id,null);assert.equal(JSON.stringify(h.state()),before);
+});
+test('hardware comparison blocks stale projects, absent opted-in photos and isolated planning demos',async()=>{
+  const h=harness(()=>assert.fail('No invalid request'));h.update(s=>({...s,stage:'design'}));
+  const snapshot=h.state();assert.equal(await h.render().sendPartsCheck({...snapshot,design:{...snapshot.design}},'compare'),false);
+  assert.equal(await h.render().sendPartsCheck(snapshot,'compare',true),false);assert.equal(h.calls.length,0);
+  const d=harness(()=>assert.fail('Do not alter planning demo'),{demo:record('demo')});d.update(s=>({...s,stage:'design'}));
+  assert.equal(await d.render().sendPartsCheck(d.state(),'compare'),false);assert.equal(d.calls.length,0);
+});
+test('hardware comparison freezes an explicitly selected current photo and rejects stale rounds',async()=>{
+  const h=harness(()=>record());h.update(s=>({...s,stage:'design'}));
+  const photo={asset_ids:['model-photo'],capture_id:null,epoch:0,round:0,attachments:[{asset_id:'model-photo',type:'image',filename:'parts.jpg'}]};
+  h.render().acceptExternal({...record(),active_media:photo});
+  assert.equal(await h.render().sendPartsCheck(h.state(),'compare photos',true),true);
+  assert.deepEqual(h.calls[0].body.asset_ids,['model-photo']);assert.equal(h.state().prompt,'original draft');
+  h.render().acceptExternal({...record(),active_media:{...photo,round:8}});
+  assert.equal(await h.render().sendPartsCheck(h.state(),'compare photos',true),false);assert.equal(h.calls.length,1);
+});
+test('hardware comparison retries one persisted request and ignores a duplicate click',async()=>{
+  const response=deferred(),h=harness(()=>response.promise);h.update(s=>({...s,stage:'design'}));
+  const controller=h.render(),snapshot=h.state(),sending=controller.sendPartsCheck(snapshot,'compare');
+  assert.equal(await controller.sendPartsCheck(snapshot,'compare'),false);assert.equal(h.calls.length,1);
+  response.reject(Error('transport unavailable'));assert.equal(await sending,false);
+  const first=h.calls[0].body.request_id;
+  assert.equal(await h.render().sendPartsCheck(snapshot,'compare'),false);
+  assert.equal(h.calls[1].body.request_id,first);assert.equal(h.state().prompt,'original draft');
+});
 const offerFor=snapshot=>({id:'local-offer',projectId:snapshot.design.id,revision:snapshot.design.revision,
   componentId:'hc-sr04',guideKey:'test-key',guideRun:snapshot.guide.run??0,contextEpoch:0,mode:'wiring',
   text:'HC-SR04+ did not return enough readings. Check the wiring with photos?'});
@@ -562,6 +598,50 @@ test('a text-only retry also freezes the absence of media when a photo arrives l
   await h.render().send();assert.deepEqual(h.calls[1].body,first);
 });
 
+const referenceFixture=name=>({asset_ids:[name],capture_id:`capture-${name}`,epoch:0,round:0,
+  attachments:[{asset_id:name,filename:'image.jpg',image_url:`/${name}`}]});
+
+test('removing a photo reference keeps shared history and excludes it from all subsequent text messages',async()=>{
+  const media=referenceFixture('old'),conversation={...record(),active_media:media,messages:[{id:'photo',role:'user',attachments:media.attachments}]};
+  const h=harness(()=>conversation);h.render().acceptExternal(conversation);
+  const before=JSON.stringify(h.state());
+  assert.equal(h.render().removeMediaReference(),true);assert.equal(h.calls.length,0);
+  assert.equal(h.render().mediaReference,null);assert.equal(h.render().project.active_media,media);
+  assert.equal(h.render().project.messages[0].attachments,media.attachments);
+  assert.equal(JSON.stringify(h.state()),before);
+  for(const text of ['plain question','another plain question']) {
+    h.render().setDraft(text);assert.equal(await h.render().send(),true);
+    const payload=h.calls.at(-1).body;assert.equal(payload.inherit_media,false);
+    assert.deepEqual(payload.asset_ids??[],[]);assert.equal(payload.capture_id??null,null);
+    assert.equal(h.render().mediaReference,null);
+  }
+});
+
+test('removed reference survives reload but does not suppress a new photo with the same filename',async()=>{
+  const old=referenceFixture('old'),h=harness(()=>record());
+  h.render().acceptExternal({...record(),active_media:old});h.render().removeMediaReference();
+  const reloaded=harness(()=>record(),{persisted:h.persisted});
+  reloaded.render().acceptExternal({...record(),active_media:old});assert.equal(reloaded.render().mediaReference,null);
+  const next=referenceFixture('new');reloaded.render().acceptExternal({...record(),active_media:next});
+  assert.equal(reloaded.render().mediaReference,next);await reloaded.render().send();
+  assert.deepEqual(reloaded.calls[0].body.asset_ids,['new']);
+});
+
+test('explicit removal after a failed photo message starts a text-only intent with a new request id',async()=>{
+  const h=harness(async()=>{throw Error('offline');});h.render().acceptExternal({...record(),active_media:referenceFixture('old')});
+  await h.render().send();const original=h.calls[0].body;
+  assert.equal(h.render().removeMediaReference(),true);assert.equal(h.persisted.has('boardvision.assistant.v1.outbox'),false);
+  await h.render().send();const next=h.calls[1].body;
+  assert.notEqual(next.request_id,original.request_id);assert.equal(next.text,original.text);
+  assert.equal(next.inherit_media,false);assert.deepEqual(next.asset_ids??[],[]);
+});
+
+test('removing media cannot change an in-flight frozen request',async()=>{
+  const pending=deferred(),h=harness(()=>pending.promise);h.render().acceptExternal({...record(),active_media:referenceFixture('old')});
+  const sending=h.render().send();assert.equal(h.render().removeMediaReference(),false);
+  assert.deepEqual(h.calls[0].body.asset_ids,['old']);pending.resolve(record());await sending;
+});
+
 test('legacy outboxes preserve their original no-media request fingerprint on retry',async()=>{
   const h=harness(async()=>{throw Error('offline');});await h.render().send();
   const saved=JSON.parse(h.persisted.get('boardvision.assistant.v1.outbox'));
@@ -634,9 +714,12 @@ test('storage unavailable does not erase the active draft on a failed request',a
 
 function chatComponents(locale) {
   const modules = {react:React, 'react/jsx-runtime':jsxRuntime,
+    './AssistantMarkdown':markdownFixture(locale),
     '../lib/useMaker':{useMakerText:()=> (zh,en)=>locale==='en'?en:zh},
     '../lib/i18n':{useI18n:()=>({locale,tx:value=>typeof value==='string'?value:value[locale]})},
     '../lib/maker':maker, './ProjectConcept':{ProjectConcept:()=>null},
+    './ConversationGuideDock':{ConversationGuideHost:()=>null,ConversationGuideProvider:({children})=>children},
+    './ConversationGuideDock.css':{},
     '../lib/assistant':harness(()=>record()).exports,
     '../lib/assistantHistory':history, '../lib/assistantAnalysis':analysisHelpers,
     '../lib/assistantProgress':progressHelpers, './assistantJobProgress.css':{},
@@ -652,6 +735,27 @@ function chatComponents(locale) {
   }
   return modules;
 }
+
+test('project chat omits redundant design previews without deleting results, replies or image recovery',()=>{
+  for(const locale of ['zh-TW','en']) {
+    const {UnifiedAssistant}=chatComponents(locale)['./UnifiedAssistant'];
+    const result={...designFor(),revision:5,image_error:'fixture image error'};
+    const conversation={...record(),messages:[{id:'reply-1',role:'assistant',text:'Saved design reply',stage:'design',capability:'design',epoch:0,round:0}],
+      jobs:[{id:'design-5',request_id:'request-5',status:'completed',stage:'design',capability:'design',epoch:0,result}]};
+    const before=JSON.stringify(conversation);
+    for(const stage of ['design','guide','deploy']) {
+      const html=renderToStaticMarkup(React.createElement(UnifiedAssistant,{
+        state:{...maker.initialMaker(),design:result,stage},setState(){},onNewProject(){},
+        controller:{record:conversation,draft:'Existing draft',demoOpen:false,busy:false,pending:false},
+        legacy:{ai:{logged_in:true},aiOptions:{selectionValid:true},busy:false},
+      }));
+      assert.doesNotMatch(html,/保留的設計成果|Retained design result|Historical preview|歷史預覽/);
+      assert.match(html,/Saved design reply/);assert.match(html,/Existing draft/);
+      assert.ok(html.includes(locale==='en'?'Retry image only':'只重試圖片'));
+      assert.equal(JSON.stringify(conversation),before);
+    }
+  }
+});
 
 test('generation feedback follows the authoritative job phase and ignores finished or cleared jobs',()=>{
   const job={id:'generate-1',request_id:'request-1',stage:'design',capability:'design',epoch:0,status:'running',phase:'design'};
@@ -741,7 +845,7 @@ test('analysis feedback keeps one composer and disables desktop submission with 
   assert.equal((html.match(/<textarea/g)||[]).length,1);assert.match(html,/保留草稿/);
 });
 
-test('AI design demo in the chat menu is offered only in stage 01',()=>{
+test('chat menu removes the AI design demo entry but keeps Load demo and New project in every stage',()=>{
   for(const locale of ['en','zh-TW']) {
     const {UnifiedAssistant}=chatComponents(locale)['./UnifiedAssistant'];
     for(const stage of ['design','guide','deploy']) {
@@ -750,7 +854,9 @@ test('AI design demo in the chat menu is offered only in stage 01',()=>{
         controller:{record:record(),draft:'',demoOpen:false,busy:false},
         legacy:{ai:{logged_in:true},aiOptions:{selectionValid:true},busy:false},
       }));
-      assert.equal(html.includes(locale==='en'?'Try AI design demo':'體驗 AI 設計 Demo'),stage==='design');
+      assert.equal(html.includes(locale==='en'?'Try AI design demo':'體驗 AI 設計 Demo'),false);
+      assert.ok(html.includes(locale==='en'?'Load demo':'載入 Demo 示範'));
+      assert.ok(html.includes(locale==='en'?'New project':'新作品'));
     }
   }
 });
@@ -952,14 +1058,19 @@ test('text follow-up visibly references only inherited media from the current co
   const base={...record(),context_epoch:2,round:3,active_media:active};
   for(const locale of ['en','zh-TW']) {
     const {UnifiedAssistant}=chatComponents(locale)['./UnifiedAssistant'];
-    const render=(next=base,round=3,demoOpen=false)=>renderToStaticMarkup(React.createElement(UnifiedAssistant,{
+    const render=(next=base,round=3,demoOpen=false,busy=false)=>renderToStaticMarkup(React.createElement(UnifiedAssistant,{
       state:{...maker.initialMaker(),guide:{run:round}},setState(){},onNewProject(){},
-      controller:{record:next,draft:'What about this wire?',demoOpen,mobileContext:{round},busy:false},
+      controller:{record:next,draft:'What about this wire?',demoOpen,mobileContext:{round},busy,removeMediaReference(){return true;}},
       legacy:{ai:{logged_in:true},aiOptions:{selectionValid:true},busy:false},
     }));
     const html=render();assert.match(html,/latest-photo.jpg/);assert.doesNotMatch(html,/old-photo.jpg/);
     assert.match(html,locale==='en'?/This message references: /:/此訊息引用：/);
     assert.ok(html.indexOf('assistant-media-reference')<html.indexOf('id="unified-prompt"'));
+    const removeButton=markup=>markup.match(/<small class="assistant-media-reference"[^>]*>[\s\S]*?(<button[\s\S]*?<\/button>)/)?.[1]??'';
+    assert.match(removeButton(html),/type="button"/);
+    assert.match(removeButton(html),locale==='en'?/aria-label="Remove photo reference"/:/aria-label="移除照片引用"/);
+    assert.doesNotMatch(removeButton(html),/disabled=""/);
+    assert.match(removeButton(render(base,3,false,true)),/disabled=""/);
     assert.match(render({...base,round:1}),/latest-photo.jpg/,'Fresh photo can replace media before record round reconciles');
     for(const hidden of [render({...base,context_epoch:4}),render(base,4),render(base,3,true),render({...base,active_media:null}),render({...base,active_media:{...active,asset_ids:[]}})])
       assert.doesNotMatch(hidden,/assistant-media-reference/);

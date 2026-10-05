@@ -361,11 +361,16 @@ class DebugSessions:
             return {"active": self._public(current) if current else None,
                     "same_project": current["binding"]["project_id"] == project_id if current and project_id else None}
 
-    def replaceable_photo_history(self, session):
-        """Restored photo-only history has no work to stop or context to resume.
+    def replaceable_collection_history(self, session):
+        """Idle observation history may be replaced by explicit photo collection.
 
         This is a read-only availability check. Only an explicit new collection
         supersedes the history, and any hardware or pending work keeps the gate.
+        A debug case that only observed photos/adopted past results is also
+        history: stopping the Pi program need not stop that stale case separately.
+        Camera/context changes can leave a photo case waiting for a program
+        that has since stopped. Recheck actual work instead of latching that
+        old phase forever; never resume its invalidated photos or human checks.
         """
         review = session.get("wiring_review") or {}
         adopted = session.get("adopted_tests", [])
@@ -374,13 +379,19 @@ class DebugSessions:
             and item.get("evidence_scope") == "current_configuration_historical_run"
             and isinstance(item.get("run_id"), str) and bool(item["run_id"].strip())
             for item in adopted)
-        return bool(session.get("purpose") == "wiring_review"
+        restored = (session.get("purpose") in {"debug", "wiring_review"}
                     and session.get("status") == "paused" and session.get("phase") == "backend_restarted"
-                    and session.get("context") is None
+                    and session.get("context") is None)
+        expired_collection = (session.get("purpose") == "wiring_review" and session.get("context")
+                    and session.get("status") in {"paused", "awaiting_capture"}
+                    and session.get("phase") in {"waiting_for_stop", "camera_changed", "context_changed", "awaiting_user"}
+                    and (session.get("phase") != "awaiting_user" or review.get("status") == "stale"))
+        return bool((restored or expired_collection)
                     and not any(session.get(key) for key in ("job_ids", "run_ids", "job_id", "run_id",
                                                             "trial_id", "trial_run_id", "chat_pending",
                                                             "capture_pending", "model_started_at",
-                                                            "case_id", "test_attempts"))
+                                                            "test_attempts"))
+                    and not (session.get("purpose") == "wiring_review" and session.get("case_id"))
                     and historical_adoption
                     and not (session.get("budget") or {}).get("tests")
                     and not review.get("pending") and review.get("status") != "analysing"
@@ -413,7 +424,7 @@ class DebugSessions:
             replaceable = {s["id"] for s in self.sessions.values()
                            if purpose == "wiring_review" and initial_action == "collect"
                            and s.get("binding", {}).get("target_id") == binding["target_id"]
-                           and self.replaceable_photo_history(s)}
+                           and self.replaceable_collection_history(s)}
             if conversation_id:
                 self._ensure_conversation(project["id"], conversation_id)
             # PiExecution's local queue can be empty after a restart while a
@@ -426,7 +437,7 @@ class DebugSessions:
                 raise ValueError("restart_requires_stop")
             previous = next((s for s in self.sessions.values() if request_id is not None
                              and s.get("request_id") == request_id), None)
-            if previous is not None:
+            if previous is not None and previous["id"] not in replaceable:
                 if self.conversations[previous["conversation_id"]].get("archived"):
                     raise ValueError("conversation_restarted")
                 if (previous["binding"] != binding or previous["symptom"] != symptom.strip()[:2000]

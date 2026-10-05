@@ -44,6 +44,7 @@ function harness({initialRecord=null,action,create,invitation=invite(),actionTar
     'react-dom':{createPortal:(children,target)=>React.createElement('test-help-portal',{target},children)},'../lib/useMaker':{useMakerText:()=>zh=>zh},
     '../lib/systemText':{systemText:value=>value},'../lib/maker':maker,'../lib/debugSessions':sessionHelpers,'../lib/componentTests':componentTests,
     './PhotoEvidenceCard':{PhotoEvidenceCard:()=>null},'./DiagramEvidenceCard':{DiagramEvidenceCard:()=>null},'../lib/debugEvidence':evidenceHelpers,
+    './AssistantMarkdown':{AssistantMarkdown:({text})=>React.createElement('div',null,text)},
     '../lib/useCaptureCountdown':{useCaptureCountdown:()=>({remaining:null,run(){assert.fail('Invitation must not capture');},cancel(){}})},
     './CaptureCountdown':{CaptureCountdown:()=>null},'../lib/useChatScroll':{useChatScroll:()=>({chatRef:{current:null},contentRef:{current:null},followNext(){},onScroll(){}})},
     './WiringReviewCard':{WiringReviewCard:()=>null},'./WiringReviewEntry':{WiringReviewEntry:Entry},'../lib/wiringReviewEntry':entryHelpers,

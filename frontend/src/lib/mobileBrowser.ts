@@ -49,6 +49,8 @@ export interface BrowserAttachment {
     previewUrl?: string;
     progress?: number;
     error?: string;
+    /** Explicit hardware-check entry; retained with drafts and retry attachments. */
+    purpose?: 'parts_check';
 }
 export interface BrowserMessagePayload {
     request_id: string;
@@ -59,6 +61,7 @@ export interface BrowserMessagePayload {
     capture_id?: string;
     check_scope?: 'one' | 'all';
     wire_id?: string;
+    purpose?: 'parts_check';
 }
 export interface BrowserOutbox {
     id: string;
@@ -86,6 +89,8 @@ export interface BrowserDraft {
     attachments: BrowserAttachment[];
     outbox: BrowserOutbox[];
     captureJob: BrowserCaptureJob | null;
+    /** Suppress only this inherited photo/video identity, not shared history or new media. */
+    removedMediaReference?: string;
 }
 export const emptyBrowserDraft = (): BrowserDraft => ({ text: '', attachments: [], outbox: [], captureJob: null });
 export const MAX_BROWSER_VIDEO_BYTES = 200 * 1024 * 1024;
@@ -148,18 +153,22 @@ export function saveBrowserPairing(pairing: BrowserPairing | null) { if (pairing
     localStorage.setItem(PAIRING_KEY, JSON.stringify(pairing));
 else
     localStorage.removeItem(PAIRING_KEY); }
-export function browserMediaReference(conversation: AssistantConversation | null, round: number | undefined, newAttachments: number, explicitCapture?: string): {
+export function browserMediaReference(conversation: AssistantConversation | null, round: number | undefined, newAttachments: number, explicitCapture?: string, removedReference?: string): {
     asset_ids: string[];
     capture_id?: string;
     inherit_media: false;
     label: string | null;
+    reference_key?: string;
 } {
     const media = conversation?.active_media;
-    if (newAttachments || explicitCapture || !media?.attachments?.length || media.epoch !== conversation?.context_epoch || (round !== undefined && media.round !== round))
+    if (!conversation || newAttachments || explicitCapture || !media?.attachments?.length || media.epoch !== conversation.context_epoch || (round !== undefined && media.round !== round))
+        return { asset_ids: [], inherit_media: false, label: null };
+    const reference_key = JSON.stringify([conversation.id, media.epoch, media.round, media.capture_id ?? null, media.asset_ids]);
+    if (reference_key === removedReference)
         return { asset_ids: [], inherit_media: false, label: null };
     const names = media.attachments.map((a, i) => (a.filename || `${a.type === 'video' ? '影片' : '照片'} ${i + 1}`) + (a.type === 'video' && typeof a.duration === 'number' ? `（${a.duration.toFixed(1)} 秒）` : ''));
     const kind = media.capture_id ? '最近定位照片' : media.attachments.some(a => a.type === 'video') ? '最近影片' : `最近照片（${media.attachments.length} 張）`;
-    return { asset_ids: [...media.asset_ids], ...(media.capture_id ? { capture_id: media.capture_id } : {}), inherit_media: false, label: `此訊息引用：${kind} · ${names.join('、')}` };
+    return { asset_ids: [...media.asset_ids], ...(media.capture_id ? { capture_id: media.capture_id } : {}), inherit_media: false, reference_key, label: `此訊息引用：${kind} · ${names.join('、')}` };
 }
 export function validateBrowserAttachments(items: Pick<BrowserAttachment, 'type' | 'size' | 'duration'>[]): string | null {
     if (items.length > 4)

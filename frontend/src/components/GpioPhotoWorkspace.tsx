@@ -11,10 +11,11 @@ const componentName = (id: string) => id === 'raspberry-pi-5' ? 'Pi 5' : id === 
 
 /** Passive photo renderer, shared by phone and webcam. No acquisition, inference or AI effects. */
 export function GpioPhotoWorkspace({ record, records = [], onRecord, target,
-    historical, historicalReason, onReturn, showReturn = true, captureAction, viewControls, busy = false }: {
+    historical, historicalReason, onReturn, showReturn = true, captureAction, viewControls, sourceError = '', busy = false, overlayComponentId = null }: {
     record: GpioPhotoRecord | null; target?: ProjectWire; historical: boolean; historicalReason?: PhotoRecordMismatch | null; onReturn: () => void;
     records?: GpioPhotoRecord[]; onRecord?: (record: GpioPhotoRecord) => void;
-    showReturn?: boolean; captureAction?: ReactNode; viewControls?: ReactNode; busy?: boolean;
+    showReturn?: boolean; captureAction?: ReactNode; viewControls?: ReactNode; sourceError?: string; busy?: boolean;
+    overlayComponentId?: string | null;
 }) {
     const tr = useMakerText();
     const [loaded, setLoaded] = useState(false), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
@@ -57,6 +58,9 @@ export function GpioPhotoWorkspace({ record, records = [], onRecord, target,
                     <rect x="3" y="5" width="13" height="14" rx="3" /><path d="m16 9 5-3v12l-5-3" />
                 </svg><span>{tr('返回即時畫面', 'Back to live view')}</span>
             </button> : null}</div></header>
+        {sourceError ? <p className="gpio-photo-notice" role="status" title={sourceError}>
+            {tr('未能切換，保留原來源', 'Switch failed · original source retained')}
+        </p> : null}
         {guidance?.referenceOnly ? <div className="gpio-photo-guidance" data-state="reference-only">
             <p role="status">{tr('上一輪照片：僅供預期接法參考；移動板卡或改線後請重新擷取。', 'Previous-round photo: intended wiring reference only. Retake after moving boards or changing wires.')}</p>
         </div> : null}
@@ -64,6 +68,7 @@ export function GpioPhotoWorkspace({ record, records = [], onRecord, target,
             <p role="status">{guidance.kind === 'historical' && historicalReason ? `${historyLabels[historicalReason]} · ` : ''}{messages[guidance.kind]}</p>
         </div> : null}
         {capture ? <PhotoViewport compact capture={capture} wire={guidance?.wire} imageAttempt={attempt} imageLoaded={loaded}
+            overlayComponentId={overlayComponentId}
             onLoad={(w, h) => { const valid = acceptPhotoImageSize(capture, w, h); setLoaded(valid); setError(valid ? '' : tr('照片尺寸不符，暫不顯示 GPIO。', 'Photo size mismatch; GPIO is hidden.')); }}
             onError={() => { setLoaded(false); setError(tr('照片讀取失敗', 'Could not load the photo')); }} />
             : <div className="gpio-photo-empty">{tr('尚無接線照片。拍攝後可在這裡查看 GPIO 標示。', 'No wiring photos yet. Capture a photo to see its GPIO markers here.')}</div>}

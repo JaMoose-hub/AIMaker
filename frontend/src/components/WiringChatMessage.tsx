@@ -3,7 +3,7 @@ import type { AssistantMessage } from '../lib/assistant';
 import { useMakerText } from '../lib/useMaker';
 import { boundWiringChatAction, wiringComparisonText, wiringFlowCanAct, wiringFlowReview } from '../lib/wiringChat';
 import { AssistantAnalysisTime } from './AssistantAnalysisTime';
-import { cropFromPoints, imagePointFromClient, validWiringCrop, wiringPhotoRoles,
+import { cropFromPoints, imagePointFromClient, validWiringCrop, wiringPhotoRoles, wiringFindingStatus,
   type WiringCrop, type WiringEndpoint, type WiringPhotoRole, type WiringPhotoSlot, type WiringReviewAction, type WiringReviewState } from '../lib/wiringReview';
 import './wiringChat.css';
 
@@ -118,6 +118,8 @@ export function WiringChatMessage({ message, review, busy = false, inactive = fa
 }) {
   const tr = useMakerText(), flow = message.wiring_flow;
   const [pending, setPending] = useState(false), [error, setError] = useState('');
+  const [positionChoice, setPositionChoice] = useState<string | null>(null);
+  const [positionFailure, setPositionFailure] = useState<string | null>(null);
   const lock = useRef(false), latest = useRef({ message, busy, onAction });
   latest.current = { message, busy, onAction };
   if (!flow || flow.kind === 'human_decision') return null;
@@ -148,6 +150,14 @@ export function WiringChatMessage({ message, review, busy = false, inactive = fa
     ? `/api/debug/sessions/${encodeURIComponent(message.session_id)}/evidence/${encodeURIComponent(flow.capture_id)}` : undefined);
   const roles = flow.kind === 'photo_request' && flow.role ? [flow.role] : wiringPhotoRoles;
   const hasPhotoOptions = can('crop') || can('capture') && flow.kind !== 'photo_request';
+  const finding = flow.result?.diagnosis;
+  const findingStatus = flow.result ? wiringFindingStatus(flow.result) : 'uncertain';
+  const moduleWrong = findingStatus === 'suspected' && finding?.observed_component_pin !== flow.result?.expected.component_pin;
+  const positionCandidate = matched?.observations.find(c => c.id === (moduleWrong ? finding?.component_connector_id : finding?.board_connector_id));
+  const positionSlot = positionCandidate ? Object.values(matched?.slots ?? {}).find(slot => slot?.capture_id === positionCandidate.capture_id) : null;
+  const expectedCandidate = matched?.observations.find(c => c.capture_id === positionCandidate?.capture_id
+    && c.pin_id === (moduleWrong ? flow.result?.expected.component_pin : flow.result?.expected.board_pin));
+  const positionKey = `${flow.review_id}:${flow.revision}:${flow.round}:${flow.wire_id}`;
   return <div className="wiring-chat-message" data-wiring-flow={flow.kind} aria-busy={pending}>
     {flow.kind === 'analysing' && flow.current && !inactive ? <AssistantAnalysisTime startedAt={flow.started_at} /> : null}
     {!(flow.kind === 'analysing' && flow.current && !inactive) && typeof flow.elapsed_ms === 'number'
@@ -159,16 +169,38 @@ export function WiringChatMessage({ message, review, busy = false, inactive = fa
         {pending ? tr('拍攝中…', 'Capturing…') : tr(`拍攝${wiringChatRoleLabel(flow.role, tr)}`, `Capture ${wiringChatRoleLabel(flow.role, tr)}`)}</button></div> : null}
     </> : null}
     {flow.kind === 'wire_review' && flow.result ? <div className="wiring-chat-wire">
+      <strong className={`wiring-chat-finding is-${findingStatus}`}>{findingStatus === 'suspected' ? tr('疑似接錯', 'Possible wrong pin')
+        : findingStatus === 'no_issue_seen' ? tr('未見明顯錯接', 'No obvious mismatch seen') : tr('需確認', 'Needs a closer check')}</strong>
       <dl><dt>{tr('預期接法', 'Expected connection')}</dt><dd>{flow.result.expected.component_pin} → {flow.result.expected.physical_pin !== null
         ? `${tr('實體 Pin', 'Physical pin')} ${flow.result.expected.physical_pin}` : flow.result.expected.board_pin || tr('腳位待確認', 'Pin unconfirmed')}
-        {flow.result.expected.bcm !== null ? ` · BCM ${flow.result.expected.bcm}` : ''}</dd></dl>
+        </dd></dl>
+      {findingStatus === 'suspected' ? <><p className="wiring-chat-suspected">{tr('照片疑似：', 'Photo suggests: ')}{finding?.observed_component_pin} → Pi Pin {finding?.observed_physical_pin}</p>
+        <small className="wiring-chat-note">{tr('先斷電，再沿線核對或調整。', 'Power off before tracing or changing wires.')}</small></> : null}
+      {positionSlot?.available !== false && positionSlot && validWiringCrop(positionCandidate?.box) ? <>
+        <div className="wiring-chat-actions"><button type="button" aria-expanded={positionChoice === positionKey}
+          onClick={() => { setPositionFailure(null); setPositionChoice(positionChoice === positionKey ? null : positionKey); }}>{tr('查看照片位置', 'View position in photo')}</button></div>
+        {positionChoice === positionKey ? <figure className="wiring-chat-position">{positionFailure === positionKey
+          ? <small role="alert">{tr('照片無法取得，請補拍此側；不能只看標記判定接錯。', 'Photo unavailable. Retake this side; markers alone cannot establish a fault.')}</small>
+          : <><div className="wiring-chat-crop-stage"><img src={positionSlot.image_url} alt={tr('本輪接線照片與候選位置', 'Current wiring photo and candidate positions')}
+              onError={() => setPositionFailure(positionKey)} />
+          <svg viewBox={`0 0 ${positionSlot.size[0]} ${positionSlot.size[1]}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            {[positionCandidate, ...(expectedCandidate && expectedCandidate !== positionCandidate && validWiringCrop(expectedCandidate.box) ? [expectedCandidate] : [])].map((c, i) => c && validWiringCrop(c.box) ? <g key={c.id} className={i === 0 ? 'wiring-chat-marker-observed' : 'wiring-chat-marker-expected'}>
+              <rect x={c.box[0] * positionSlot.size[0]} y={c.box[1] * positionSlot.size[1]} width={(c.box[2] - c.box[0]) * positionSlot.size[0]}
+                height={(c.box[3] - c.box[1]) * positionSlot.size[1]} fill="none" stroke="currentColor" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+              <text x={c.box[0] * positionSlot.size[0]} y={i === 0 ? Math.max(positionSlot.size[0] * .036, c.box[1] * positionSlot.size[1] - positionSlot.size[0] * .014)
+                : Math.min(positionSlot.size[1] * .97, c.box[3] * positionSlot.size[1] + positionSlot.size[0] * .045)}
+                fontSize={positionSlot.size[0] * .036} fill="currentColor" stroke="var(--bg-inset, #10151c)" strokeWidth={positionSlot.size[0] * .004} paintOrder="stroke">{c.physical_pin !== null ? `Pin ${c.physical_pin}` : c.pin_label}</text>
+            </g> : null)}</svg></div><figcaption>{tr('橘框：照片位置 · 藍框：應接腳位的可見接頭', 'Orange: observed position · blue: visible connector at the expected pin')}</figcaption></>}</figure> : null}
+      </> : null}
       <details><summary>{tr('查看腳位與線色依據', 'View pin and color evidence')}</summary>
+        {flow.result.expected.bcm != null ? <small>BCM {flow.result.expected.bcm}</small> : null}
         <p className="wiring-chat-basis">{wiringComparisonText(flow.result.comparison, tr)}</p>
         <dl>
         <dt>{tr('Pi 端觀察', 'Pi observation')}</dt><dd><EndpointText candidates={flow.result.pi_candidates} tr={tr} /></dd>
         <dt>{tr('零件端觀察', 'Module observation')}</dt><dd><EndpointText candidates={flow.result.component_candidates} tr={tr} /></dd></dl>
-        {flow.result.evidence ? <p>{flow.result.evidence}</p> : null}</details>
-      <p>{flow.result.next_step}</p>
+        {flow.result.evidence ? <p>{flow.result.evidence}</p> : null}<p>{flow.result.next_step}</p></details>
+      {findingStatus === 'uncertain' && finding?.retake_roles[0] && can('capture') ? <div className="wiring-chat-actions"><button type="button" disabled={disabled}
+        onClick={() => void act({ op: 'capture', role: finding.retake_roles[0] })}>{tr(`補拍${wiringChatRoleLabel(finding.retake_roles[0], tr)}`, `Retake ${wiringChatRoleLabel(finding.retake_roles[0], tr)}`)}</button></div> : null}
       {can('review') ? <div className="wiring-chat-actions"><button type="button" className="wiring-chat-decision is-confirmed" disabled={disabled} title={tr('我已親自確認接對', 'I personally confirmed this connection')} aria-label={tr('我已親自確認接對', 'I personally confirmed this connection')}
         onClick={() => void act({ op: 'review', wire_id: flow.wire_id, decision: 'confirmed' })}>{tr('接對', 'Correct')}</button>
         <button type="button" className="wiring-chat-decision is-needs-change" disabled={disabled} title={tr('我發現接錯，準備修正', 'I found a wiring error; I will correct it')} aria-label={tr('我發現接錯，準備修正', 'I found a wiring error; I will correct it')}

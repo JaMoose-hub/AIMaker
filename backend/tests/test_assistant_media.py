@@ -129,6 +129,29 @@ def test_photo_question_reads_saved_normalized_file(media_service):
     assert result["messages"][-1]["capture_id"] == "capture"
 
 
+def test_explicit_hardware_answer_uses_only_selected_photo_and_remains_advisory(media_service):
+    service, _ = media_service
+    request = body(target="answer", asset_ids=["image"], inherit_media=False,
+                   context={"parts_check": {"scope": "demo-three-hardware"}})
+    service.send("main", request)
+    result = settled(service, "main")
+    assert result["jobs"][-1]["status"] == "completed"
+    assert result["jobs"][-1]["capability"] == "media"
+    prompt, _, options = service.state.design_service.bridge.calls[0]
+    assert "Read-only comparison" in prompt and "Compare only these three" in prompt
+    assert "exactly three short bullet lines" in prompt and "No table, introduction, conclusion" in prompt
+    assert "Similar appearance and purpose count as Right part" in prompt
+    assert "Never downgrade a recognizable type" in prompt
+    assert options["image_paths"] and options["restricted_tools"]
+    assert not service.state.design_service.calls
+    service.send("main", body(target="answer", request_id="text-only", inherit_media=False,
+                 context={"parts_check": {"scope": "demo-three-hardware"}}))
+    result = settled(service, "main")
+    assert result["jobs"][-1]["resolved_asset_ids"] == []
+    assert "image_paths" not in service.state.design_service.bridge.calls[-1][2]
+    assert service.state.mobile_service.assets.resolved == [["image"]]
+
+
 def test_wire_check_uses_existing_photo_contract_and_retains_uncertainty(media_service):
     from test_photo_wiring import opinion
     from app.photo_wiring import canonical_plan

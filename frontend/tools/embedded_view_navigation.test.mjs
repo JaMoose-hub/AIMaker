@@ -36,3 +36,22 @@ test('empty outer toolbars consume no space, while legacy controls and live lege
   assert.match(live,/\.video-shell.has-view-navigation \.video-legend\s*\{\s*top:58px/);
   assert.match(live,/\.live-camera-toolbar > \.image-view-controls\s*\{\s*flex-basis:100%/,'narrow controls wrap rather than clip');
 });
+
+test('photo guide moves only the shared controls, retaining one camera, one capture owner and guide target',()=>{
+  const app=read('../src/App.tsx'),video=read('../src/components/VideoView.tsx');
+  assert.equal((app.match(/<VideoView\b/g)||[]).length,1);
+  assert.equal((app.match(/<GpioCaptureAction\b/g)||[]).length,1);
+  assert.equal((app.match(/useGpioPhotoCapture\(\{/g)||[]).length,1);
+  assert.match(app,/savedPhotoAvailable=\{!!activeGpioPhoto\}/);
+  assert.match(app,/captureAction=\{photoGuideCaptureControls\}/);
+  assert.match(app,/sourceControl=\{[^}]*!photoMainActive\s*\? photoGuideCaptureControls : null\}/);
+  assert.match(app,/target=\{photoGuidanceTarget\(project, maker.guide\)\}/);
+  assert.match(app,/onReturn=\{\(\) => changeImageView\(lastLiveView.current\)\}/);
+  assert.match(video,/hidden=\{Boolean\(alternateView\) && !displayOnlyMode\}/);
+});
+
+test('narrow photo-guide workspace reserves a real viewport above the existing wiring dock',()=>{
+  const css=read('../src/gpioPhotoWorkspace.css');
+  assert.match(css,/@media\(max-width:700px\)/);
+  assert.match(css,/\.video-workspace:has\(> \.gpio-photo-workspace\)\s*\{[^}]*min-height:400px; height:clamp\(400px,60dvh,520px\)/);
+});

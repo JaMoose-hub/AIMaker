@@ -76,9 +76,10 @@ function localizationText(value: string, locale: string) {
 }
 
 /** A photo-only renderer: no live pose subscriptions, freshness timer or interpolation. */
-export function PhotoPins({ capture, wire, mode = "corrected", labels = false, estimates = false, scale = 1, calloutArea }: {
+export function PhotoPins({ capture, wire, mode = "corrected", labels = false, estimates = false, scale = 1, calloutArea, overlayComponentId = null }: {
   capture: PhotoCapture; wire?: PhotoWire; mode?: PhotoOverlayMode; labels?: boolean; estimates?: boolean; scale?: number;
   calloutArea?: { width: number; height: number };
+  overlayComponentId?: string | null;
 }) {
   const { locale, t } = useI18n();
   const tr = (zh: string, en: string) => locale === "en" ? en : zh;
@@ -88,7 +89,8 @@ export function PhotoPins({ capture, wire, mode = "corrected", labels = false, e
   const modulePose = mode === "corrected" && wire ? reliablePhotoPose(capture, wire.component_id) : null;
   const boardTarget = wire ? locatedPhotoPin(boardPose, wire.board_pin) : null;
   const moduleTarget = wire ? locatedPhotoPin(modulePose, wire.component_pin) : null;
-  const objects = photoOverlayObjects(capture, mode);
+  const objects = photoOverlayObjects(capture, mode).filter(object => overlayComponentId === null
+    || object.objectId === "raspberry-pi-5" || object.objectId === overlayComponentId);
   const displayed = (point: { x: number; y: number } | null) => point ? { x: point.x * scale, y: point.y * scale } : null;
   const labelWidth = Math.max(width * scale, calloutArea?.width ?? 0), labelHeight = Math.max(height * scale, calloutArea?.height ?? 0);
   const labelOffset = { x: (labelWidth - width * scale) / 2, y: (labelHeight - height * scale) / 2 };
@@ -181,10 +183,11 @@ export function PhotoPins({ capture, wire, mode = "corrected", labels = false, e
 }
 
 /** Source-pixel canvas: the image and SVG always have identical dimensions and offsets. */
-export function PhotoViewport({ capture, wire, imageAttempt, imageLoaded, onLoad, onError, compact = false }: {
+export function PhotoViewport({ capture, wire, imageAttempt, imageLoaded, onLoad, onError, compact = false, overlayComponentId = null }: {
   capture: PhotoCapture; wire?: PhotoWire; imageAttempt: number; imageLoaded: boolean;
   onLoad: (width: number, height: number) => void; onError: () => void;
   compact?: boolean;
+  overlayComponentId?: string | null;
 }) {
   const { locale } = useI18n();
   const tr = (zh: string, en: string) => locale === "en" ? en : zh;
@@ -253,6 +256,7 @@ export function PhotoViewport({ capture, wire, imageAttempt, imageLoaded, onLoad
           <img key={`${capture.capture_id}:${imageAttempt}`} src={`${capture.image_url}${imageAttempt ? `?retry=${imageAttempt}` : ""}`}
             alt={tr("本次固定接線照片", "Frozen wiring photo")} onLoad={event => onLoad(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={onError} />
           {imageLoaded && mode !== "photo" ? <PhotoPins capture={capture} wire={wire} mode={mode} labels={labels} estimates={estimates} scale={currentScale}
+            overlayComponentId={overlayComponentId}
             calloutArea={{ width: Math.max(size.width, width * currentScale), height: Math.max(size.height, height * currentScale) }} /> : null}
         </div></div></div>
     {!compact ? <div className="photo-poc-focus-tools" role="group" aria-label={tr("放大查看，不切換接線", "Zoom only; does not change wiring")}><span>{tr("放大查看", "Zoom to")}</span>

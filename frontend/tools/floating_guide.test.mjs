@@ -89,6 +89,7 @@ test('the hidden guide retains children and a stable accessible panel id', () =>
   const exports = {};
   new Function('require', 'exports', 'React', compile(read('../src/components/WiringWorkspace.tsx')))(name => ({
     react:React, '../lib/maker':maker, '../lib/componentHeaderGuide':{componentModelName:() => 'HC-SR04+'},
+    'react-dom':{}, './ConversationGuideDock':{useConversationGuideDock:()=>null},
     '../lib/i18n':{useI18n:() => ({t:key => key})}, '../lib/useMaker':{useMakerText:() => zh => zh},
   })[name], exports, React);
   for (const visible of [true, false]) {
@@ -101,7 +102,7 @@ test('the hidden guide retains children and a stable accessible panel id', () =>
   }
 });
 
-test('compact guide and toggle sit below the image in normal flow without remounting it', () => {
+test('guide stays in normal flow without remounting the image; toolbar owns the project toggle', () => {
   const css = read('../src/floatingGuide.css'), source = read('../src/App.tsx');
   assert.match(css, /\.floating-guide-dock\s*\{[^}]*position: static; flex: none/s);
   assert.match(css, /> :is\(\.wiring-workspace,\.maker-guide-empty\)\s*\{[^}]*position: static;[^}]*width: 100%;[^}]*background: color-mix/s);
@@ -110,7 +111,8 @@ test('compact guide and toggle sit below the image in normal flow without remoun
   assert.equal((source.match(/<VideoView\b/g) ?? []).length, 1);
   assert.match(source, /panelId=\{floatingGuide \? 'maker-floating-guide' : undefined\}/);
   assert.doesNotMatch(source, /guideVisible\s*&&\s*<WiringWorkspace/);
-  assert.match(source, /floatingGuide && !guideVisible \? <div className="floating-guide-dock">/);
+  assert.match(source, /floatingGuide && !guideVisible && !project \? <div className="floating-guide-dock">/);
+  assert.match(source, /revealControl=\{floatingGuide && !guideVisible \? guideVisibilityControl : undefined\}/);
   assert.match(source, /visibilityControl=\{floatingGuide && guideVisible \? guideVisibilityControl : undefined\}/);
   assert.match(css, /\.guide-panel-header-embedded\s*\{ flex-wrap: wrap; \}/);
 });

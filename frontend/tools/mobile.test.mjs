@@ -9,8 +9,8 @@ import * as jsx from 'react/jsx-runtime';
 function load(file, modules={}) {
   const js=ts.transpileModule(readFileSync(new URL(file,import.meta.url),'utf8'),{
     compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-  const exports={}; new Function('require','exports',js)(name=> name==='../lib/headerPanels'
-    ? {useHeaderPanel:(_panel,initial=false)=>modules.react.useState(initial)} : modules[name],exports);return exports;
+  const exports={}; new Function('require','exports',js)(name=> name==='../lib/headerPanels' && !modules[name]
+    ? {useHeaderPanel:(_panel,initial=false)=>modules.react.useState(initial),usePhoneUploadEntry:()=>({request:0})} : modules[name],exports);return exports;
 }
 const photo=load('../src/lib/photoWiring.ts');
 const browserRtc=load('../src/lib/mobileBrowserRtc.ts');
@@ -392,9 +392,9 @@ test('frozen photo review labels actual capture source and geometry dimensions w
   }
 });
 
-function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffects=false,pairing=null,error='',connection=undefined,connectionError='',locale='en',configuration={available:true,base_url:'https://fixture.test',web_url:'https://fixture.test/mobile'}}={}) {
+function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffects=false,pairing=null,error='',connection=undefined,connectionError='',locale='en',phoneUpload=null,desktopContext={conversation_id:'chat'},configuration={available:true,base_url:'https://fixture.test',web_url:'https://fixture.test/mobile'}}={}) {
   let cursor=0,refCursor=0,effectCursor=0,dirty=false,pending=[],captureDone;
-  const values=[],refs=[],effects=[],shown=[],requests=[];
+  const values=[],refs=[],effects=[],shown=[],requests=[],publishedContexts=[];
   if(!runEffects){values[7]=streamCaptureFixture();values[8]=values[7].capture_id;
     values[2]={payload:pairing?.web_url??(paired?'https://fixture.test/mobile':''),image:'data:image/png;base64,fixture'};}
   const hooks={...React,
@@ -407,12 +407,13 @@ function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffect
   const workspace={trigger:{id:'header'},controls:toolbar?{id:'toolbar'}:null,preview:{id:'preview'},showing:false,canShow,onShow(value){shown.push(value);workspace.showing=value;}};
   let session=paired?{session_id:'s',conversation_id:'chat',base_url:'https://fixture.test',stream:{active:true,publisher_connected:true,generation:1,state:'finding'},view:{capture_id:'cap'},context_id:'ctx'}:null;
   const {MobileCompanion}=load('../src/components/MobileCompanion.tsx',{
+    ...(phoneUpload ? {'../lib/headerPanels':{useHeaderPanel:(_panel,initial=false)=>hooks.useState(initial),usePhoneUploadEntry:()=>phoneUpload}} : {}),
     react:hooks,'react/jsx-runtime':jsx,'react-dom':{createPortal:(children,host)=>React.createElement('qa-portal',{host},children)},
-    '../lib/useMaker':{useMakerText:()=> (zh,en)=>locale==='en'?en:zh},'../lib/mobile':{...mobile,useMobileCompanion:()=>({session,connection,connectionError,pairing,error,pairingBusy:false,
+    '../lib/useMaker':{useMakerText:()=> (zh,en)=>locale==='en'?en:zh},'../lib/mobile':{...mobile,useMobileCompanion:(context)=>{publishedContexts.push(context);return {session,connection,connectionError,pairing,error,pairingBusy:false,
       webConfiguration:configuration,
       pair:async(baseUrl)=>{requests.push({path:'pairings',method:'POST',baseUrl});
         const origin=mobile.mobileAddressOrigin(baseUrl)||mobile.mobileWebOrigin(configuration);
-        pairing={code:'591204',web_url:origin+'/mobile?code=591204',base_url:origin,base_urls:[],expires_at:Date.now()/1000+300};}}),
+        pairing={code:'591204',web_url:origin+'/mobile?code=591204',base_url:origin,base_urls:[],expires_at:Date.now()/1000+300};}};},
       mobileRequest:async(path,options)=>{requests.push({path,...options});return path==='web-config'
         ? configuration
         : streamCaptureFixture({capture_id:decodeURIComponent(path.split('/').at(-1))});},
@@ -422,13 +423,32 @@ function companionLayoutHarness({toolbar=true,paired=true,canShow=true,runEffect
   });
   const render=(selection=null)=>{let tree,passes=0;do{
     cursor=refCursor=effectCursor=0;dirty=false;
-    tree=MobileCompanion({controller:{project:{},mobileContext:{conversation_id:'chat'},busy:false,demoOpen:false},aiReady:true,selection,workspace});
+    tree=MobileCompanion({controller:{project:{},mobileContext:desktopContext,busy:false,demoOpen:false},aiReady:true,selection,workspace});
     const tasks=pending;pending=[];tasks.forEach(task=>task());
     assert.ok(++passes<20,'companion effects must settle');
   }while(runEffects&&dirty);return tree;};
   const nodes=(tree,predicate)=>{const found=[];function visit(node){if(!React.isValidElement(node))return;if(predicate(node))found.push(node);React.Children.forEach(node.props.children,visit);}visit(tree);return found;};
-  return{render,nodes,workspace,shown,requests,setConfiguration(next){configuration=next;},setPairing(next){pairing=next;},setSession(next){if(next?.session_id!==session?.session_id)pairing=null;session=next;},capture(next){captureDone(next);},unmount(){effects.forEach(effect=>effect.cleanup?.());}};
+  return{render,nodes,workspace,shown,requests,publishedContexts,setDesktopContext(next){desktopContext=next;},setConfiguration(next){configuration=next;},setPairing(next){pairing=next;},setSession(next){if(next?.session_id!==session?.session_id)pairing=null;session=next;},capture(next){captureDone(next);},unmount(){effects.forEach(effect=>effect.cleanup?.());}};
 }
+
+test('phone hardware comparison requires the explicit current-blueprint request and clears on leaving it',t=>{
+  const desktop={conversation_id:'chat',stage:'design',design:{current:{id:'project',revision:7}}};
+  let cleared=0;
+  const entry={request:0,scope:null,clear(){cleared++;entry.scope=null;}};
+  const h=companionLayoutHarness({runEffects:true,phoneUpload:entry,desktopContext:desktop});t.after(()=>h.unmount());
+  const requested=()=>h.publishedContexts.at(-1).ui.parts_check;
+  h.render();assert.equal(requested(),false);
+  entry.request++;entry.scope='project:7';h.render();assert.equal(requested(),true);
+  h.setDesktopContext({...desktop,stage:'guide'});h.render();assert.equal(requested(),false);assert.equal(entry.scope,null);
+  h.setDesktopContext(desktop);h.render();assert.equal(requested(),false,'Returning to design does not reopen comparison');
+  entry.scope='project:7';h.render();assert.equal(requested(),true);
+  h.setDesktopContext({...desktop,design:{current:{id:'other',revision:7}}});h.render();
+  assert.equal(requested(),false);assert.equal(entry.scope,null);
+  h.setDesktopContext(desktop);h.render();entry.scope='project:7';h.render();assert.equal(requested(),true);
+  h.setDesktopContext({...desktop,design:{current:{id:'project',revision:8}}});h.render();
+  assert.equal(requested(),false);assert.equal(entry.scope,null);assert.equal(cleared,3);
+  assert.equal(h.shown.length,0,'No camera is opened by presentation changes');
+});
 
 test('restoring a saved GPIO photo never selects or opens it on refresh',t=>{
   for(const paired of [true,false]){

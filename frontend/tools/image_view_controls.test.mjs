@@ -6,13 +6,13 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 const code=ts.transpileModule(readFileSync(new URL('../src/components/ImageViewControls.tsx',import.meta.url),'utf8'),{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
-function load(open=false,portalTargets=[]){
+function load(open=false,portalTargets=[],locale='en'){
   const exports={};
   new Function('require','exports','React',code)(name=>{
     if(name.endsWith('.css'))return {};
     if(name==='react')return {...React,useState:v=>[typeof v==='boolean'?open:v,()=>{}],useId:()=>':source:',useRef:v=>({current:v}),useEffect(){},useLayoutEffect(){}};
     if(name==='react-dom')return {createPortal:(node,target)=>{portalTargets.push(target);return node;}};
-    if(name==='../lib/useMaker')return {useMakerText:()=> (zh,en)=>en};
+    if(name==='../lib/useMaker')return {useMakerText:()=> (zh,en)=>locale==='en'?en:zh};
     throw Error(name);
   },exports,React);
   return exports;
@@ -25,26 +25,60 @@ function sourceNode(props={},open=true){
   finally {globalThis.document=previous;}
 }
 const props={view:'live',disabled:false,diagramAvailable:true,onChange(){}};
+const viewButtons=node=>node.props.children[0].props.children;
+const photoButtons=node=>node.props.children[1]?.props.children??[];
 
-test('three view modes never select a camera; the toolbar has no source control',()=>{
-  const events=[];
-  for(const view of ['live','diagram','photo']){
-    const node=ImageViewControls({...props,view,onChange:v=>events.push(v)});
-    const group=node.props.children;
-    const buttons=group.props.children;
-    assert.equal(buttons.filter(b=>b.props['aria-pressed']).length,1);
-    assert.equal(buttons.find(b=>b.props['aria-pressed']).key,view);
-    buttons.forEach(b=>b.props.onClick());
-    assert(!renderToStaticMarkup(node).includes('image-source'));
+test('two guide entries combine live framing and photographs in both languages',()=>{
+  for(const [locale,labels] of [['zh-TW',['照片引導','圖解引導']],['en',['Photo guide','Diagram guide']]]) {
+    const {ImageViewControls:Controls}=load(false,[],locale),events=[];
+    const node=Controls({...props,onChange:view=>events.push(view)}),buttons=viewButtons(node);
+    assert.deepEqual(buttons.map(button=>button.props.children),labels);
+    assert.deepEqual(buttons.map(button=>button.key),['photo','diagram']);
+    assert.ok(buttons.every(button=>typeof button.props.title==='string'&&button.props.title.length>0));
+    buttons.forEach(button=>button.props.onClick());
+    assert.deepEqual(events,['live','diagram']);
+    const html=renderToStaticMarkup(node);
+    assert.ok(labels.every(label=>html.includes(label)),'visible button text also supplies its accessible name');
+    assert.doesNotMatch(html,/接線圖|接線照片|Wiring diagram|Wiring photo/);
   }
-  assert.deepEqual(events,['live','diagram','photo','live','diagram','photo','live','diagram','photo']);
 });
 
-test('calibration/switching disables all views; capture guard disables photos only',()=>{
-  const buttons=p=>ImageViewControls({...props,...p}).props.children.props.children;
+test('live and captured photo remain subviews of one guide without selecting a camera',()=>{
+  const events=[];
+  for(const view of ['live','diagram','photo']){
+    const node=ImageViewControls({...props,view,savedPhotoAvailable:true,onChange:v=>events.push(v)});
+    const buttons=viewButtons(node);
+    assert.equal(buttons.filter(b=>b.props['aria-pressed']).length,1);
+    assert.equal(buttons.find(b=>b.props['aria-pressed']).key,view==='diagram'?'diagram':'photo');
+    const subviews=photoButtons(node);
+    assert.equal(subviews.length,view==='diagram'?0:2);
+    if(subviews.length) {
+      assert.equal(subviews.filter(b=>b.props['aria-pressed']).length,1);
+      assert.equal(subviews[view==='live'?0:1].props['aria-pressed'],true);
+      subviews.forEach(b=>b.props.onClick());
+    }
+    assert(!renderToStaticMarkup(node).includes('image-source'));
+  }
+  assert.deepEqual(events,['live','photo','live','photo']);
+});
+
+test('calibration, switching and capture guards cover both photo-guide subviews',()=>{
+  const buttons=p=>viewButtons(ImageViewControls({...props,...p}));
   assert(buttons({disabled:true}).every(b=>b.props.disabled));
-  assert.deepEqual(buttons({photoDisabled:true}).map(b=>!!b.props.disabled),[false,false,true]);
-  assert.deepEqual(buttons({diagramAvailable:false}).map(b=>!!b.props.disabled),[false,true,false]);
+  assert.deepEqual(buttons({photoDisabled:true}).map(b=>!!b.props.disabled),[true,false]);
+  assert.deepEqual(buttons({diagramAvailable:false}).map(b=>!!b.props.disabled),[false,true]);
+  for(const guard of [{disabled:true},{photoDisabled:true}]) {
+    assert(photoButtons(ImageViewControls({...props,savedPhotoAvailable:true,...guard})).every(b=>b.props.disabled));
+  }
+  assert.deepEqual(photoButtons(ImageViewControls(props)).map(b=>!!b.props.disabled),[false,true]);
+});
+
+test('photo-guide entry resumes a saved photograph or framing, never an empty unavailable photo',()=>{
+  const events=[];
+  for(const [photoView,savedPhotoAvailable,expected] of [['live',true,'live'],['photo',true,'photo'],['photo',false,'live']]) {
+    const node=ImageViewControls({...props,view:'diagram',photoView,savedPhotoAvailable,onChange:v=>events.push(v)});
+    viewButtons(node)[0].props.onClick();assert.equal(events.at(-1),expected);
+  }
 });
 
 test('only a different paired source requests a source switch',()=>{

@@ -1,0 +1,109 @@
+.assistant-markdown {
+  --markdown-line: var(--line-default, var(--border, #30443f));
+  --markdown-panel: var(--surface-subtle, var(--bg-elev, #172a2c));
+  --markdown-ink: var(--ink-primary, var(--text, #dce6ee));
+  min-width: 0;
+  max-width: 100%;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.assistant-markdown :is(p, ul, ol, blockquote, pre, .assistant-markdown-table-frame) {
+  margin: 0 0 12px;
+}
+
+.assistant-markdown p { white-space: pre-line; }
+.assistant-markdown > :last-child { margin-bottom: 0; }
+.assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 20px 0 8px;
+  color: var(--markdown-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+.assistant-markdown :is(h1, h2) { font-size: 16px; }
+.assistant-markdown > :first-child { margin-top: 0; }
+.assistant-markdown strong { font-weight: 650; }
+.assistant-markdown :is(ul, ol) { padding-left: 22px; }
+.assistant-markdown li { padding-left: 2px; }
+.assistant-markdown li + li { margin-top: 6px; }
+.assistant-markdown li > p { margin: 0 0 6px; }
+.assistant-markdown li > :is(ul, ol) { margin: 6px 0 0; }
+.assistant-markdown blockquote {
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid var(--brand-teal, #49b4aa);
+  color: var(--ink-secondary, inherit);
+}
+.assistant-markdown blockquote > :last-child { margin-bottom: 0; }
+.assistant-markdown hr { margin: 16px 0; border: 0; border-top: 1px solid var(--markdown-line); }
+.assistant-markdown a {
+  color: var(--brand-link, #82baff);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.assistant-markdown code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--markdown-ink) 9%, transparent);
+  font: .92em/1.6 Consolas, 'Cascadia Code', monospace;
+  overflow-wrap: anywhere;
+}
+.assistant-markdown pre {
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 360px;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--markdown-line);
+  border-radius: 7px;
+  background: var(--markdown-panel);
+  white-space: pre;
+  overflow-wrap: normal;
+  font: 12px/1.65 Consolas, 'Cascadia Code', monospace;
+}
+.assistant-markdown pre code { padding: 0; background: none; font: inherit; white-space: inherit; overflow-wrap: normal; }
+.assistant-markdown .assistant-markdown-table {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--markdown-line);
+  border-radius: 7px;
+  scrollbar-width: thin;
+}
+.assistant-markdown .assistant-markdown-table-hint { display: block; margin-top: 5px; color: var(--ink-secondary, var(--text-dim)); font-size: 11px; line-height: 1.5; }
+.assistant-markdown table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; line-height: 1.65; }
+.assistant-markdown :is(th, td) {
+  min-width: 12rem;
+  max-width: 24rem;
+  padding: 10px 12px;
+  vertical-align: top;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border-right: 1px solid var(--markdown-line);
+  border-bottom: 1px solid var(--markdown-line);
+}
+.assistant-markdown :is(th, td):first-child { min-width: 9rem; }
+.assistant-markdown th { font-weight: 650; color: var(--markdown-ink); background: var(--markdown-panel); }
+.assistant-markdown :is(th, td):last-child { border-right: 0; }
+.assistant-markdown tbody tr:last-child td { border-bottom: 0; }
+.assistant-markdown tbody tr:nth-child(even) { background: color-mix(in srgb, var(--markdown-ink) 3%, transparent); }
+.assistant-markdown :is(.assistant-markdown-table, pre, a):focus-visible {
+  outline: 2px solid var(--brand-link, #82baff);
+  outline-offset: 2px;
+}
+.assistant-markdown .task-list-item { list-style: none; }
+.assistant-markdown .task-list-item input { margin: 0 7px 0 -18px; accent-color: var(--brand-teal, #49b4aa); }
+
+/* Keep paragraph rhythm above legacy chat rules in either color theme. */
+.app.tinkro-theme .assistant-markdown p,
+.mw-message .assistant-markdown p,
+.maker-conversation .assistant-markdown p { margin: 0 0 12px; font-size: inherit; line-height: inherit; white-space: pre-line; }
+.app.tinkro-theme .assistant-markdown p:last-child,
+.mw-message .assistant-markdown p:last-child,
+.maker-conversation .assistant-markdown p:last-child { margin-bottom: 0; }

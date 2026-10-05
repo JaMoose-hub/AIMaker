@@ -1,0 +1,61 @@
+/* One live guide in chat; the left pane keeps its existing image/camera owner. */
+.unified-conversation-guide:empty { display: none; }
+.unified-conversation-guide { flex: none; min-height: 0; display: flex; max-height: 54dvh; }
+.conversation-guide-task { display: flex; flex-direction: column; min-height: 0; min-width: 0; width: 100%; border: 1px solid var(--chat-ai-border); border-radius: 9px; overflow: hidden; background: var(--chat-ai-bg); }
+.conversation-guide-task-heading { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; color: var(--chat-ai-ink); font-size: 12px; }
+.conversation-guide-task-heading small { font-size: 10px; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .compact-guide { display: flex; flex-direction: column; min-height: 0; height: auto; max-height: none; flex: 1; margin: 0; padding: 0; gap: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: hidden; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-panel-header-embedded { flex: none; padding: 5px 10px; display: flex; gap: 6px; border-bottom: 1px solid var(--line-default); }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-panel-progress { flex: 1; min-width: 0; padding: 0; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-visibility-toggle { position: static; inset: auto; transform: none; margin: 0; min-height: 28px; }
+.conversation-guide-task .guide-progress-label, .conversation-guide-task .guide-panel-progress progress { display: none; }
+.conversation-guide-task .guide-module-track { display: flex; gap: 4px; flex-wrap: wrap; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-header-actions { display: flex; gap: 4px; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-icon-action { width: 28px; height: 28px; padding: 4px; display: grid; place-items: center; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-panel-body { flex: 1; min-height: 0; overflow: auto; padding: 9px 10px; gap: 7px; scrollbar-gutter: auto; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-connection-card { margin: 0; padding: 8px; border: 0; background: var(--surface-card); border-left: 2px solid var(--brand-teal); border-radius: 6px; }
+.conversation-guide-task .guide-pin-pair { display: grid; grid-template-columns: minmax(0,1fr) 18px minmax(0,1fr); gap: 4px; margin: 7px 0 0; }
+.conversation-guide-task .guide-endpoint { min-width: 0; padding: 4px; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-endpoint > strong { font-size: 23px; line-height: 1.15; }
+.conversation-guide-task .guide-endpoint > span, .conversation-guide-task .guide-endpoint > small { white-space: normal; overflow-wrap: anywhere; }
+.conversation-guide-task .guide-reference-toggle { min-height: 28px; padding: 4px 0; font-size: 11px; }
+.conversation-guide-task .guide-prepare-message p { margin: 5px 0; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-panel-footer { flex: none; padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; border-left: 0; border-top: 1px solid var(--line-default); max-height: none; overflow: visible; }
+.conversation-guide-task .guide-navigation { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.conversation-guide-task .guide-navigation > .guide-primary-action { flex: 1; }
+.app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task button.guide-primary-action { background: var(--brand-teal); color: #04241f; border-color: var(--brand-teal); }
+.conversation-guide-task .guide-test-controls { flex: none; min-height: 0; overflow: visible; }
+.conversation-guide-task .component-test-card { margin: 0; padding: 0; border: 0; background: transparent; }
+.conversation-guide-task .test-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.conversation-guide-task .test-visual-confirm { margin: 0; min-width: 0; }
+.conversation-guide-task .test-code-options { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
+.conversation-guide-task .test-code-options label { padding: 5px 2px; display: flex; justify-content: center; align-items: center; gap: 2px; }
+.conversation-guide-launcher { position: absolute; right: 14px; bottom: 14px; z-index: 6; }
+.conversation-guide-launcher button { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: color-mix(in srgb,var(--surface-card) 78%,transparent); color: var(--ink-primary); backdrop-filter: blur(8px); cursor: pointer; }
+.app.maker-layout:not(.display-mode-active) .is-unified .assistant-wiring-stage:has(> .conversation-guide-launcher) { position: relative; display: flex; flex-direction: column; grid-template-rows: none; gap: 0; }
+.app.maker-layout:not(.display-mode-active) .is-unified .assistant-wiring-stage:has(> .conversation-guide-launcher) > :is(.guide-resize-handle,.floating-guide-dock) { display: none; }
+.app.maker-layout:not(.display-mode-active) .is-unified .assistant-wiring-stage:has(> .conversation-guide-launcher) > .video-workspace { flex: 1; min-height: 0; height: auto; grid-row: auto; }
+
+@media (max-width:1099px) {
+  /* The same work surface becomes a small preview, not a second stream. */
+  .app.maker-layout:not(.display-mode-active) .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .assistant-work-surface { display: flex; flex: none; height: clamp(150px,24dvh,220px); min-height: 0; overflow: hidden; }
+  .app.maker-layout:not(.display-mode-active) .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .assistant-wiring-stage { flex: 1; min-height: 0; height: 100%; }
+  .app.maker-layout:not(.display-mode-active) .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .video-workspace { flex: 1; min-height: 0; height: 100%; }
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) :is(.video-control-toolbar,.gpio-photo-workspace > header,.photo-poc-view-tools,.photo-poc-focus-tools,.gpio-photo-workspace > footer) { display: none; }
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .gpio-photo-workspace { min-height: 0; height: 100%; }
+  .app.maker-layout.maker-stage-guide:not(.display-mode-active) .is-unified[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .assistant-wiring-stage > .video-workspace:has(> .gpio-photo-workspace) { flex: 1; min-height: 0; height: 100%; }
+  /* Put the current task before scrollback on narrow screens, including when
+     the conversation is empty. The test footer can grow without clipping. */
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .unified-assistant-heading { order: 0; }
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .unified-conversation-guide { order: 1; max-height: none; }
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .unified-message-list { order: 2; flex: none; min-height: 0; max-height: 20dvh; }
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .unified-message-list:not(:has(> button)):has(> div:empty) { display: none; }
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .unified-debug-tools { order: 3; }
+  .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .unified-composer { order: 4; }
+  .app.maker-layout:not(.display-mode-active) .unified-assistant .conversation-guide-task .guide-panel-body { flex: auto; max-height: 28dvh; }
+  .conversation-guide-task .guide-navigation button, .conversation-guide-task .test-actions button { min-height: 38px; }
+}
+@media (max-width:700px) {
+  .app.maker-layout:not(.display-mode-active) .assistant-workspace[data-mobile-view="ai"]:has(.conversation-guide-task:not([hidden])) .assistant-work-surface { height: clamp(120px,18dvh,160px); }
+}
+@media (prefers-reduced-motion:reduce) { .conversation-guide-task * { transition: none; animation: none; } }

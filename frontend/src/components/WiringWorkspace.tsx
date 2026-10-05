@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import "./WiringTaskToolbar.css";
 import { currentWire, wireSignature, type ProjectDesign, type ProjectGuideState } from "../lib/maker";
 import { componentModelName } from "../lib/componentHeaderGuide";
 import { useI18n } from "../lib/i18n";
@@ -6,11 +7,13 @@ import { useMakerText } from "../lib/useMaker";
 
 /** Keep both panels mounted: changing tabs must not restart work or erase drafts. */
 export function WiringWorkspace({ design, guide, visible, assistantOpen, onAssistantOpenChange, onClose,
-  assistant, children, busy = false, replyId, guideOnly = false, panelId }: {
+  assistant, children, busy = false, replyId, guideOnly = false, toolbar = false, panelId, onReveal, revealControl }: {
   design: ProjectDesign; guide: ProjectGuideState; visible: boolean;
   assistantOpen: boolean; onAssistantOpenChange: (open: boolean) => void; onClose: () => void;
   assistant: ReactNode; children: ReactNode; busy?: boolean; replyId?: string;
-  guideOnly?: boolean; panelId?: string;
+  guideOnly?: boolean; toolbar?: boolean; panelId?: string;
+  onReveal?: () => void;
+  revealControl?: ReactNode;
 }) {
   const tr = useMakerText();
   const { t } = useI18n();
@@ -32,6 +35,13 @@ export function WiringWorkspace({ design, guide, visible, assistantOpen, onAssis
     onAssistantOpenChange(next);
     if (focus) (next ? assistantTab : guideTab).current?.focus();
   }
+  // This owner stays beside VideoView, never inside a photo/diagram branch or AI.
+  // Hiding it keeps test choices and in-flight work mounted.
+  if (toolbar) return <div className="wiring-task-toolbar">
+    <div className="wiring-task-reveal" hidden={visible}>{revealControl ?? <button type="button" aria-controls={panelId}
+      aria-expanded={visible} onClick={onReveal}>{name} · {sessionLabel(guide.phase, tr)} <span aria-hidden="true">⌄</span></button>}</div>
+    <section id={panelId} hidden={!visible} aria-label={tr("接線任務", "Wiring task")}>{children}</section>
+  </div>;
   return <section id={panelId} className="wiring-workspace" hidden={!visible} aria-label={tr("接線與 AI 工作區", "Wiring and AI workspace")}>
     <div hidden={guideOnly} className="wiring-workspace-tabs" role="tablist" aria-label={tr("接線工作區內容", "Wiring workspace views")}
       onKeyDown={event => {
@@ -56,4 +66,8 @@ export function WiringWorkspace({ design, guide, visible, assistantOpen, onAssis
     <div id={`${id}-guide`} className="wiring-workspace-view" role={guideOnly ? "region" : "tabpanel"} aria-label={guideOnly ? tr("接線引導", "Wiring guide") : undefined} aria-labelledby={guideOnly ? undefined : `${id}-guide-tab`} hidden={!guideOnly && assistantOpen}>{children}</div>
     {!guideOnly ? <div id={`${id}-ai`} className="wiring-workspace-view" role="tabpanel" aria-labelledby={`${id}-ai-tab`} hidden={!assistantOpen}>{assistant}</div> : null}
   </section>;
+}
+
+function sessionLabel(phase: string, tr: (zh: string, en: string) => string) {
+  return phase === "prepare" ? tr("開始引導", "Start guidance") : phase === "review" ? tr("接線與測試", "Wiring & tests") : tr("繼續接線", "Continue wiring");
 }

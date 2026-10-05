@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toDataURL } from "qrcode";
 import { useMakerText } from "../lib/useMaker";
-import { useHeaderPanel } from "../lib/headerPanels";
+import { useHeaderPanel, usePhoneUploadEntry } from "../lib/headerPanels";
 import type { AssistantController, AssistantMessage } from "../lib/assistant";
 import { acceptPhotoImageSize } from "../lib/photoWiring";
 import { acceptMobileCapture, mobileError, mobileRequest, mobilePreviewLease, mobileModelRuntime, mobileVideoFresh, followMobileSource, openMobileViewer, useMobileCompanion, useDesktopStreamCapture,
@@ -202,7 +202,15 @@ export function MobileStreamCaptureActions({ live, active, busy, error, onCaptur
 export function MobileCompanion({ controller, aiReady, selection, workspace }: { controller: AssistantController; aiReady: boolean;
   selection: { id: string; nonce: number } | null; workspace?: MobileWorkspaceTargets }) {
   const tr = useMakerText();
-  const mobile = useMobileCompanion(controller.mobileContext, Boolean(controller.project) && !controller.demoOpen);
+  const phoneUpload = usePhoneUploadEntry();
+  const project = controller.mobileContext.design?.current;
+  const currentProjectScope = project ? `${project.id}:${project.revision}` : null;
+  const partsCheckRequested = controller.mobileContext.stage === 'design' && currentProjectScope !== null && phoneUpload.scope === currentProjectScope;
+  const mobileContext = { ...controller.mobileContext, ui: { parts_check: partsCheckRequested } };
+  const mobile = useMobileCompanion(mobileContext, Boolean(controller.project) && !controller.demoOpen);
+  useEffect(() => {
+    if (phoneUpload.scope && !partsCheckRequested) phoneUpload.clear?.();
+  }, [phoneUpload.scope, phoneUpload.clear, partsCheckRequested]);
   const [open, setOpen] = useHeaderPanel("phone");
   const container = useRef<HTMLDivElement>(null);
   const [panelHost, setPanelHost] = useState<Element | null>(null);
@@ -221,6 +229,7 @@ export function MobileCompanion({ controller, aiReady, selection, workspace }: {
   const [localWire, setLocalWire] = useState<{ captureId: string; wireId: string } | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [view, setView] = useState<"connection" | "live" | "photo">("connection");
+  useEffect(() => { if (phoneUpload.request) { setView('connection'); setConnectionChecked(false); } }, [phoneUpload.request]);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [pairingExpired, setPairingExpired] = useState(false);
   const [connectionChecked, setConnectionChecked] = useState(false);

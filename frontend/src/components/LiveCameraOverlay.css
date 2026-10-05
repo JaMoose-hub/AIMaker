@@ -7,6 +7,9 @@
 .live-camera-toolbar .image-view-segments { min-height:38px; box-sizing:border-box; background:rgba(16,24,35,.86); border-color:#8db6d03d; backdrop-filter:blur(14px); }
 .app.tinkro-theme:not(.display-mode-active) .live-camera-toolbar .image-view-segments > button { color:#9aafc0; }
 .app.tinkro-theme:not(.display-mode-active) .live-camera-toolbar .image-view-segments > button[aria-pressed="true"] { color:#b7e0ff; background:#284461; border-color:#6194be65; }
+.live-camera-toolbar .photo-guide-view-switch { background:rgba(16,24,35,.86); border-color:#8db6d03d; backdrop-filter:blur(14px); }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-toolbar .photo-guide-view-switch>button { height:30px; color:#9aafc0; }
+.app.tinkro-theme:not(.display-mode-active) .live-camera-toolbar .photo-guide-view-switch>button[aria-pressed="true"] { color:#b7e0ff; background:#284461; border-color:#6194be65; }
 .video-shell.has-view-navigation .video-legend { top:58px; }
 .live-camera-dock .image-source-host { min-width:0; pointer-events:auto; }
 .live-camera-dock .image-source-select { width:100%; }
@@ -35,6 +38,7 @@
   .live-camera-toolbar { gap:6px; }
   .live-camera-toolbar > .image-view-controls { flex-basis:100%; }
   .live-camera-toolbar .image-view-segments { min-height:44px; }
+  .app.tinkro-theme:not(.display-mode-active) .live-camera-toolbar .photo-guide-view-switch>button { height:36px; }
   .video-shell.has-view-navigation .video-legend { top:116px; }
   .live-camera-dock { --live-control-height:44px; top:10px; right:10px; grid-template-columns:minmax(0,140px) 44px; }
   .app.tinkro-theme:not(.display-mode-active) .live-camera-dock .gpio-capture-action .gpio-capture-button { width:44px; padding:0; }

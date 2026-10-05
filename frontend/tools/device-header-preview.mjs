@@ -14,7 +14,7 @@ const load=(path,deps={})=>{
     compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX},
   }).outputText)(id=>{
     if(id==='react')return React;
-    if(id==='../lib/headerPanels')return {useHeaderPanel:(_panel,initial=false)=>React.useState(initial)};
+    if(id==='../lib/headerPanels')return {useHeaderPanel:(_panel,initial=false)=>React.useState(initial),usePhoneUploadEntry:()=>({request:0})};
     if(id==='react/jsx-runtime')return runtime;
     if(id.endsWith('.css'))return {};
     if(id in deps)return deps[id];

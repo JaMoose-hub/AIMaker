@@ -11,6 +11,7 @@ const url=text=>`data:text/javascript;base64,${Buffer.from(text).toString('base6
 const compile=text=>ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 const pricingUrl=url(compile(read('../src/lib/materialPricing.ts')));
 const {materialUsdEstimate,MATERIAL_USD_REFERENCE}=await import(pricingUrl);
+const resourceUrl=url(compile(read('../src/lib/blueprintResources.ts')));
 
 test('USD reference is pinned, dated and attributed without live fetching',()=>{
   assert.deepEqual(MATERIAL_USD_REFERENCE,{twdPerUsd:31.842,date:'2026-10-01',source:'https://www.cbc.gov.tw/en/lp-700-2.html'});
@@ -37,16 +38,19 @@ test('invalid estimates do not leak NaN, Infinity or negative retail prices',()=
 
 async function blueprint(locale) {
   let js=compile(read('../src/components/BlueprintPage.tsx'));
+  js=js.replace(/import ["']\.\/BlueprintPage\.css["'];?/, '');
   const replacements={
     react:import.meta.resolve('react'),'react/jsx-runtime':import.meta.resolve('react/jsx-runtime'),
     '../lib/maker':url('export const makerCatalog={modules:[]};export const structuralParts={wheel:{name:"Wheel",price:30}};'),
     '../lib/useMaker':url(`export const useMakerText=()=>(zh,en)=>${locale==='en'?'en':'zh'};`),
     '../lib/i18n':url(`export const useI18n=()=>({locale:${JSON.stringify(locale)},tx:v=>v[${JSON.stringify(locale)}]});`),
-    '../lib/systemText':systemTextUrl,'../lib/materialPricing':pricingUrl,
-    '../lib/componentWiringGuides':url('export const guideFor=()=>({name:{en:"Sensor","zh-TW":"感測器"}});'),
+    '../lib/systemText':systemTextUrl,'../lib/materialPricing':pricingUrl,'../lib/blueprintResources':resourceUrl,
+    '../lib/componentWiringGuides':url('export const guideFor=()=>({name:{en:"Sensor","zh-TW":"感測器"},safety:{en:"Verify ratings","zh-TW":"核對規格"}});'),
     './CircuitDiagram':url('export const CircuitDiagram=()=>null;'),
     './MakerSplitLayout':url(`import {createElement} from ${JSON.stringify(import.meta.resolve('react'))};export const MakerSplitLayout=({left,children})=>createElement('main',{},left,children);`),
     './DesignViewSwitch':url('export const DesignViewSwitch=()=>null;'),
+    './HardwarePartsCheck':url('export const HardwarePartsCheck=()=>null;'),
+    './AssemblyGuide':url(`import {createElement} from ${JSON.stringify(import.meta.resolve('react'))};export const AssemblyGuide=({instructions})=>createElement('div',{},instructions);`),
   };
   for(const [from,to] of Object.entries(replacements)) js=js.replaceAll(JSON.stringify(from),JSON.stringify(to));
   return (await import(url(js))).BlueprintPage;
@@ -56,7 +60,7 @@ const design=freeze({id:'original-project',revision:7,source:'ai',title:'Existin
   {id:'pi',name:'Raspberry Pi 5',purpose:'Controller',quantity:1,price:2500},
   {id:'wires',name:'Jumper wires',purpose:'Connections',quantity:11,price:2},
   {id:'unknown',name:'Unknown part',purpose:'Unpriced',quantity:1,price:NaN},
-],assembly:{description:'Existing assembly',parts:[{kind:'wheel',quantity:3,purpose:'Manual wheels'}]},wiring:[],instructions:['Keep the existing instruction'],unresolved:[]});
+],assembly:{description:'Existing assembly',parts:[{kind:'wheel',quantity:3,purpose:'Manual wheels'}]},component_ids:[],wiring:[],instructions:['Keep the existing instruction'],unresolved:[]});
 
 for(const locale of ['zh-TW','en']) test(`Blueprint ${locale} ignores image-only motors entirely`,async()=>{
   const BlueprintPage=await blueprint(locale);
@@ -66,7 +70,7 @@ for(const locale of ['zh-TW','en']) test(`Blueprint ${locale} ignores image-only
   assert.equal(renderToStaticMarkup(createElement(BlueprintPage,{...props,design:visual})),base);
 });
 
-for(const locale of ['zh-TW','en']) test(`Blueprint ${locale} presents USD subtotals and partner buttons without mutating BOM or structure`,async()=>{
+for(const locale of ['zh-TW','en']) test(`Blueprint ${locale} presents purchase links without fictitious retail prices or mutating BOM`,async()=>{
   const before=JSON.stringify(design);
   const BlueprintPage=await blueprint(locale);
   const html=renderToStaticMarkup(createElement(BlueprintPage,{design,onGuide(){},onEdit(){},onViewChange(){},hasCandidate:false,generating:false}));
@@ -74,19 +78,17 @@ for(const locale of ['zh-TW','en']) test(`Blueprint ${locale} presents USD subto
   assert.equal(design.bom[0].price,2500);
   const cards=html.match(/<article[\s\S]*?<\/article>/g);
   assert.equal(cards.length,4);
-  assert.match(cards[0],/US\$78\.51/);
-  assert.match(cards[1],/× 11[\s\S]*US\$0\.69/);
-  assert.match(cards[2],locale==='en'?/Not estimated/:/待估價/);
-  assert.match(cards[3],/× 3[\s\S]*US\$2\.83/);
+  assert.match(cards[1],/× 11/);
+  assert.match(cards[3],/× 3/);
   for(const card of cards) {
-    assert.doesNotMatch(card,/NT\$|NaN|Infinity|Demo shop|示範導購/);
-    assert.match(card,/aria-haspopup="dialog" aria-controls="[^"]+-partner-dialog"/);
+    assert.doesNotMatch(card,/NT\$|US\$|NaN|Infinity|Demo shop|示範導購/);
+    assert.match(card,/href="https:\/\/www.google.com\/search\?tbm=shop&amp;q=/);
+    assert.match(card,/target="_blank" rel="noopener noreferrer"/);
   }
-  assert.match(html,locale==='en'?/Parts &amp; partners/:/材料與合作/);
-  assert.match(html,locale==='en'?/purchasing is not available yet/:/尚未開放購買/);
-  assert.match(html,locale==='en'?/Partner opportunities · Raspberry Pi 5/:/合作招商中 · Raspberry Pi 5/);
-  assert.match(html,/US\$1 = NT\$31\.842 · 2026-10-01/);
-  assert.match(html,/href="https:\/\/www.cbc.gov.tw\/en\/lp-700-2.html" target="_blank" rel="noreferrer"/);
+  assert.match(html,locale==='en'?/Find parts/:/購買材料/);
+  assert.match(html,locale==='en'?/External product links/:/外部商品入口/);
+  assert.match(html,locale==='en'?/Partners wanted/:/招商中/);
+  assert.match(html,locale==='en'?/Electronic component manufacturers welcome/:/歡迎電子零件廠合作/);
   assert.match(html,/Keep the existing instruction/);
-  assert.match(html,/<dialog[^>]+class="maker-product maker-partnership"[^>]+aria-labelledby="[^"]+"[^>]+aria-describedby="[^"]+"/);
+  assert.doesNotMatch(html,/<dialog|合作招商中/);
 });

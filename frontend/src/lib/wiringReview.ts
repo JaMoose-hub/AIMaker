@@ -55,6 +55,26 @@ export interface WiringReviewResult {
   evidence?: string;
   next_step: string;
   authority?: "visual_advisory";
+  diagnosis?: {
+    status: "suspected" | "uncertain" | "no_issue_seen";
+    observed_board_pin: string | null;
+    observed_physical_pin: number | null;
+    observed_component_pin: string | null;
+    board_connector_id: string | null;
+    component_connector_id: string | null;
+    evidence: string;
+    retake_roles: WiringPhotoRole[];
+  };
+}
+
+/** Never upgrade legacy colour-only findings to either a fault or a match. */
+export function wiringFindingStatus(row: WiringReviewResult) {
+  return row.diagnosis?.status ?? "uncertain";
+}
+
+export function prioritiseWiringResults(rows: WiringReviewResult[]) {
+  const rank = { suspected: 0, uncertain: 1, no_issue_seen: 2 };
+  return [...rows].sort((a, b) => rank[wiringFindingStatus(a)] - rank[wiringFindingStatus(b)]);
 }
 export interface WiringReviewState {
   id: string;

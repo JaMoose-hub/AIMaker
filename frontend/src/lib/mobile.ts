@@ -5,7 +5,7 @@ import { preferBrowserH264 } from "./mobileBrowserRtc";
 import { requestLowJitterBuffer } from "./mobileViewerStats";
 import { receivePhoneRecognition, type MobileRecognition } from "./mobileRecognition";
 
-export type MobileContext = AssistantController["mobileContext"];
+export type MobileContext = AssistantController["mobileContext"] & { ui?: { parts_check: boolean } };
 export interface MobilePairing { code: string; qr_payload: string | Record<string, unknown>; expires_at: number | string; base_urls: string[]; base_url?: string; web_url?: string | null }
 export interface MobileWebConfiguration { available: boolean; base_url: string | null; web_url: string | null; certificate_profile_url: string; certificate_url: string }
 /** Normalize an explicit address without inferring it from a historical session. */

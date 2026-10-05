@@ -9,6 +9,7 @@ const source = readFileSync(sourceURL, "utf8").replace(/import (\w+) from "([^"]
 const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } });
 const { circuitLayout, circuitSelection } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const catalog = JSON.parse(readFileSync(new URL("../../profiles/component-catalog.json", import.meta.url), "utf8"));
+const board = JSON.parse(readFileSync(new URL("../../profiles/boards/raspberry-pi-5/board.json", import.meta.url), "utf8"));
 const ids = catalog.modules.map(m => m.id);
 function design(component_ids = ids) {
   return { component_ids, wiring: component_ids.flatMap(id => catalog.modules.find(m => m.id === id).steps.map(s => ({ ...s, id: `${id}:${s.id}`, componentId: id }))) };
@@ -28,11 +29,52 @@ test("all active combinations preserve the canonical project wires and endpoint 
         assert.equal(r.wire.componentId, module.id);
         assert.equal(r.pin.id, r.wire.componentPin);
         assert.equal(r.pin.wire, r.wire);
+        assert.equal(r.boardPin.id, r.wire.boardPin);
         assert(r.boardY > 128, "Pi heading must not overlap a terminal");
       }
     }
     assert.equal(JSON.stringify(d), snapshot);
   }
+});
+
+test("Pi J8 always contains all forty physical pins in two paired rows of twenty", () => {
+  for (const only of [undefined, ...ids]) {
+    const {boardPins, height} = circuitLayout(design(), only);
+    assert.equal(boardPins.length, 40);
+    assert.equal(new Set(boardPins.map(pin => pin.id)).size, 40);
+    assert.deepEqual(boardPins.map(pin => pin.number), Array.from({length:40}, (_, i) => i + 1));
+    assert.equal(new Set(boardPins.map(pin => pin.x)).size, 2);
+    for (let row = 0; row < 20; row++) {
+      const pair = boardPins.filter(pin => pin.row === row);
+      assert.deepEqual(pair.map(pin => pin.number), [row * 2 + 1, row * 2 + 2]);
+      assert.deepEqual(pair.map(pin => pin.column), [0, 1]);
+      assert.equal(pair[0].y, pair[1].y);
+      assert(pair.every(pin => pin.y > 132 && pin.y < height - 28));
+    }
+    for (const pin of boardPins) assert.equal(pin.id, board.pins.find(p => p.index === pin.number).id);
+  }
+});
+
+test("routes connect to physical pins, not lesson order or a GPIO number", () => {
+  const {modules} = circuitLayout(design());
+  const routes = modules.flatMap(module => module.routes);
+  const expected = {"hc-sr04:VCC":1, "hc-sr04:TRIG":11, "hc-sr04:ECHO":12,
+    "hc-sr04:GND":6, "mrd-tf240-8p-cs:VCC":17, "mrd-tf240-8p-cs:GND":20};
+  for (const [key, number] of Object.entries(expected)) {
+    const route = routes.find(r => `${r.wire.componentId}:${r.wire.componentPin}` === key);
+    assert.equal(route.boardPin.number, number, key);
+  }
+  assert.equal(new Set(routes.map(route => route.laneX)).size, routes.length);
+});
+
+test("an unknown Pi endpoint never invents a connection or an infinite canvas", () => {
+  const d = design(['hc-sr04']);
+  d.wiring = d.wiring.map(wire => ({...wire, boardPin:'unknown'}));
+  const {modules, boardPins, height} = circuitLayout(d);
+  assert.equal(boardPins.length, 40);
+  assert.equal(modules[0].routes.length, 0);
+  assert(modules[0].pins.every(pin => !pin.wire));
+  assert(Number.isFinite(height));
 });
 
 test("module pin order and header edge follow camera vision profiles, not lesson order", () => {
@@ -60,6 +102,8 @@ test("ECHO divider branch terminates on this module's real GND route", () => {
   const ground = ultrasonic.routes.find(r => r.pin.id === "GND");
   assert.equal(echo.wire.connectionKind, "divider");
   assert.equal(echo.groundY, ground.boardY);
+  assert(echo.groundX > Math.max(echo.laneX, ground.laneX));
+  assert(echo.groundX < 366, 'divider branch joins the routed ECHO before its resistor');
   assert.equal(echo.wire.boardPin, "GPIO18");
   assert.equal(ground.wire.boardPin, "GND_P6");
 });

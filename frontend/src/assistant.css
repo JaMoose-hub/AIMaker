@@ -11,8 +11,8 @@
 }
 .assistant-workspace { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .assistant-work-surface, .assistant-project-workspace { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; }
-.assistant-workspace.is-unified { display: grid; grid-template-columns: minmax(0, 1fr) 12px var(--assistant-width, 400px); transition: grid-template-columns 240ms cubic-bezier(.22,.68,0,1); }
-.assistant-workspace.is-unified.ai-collapsed { grid-template-columns: minmax(0, 1fr) 8px 64px; }
+.assistant-workspace.is-unified { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 12px var(--assistant-width, 400px); transition: grid-template-columns 240ms cubic-bezier(.22,.68,0,1); }
+.assistant-workspace.is-unified.ai-collapsed { grid-template-columns: minmax(0, 1fr) 0 0; }
 .assistant-workspace [hidden] { display: none !important; }
 .assistant-workspace .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .assistant-workspace :is(.unified-assistant, .assistant-demo-workspace, .assistant-mobile-tabs) button,
@@ -98,6 +98,18 @@
 .assistant-resizer::before { content: ""; width: 3px; height: 48px; border-radius: 3px; background: var(--ink-muted); }
 .assistant-resizer:hover, .assistant-resizer:focus-visible { background: var(--surface-blue); }
 .assistant-resizer:is(:hover, :focus-visible)::before { background: var(--brand-link); }
+@media (min-width: 1100px) {
+  /* Keep the mounted conversation, but no empty rail or resize handle.
+     The small edge entry avoids the top camera tools and bottom guide actions. */
+  .assistant-workspace.is-unified.ai-collapsed > .assistant-resizer { display: none; }
+  .assistant-workspace.is-unified.ai-collapsed > .assistant-chat-surface {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 46px; height: 66px; z-index: 6; border: 0; pointer-events: none;
+  }
+  .app.tinkro-theme:not(.display-mode-active) .assistant-workspace.is-unified.ai-collapsed .assistant-collapse {
+    margin-top: 0; pointer-events: auto;
+  }
+}
 .assistant-workspace :focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
 .assistant-mobile-tabs { display: none; }
 .unified-assistant { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; color: var(--ink-primary); }
@@ -108,7 +120,9 @@
 .unified-assistant-heading > div { display: flex; flex-direction: column; gap: 3px; }
 .unified-assistant small { color: var(--ink-secondary); font-size: 11px; }
 .unified-assistant button { font-size: 12px; }
-.assistant-media-reference { display:block; padding:5px 8px; border-left:2px solid var(--brand-link); background:var(--surface-blue); overflow-wrap:anywhere; }
+.assistant-media-reference { display:flex; align-items:center; gap:8px; padding:5px 8px; border-left:2px solid var(--brand-link); background:var(--surface-blue); overflow-wrap:anywhere; }
+.assistant-media-reference > span { flex:1; min-width:0; }
+.assistant-media-reference > button { flex:none; min-height:24px; padding:2px 6px; color:var(--ink-secondary); background:transparent; }
 .assistant-more { position: relative; }
 .assistant-more > summary { cursor: pointer; font-size: 12px; }
 .assistant-more[open] > div { position: absolute; right: 0; top: 24px; width: min(260px, 65vw); max-height: 55vh; overflow: auto; z-index: 30; border: 1px solid var(--line-strong); padding: 10px; display: grid; gap: 8px; border-radius: 8px; background: var(--surface-card); box-shadow: var(--shadow-popover); }

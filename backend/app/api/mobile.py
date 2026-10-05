@@ -45,6 +45,10 @@ def identity(request, sid=None):
     return sid
 
 
+class MobileUiBody(BaseModel):
+    parts_check: bool = False
+
+
 class ContextBody(BaseModel):
     conversation_id: str = Field(min_length=1, max_length=100)
     title: str = Field(default="Tinkro", max_length=200)
@@ -53,6 +57,7 @@ class ContextBody(BaseModel):
     design: GenerateRequest
     context: dict = Field(default_factory=dict)
     round: int = Field(default=0, ge=0)
+    ui: MobileUiBody = Field(default_factory=MobileUiBody)
 
 
 class PairingBody(BaseModel):
@@ -75,6 +80,7 @@ class MessageBody(BaseModel):
     capture_id: str | None = None
     check_scope: Literal["one", "all"] | None = None
     wire_id: str | None = None
+    purpose: Literal["parts_check"] | None = None
 
 
 class OfferBody(BaseModel):

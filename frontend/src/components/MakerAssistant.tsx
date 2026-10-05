@@ -5,6 +5,7 @@ import type { useMakerAI } from "../lib/useMakerAI";
 import { useI18n } from "../lib/i18n";
 import { useMakerText } from "../lib/useMaker";
 import { makerReplyPreview } from "../lib/makerReply";
+import { AssistantMarkdown } from "./AssistantMarkdown";
 import { systemText } from "../lib/systemText";
 
 export function MakerAssistant({ state, setState, assistant, onReview, onNewProject, showHeading = true }: {
@@ -92,12 +93,12 @@ export function MakerAssistant({ state, setState, assistant, onReview, onNewProj
           <small>{msg.role === "user" ? tr("你", "You") : "Tinkro AI"}{msg.source === "demo" ? tr(" · 示範對話", " · Sample chat") : ""}</small>
           {preview ? <>
             {preview.blocks.map((block, index) => {
-              if (block.kind === "paragraph") return <p className="maker-reply-text" key={index}>{block.text}</p>;
+              if (block.kind === "paragraph") return <AssistantMarkdown className="maker-reply-text" key={index} text={block.text} />;
               const List = block.ordered ? "ol" : "ul";
-              return <List className="maker-reply-points" key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex} value={block.ordered ? item.ordinal : undefined}>{item.text}</li>)}</List>;
+              return <List className="maker-reply-points" key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex} value={block.ordered ? item.ordinal : undefined}><AssistantMarkdown text={item.text} /></li>)}</List>;
             })}
-            {preview.hasMore ? <details className="maker-reply-full"><summary>{tr("查看完整回覆", "Read full reply")}</summary><p>{msg.text}</p></details> : null}
-          </> : <p>{msg.text}</p>}
+            {preview.hasMore ? <details className="maker-reply-full"><summary>{tr("查看完整回覆", "Read full reply")}</summary><AssistantMarkdown text={msg.text} /></details> : null}
+          </> : msg.role === 'assistant' ? <AssistantMarkdown text={msg.text} /> : <p>{msg.text}</p>}
         </div>;
       }) : <p className="maker-muted">{tr("告訴我你想做什麼。先看作品概念，確認後再一起準備 Blueprint 與接線。", "Tell me what you want to make. Review the concept first, then work through the blueprint and wiring together.")}</p>}
     </div>
