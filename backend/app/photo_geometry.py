@@ -56,6 +56,37 @@ def _observation(corners, confidence, body):
     return BoardPoseObservation(points, float(confidence), np.full(4, confidence), tuple(box))
 
 
+def _body_search_region(body, frame):
+    """A fresh body box may bound reference search, never define board corners.
+
+    The direct model can reject its quad as clipped even when the actual PCB
+    is fully visible inside its oversized box. Reference correspondences on
+    this photo must establish semantic corners before any pin projection.
+    """
+    if not isinstance(body, dict):
+        return None
+    try:
+        box = np.asarray(body.get("box"), dtype=float)
+        confidence = float(body.get("confidence", 0.))
+    except (TypeError, ValueError):
+        return None
+    if (box.shape != (4,) or not np.isfinite(box).all()
+            or not np.isfinite(confidence) or not 0. < confidence <= 1.
+            or np.any(box[2:] <= box[:2])):
+        return None
+    lo = np.maximum(box[:2], [0, 0])
+    hi = np.minimum(box[2:], [frame.shape[1], frame.shape[0]])
+    if np.any(hi-lo < 32):
+        return None
+    x0, y0 = lo
+    x1, y1 = hi
+    # These axis-aligned points are only an API carrier for the ROI. They
+    # are not retained as a raw/corrected outline or passed to pin projection.
+    points = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+    return BoardPoseObservation(points, confidence, np.full(4, confidence),
+                                tuple(np.r_[lo, hi]), source="photo_body_roi")
+
+
 def _localization(object_id, raw, confidence, locator=None):
     model_path = getattr(locator, "model_path", None)
     return dict(object_id=object_id, status="uncertain" if raw is not None else "not_found",
@@ -251,18 +282,43 @@ class PhotoGeometry:
             local["reason"]=reason
             return replace(result,tracking="searching",pins=[],outline_px=None,
                 pose_stability_state="photo_geometry_unverified",pose_image_confirmed=False),local
-        if raw is None:
-            if result.body:
-                local["status"]="uncertain"
-            return rejected("model_missing" if not result.body else "model_body_only")
-        if profile is None or not _quad_valid(raw,frame):
-            return rejected("invalid_or_clipped_geometry" if profile is not None else "profile_missing")
-        observation=_observation(raw,result.confidence,result.body)
+        if result.body:
+            local["status"]="uncertain"
+        if profile is None:
+            return rejected("profile_missing")
+        has_quad = raw is not None and _quad_valid(raw, frame)
+        observation = (_observation(raw,result.confidence,result.body) if has_quad
+                       else _body_search_region(result.body, frame))
+        if observation is None:
+            return rejected("invalid_or_clipped_geometry" if raw is not None
+                            else "model_body_only" if result.body else "model_missing")
+        evidence["search_region_basis"] = "model_quad" if has_quad else "body_roi_only"
+        evidence["search_region_px"] = list(observation.box_xyxy)
         try:
             boundary={}
-            pcb=refine_board_corners_from_pcb(frame,observation,reference_board_bgr=reference,boundary_evidence=boundary)
+            # A box carries no semantic orientation: it cannot seed the PCB
+            # corner fallback. Only independent reference matching may recover it.
+            pcb=(refine_board_corners_from_pcb(frame,observation,reference_board_bgr=reference,boundary_evidence=boundary)
+                 if has_quad else None)
             evidence["pcb_boundary"]=boundary
             matched=None
+            native_attempted=False
+            def match_native():
+                nonlocal native_attempted
+                native_attempted=True
+                profile_dir=getattr(primary,"_profile_dir",None)
+                if self._board_fallback is None and profile_dir is not None:
+                    native=_native_board_reference(profile,profile_dir,reference)
+                    if native is not None:
+                        self._board_fallback=self._board_reference.supplemented("native",native.keypoints,native.descriptors)
+                if self._board_fallback is None:
+                    return None, {}
+                candidate=self._board_fallback.locate(frame,region=observation)
+                report=dict(self._board_fallback.evidence)
+                report["reference_source"]="one_existing_profile_reference"
+                evidence["reference_attempts"].append(dict(strategy="rectified_plus_native_unique",**report))
+                return (candidate if _reference_supported(report) else None), report
+
             if reference is not None:
                 if reference is not self._reference_image:
                     self._board_reference=PhotoReferenceRecovery(reference)
@@ -272,19 +328,9 @@ class PhotoGeometry:
                 evidence["reference"]=dict(self._board_reference.evidence)
                 evidence["reference_attempts"]=[dict(strategy="raw_unique",**evidence["reference"])]
                 if not _reference_supported(evidence["reference"]):
-                    matched=None
-                    profile_dir=getattr(primary,"_profile_dir",None)
-                    if self._board_fallback is None and profile_dir is not None:
-                        native=_native_board_reference(profile,profile_dir,reference)
-                        if native is not None:
-                            self._board_fallback=self._board_reference.supplemented("native",native.keypoints,native.descriptors)
-                    if self._board_fallback is not None:
-                        candidate=self._board_fallback.locate(frame,region=observation)
-                        fallback=dict(self._board_fallback.evidence)
-                        fallback["reference_source"]="one_existing_profile_reference"
-                        evidence["reference_attempts"].append(dict(strategy="rectified_plus_native_unique",**fallback))
-                        if candidate is not None and _reference_supported(fallback):
-                            matched=candidate; evidence["reference"]=fallback
+                    matched,fallback=match_native()
+                    if matched is not None:
+                        evidence["reference"]=fallback
             if matched is not None:
                 corrected=matched; method="reference_sift_j8"
                 evidence.update(inliers=evidence["reference"].get("inliers"),
@@ -299,13 +345,39 @@ class PhotoGeometry:
                 corrected=None; method="yolo_candidate"
             if corrected is None or not _quad_valid(corrected.corners_px,frame):
                 return rejected("board_geometry_unverified")
+            size=(frame.shape[1],frame.shape[0])
+            confidence = result.confidence if has_quad else float(corrected.confidence)
+            pins,outline=_project_profile_on_observed_quad(profile,corrected.corners_px,size,confidence)
+            j8={}
+            pins=_correct_pi5_j8_from_image(frame,profile,pins,size,diagnostic=j8)
+            # A minimally supported board homography may be too imprecise at
+            # the thin header. Try the existing native-reference bank once,
+            # only accepting a nearby hypothesis with MORE distributed board
+            # support, then independently check the current image's J8 rows.
+            # Never choose a competing board merely because it yields pins.
+            if (not j8.get("accepted") and matched is not None and not native_attempted):
+                candidate,report=match_native()
+                base=evidence["reference"]
+                if candidate is not None and _quad_valid(candidate.corners_px,frame):
+                    shift=float(np.linalg.norm(candidate.corners_px-corrected.corners_px,axis=1).max())
+                    diagonal=float(np.linalg.norm(corrected.corners_px[2]-corrected.corners_px[0]))
+                    stronger=(report.get("unique_inliers",0)>base.get("unique_inliers",0)
+                              and report.get("coverage",0)>=base.get("coverage",0)
+                              and shift<=.05*diagonal)
+                    evidence["native_refinement"]={"stronger_board_support":stronger,"max_corner_shift_px":round(shift,3)}
+                    if stronger:
+                        candidate_confidence=result.confidence if has_quad else float(candidate.confidence)
+                        candidate_pins,candidate_outline=_project_profile_on_observed_quad(profile,candidate.corners_px,size,candidate_confidence)
+                        candidate_j8={}
+                        candidate_pins=_correct_pi5_j8_from_image(frame,profile,candidate_pins,size,diagnostic=candidate_j8)
+                        evidence["j8_attempts"]=[dict(strategy="rectified",**j8),dict(strategy="rectified_plus_native",**candidate_j8)]
+                        corrected=candidate; confidence=candidate_confidence
+                        pins,outline,j8=candidate_pins,candidate_outline,candidate_j8
+                        evidence["reference"]=report
+                        evidence.update(inliers=report.get("inliers"),reprojection_px=report.get("error_px"),reference_coverage=report.get("coverage"))
             local.update(method=method,corrected_outline_px=_points(corrected.corners_px))
             _delta(evidence,raw,corrected.corners_px)
             evidence["board_geometry_verified"]=True
-            size=(frame.shape[1],frame.shape[0])
-            pins,outline=_project_profile_on_observed_quad(profile,corrected.corners_px,size,result.confidence)
-            j8={}
-            pins=_correct_pi5_j8_from_image(frame,profile,pins,size,diagnostic=j8)
             evidence["j8"]=j8
             evidence["j8_support_samples"]=sum(j8.get("support",[])) if j8.get("accepted") else 0
             evidence["candidate_contact_support"]=j8.get("support",[])
@@ -317,7 +389,7 @@ class PhotoGeometry:
                 return rejected("j8_rows_unverified")
             local.update(status="located",reason="board_and_j8_supported")
             evidence["pin_geometry_verified"]=True
-            return replace(result,tracking="locked",pins=pins,outline_px=outline,
+            return replace(result,tracking="locked",confidence=confidence,pins=pins,outline_px=outline,
                 pose_path="photo_"+method,pose_stability_state="current_photo_supported",
                 pose_inliers=evidence.get("inliers"),pose_reproj_px=evidence.get("reprojection_px"),
                 pin_alignment=j8,pose_image_confirmed=False),local

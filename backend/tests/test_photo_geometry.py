@@ -173,6 +173,100 @@ def test_invalid_or_clipped_quad_is_rejected_before_local_matching(monkeypatch):
     recovery.locate.assert_not_called()
 
 
+@pytest.mark.parametrize("path", ["yolo_clipped", "yolo_body_only"])
+def test_body_only_photo_runs_fresh_reference_geometry_before_projecting_pins(monkeypatch, path):
+    frame,result,detector,recovery,_,corrected=pi_setup(monkeypatch,j8_accepted=True)
+    result=replace(result,tracking="searching",confidence=0.,outline_px=None,pose_path=path,
+        body={"box":[0.,20.,950.,799.],"confidence":.61,"partial":True})
+    updated,local=PhotoGeometry().board(frame,result,detector)
+    assert local["status"]=="located" and len(updated.pins)==40
+    assert (updated.frame_id,updated.ts_ms)==(result.frame_id,result.ts_ms)
+    assert updated.confidence==.8 and local["evidence"]["model_confidence"]==.61
+    assert local["raw_outline_px"] is None
+    assert local["evidence"]["search_region_basis"]=="body_roi_only"
+    np.testing.assert_allclose(updated.outline_px,corrected)
+    region=recovery.locate.call_args.kwargs["region"]
+    assert region.source=="photo_body_roi" and tuple(region.box_xyxy)==(0.,20.,950.,799.)
+    geometry_module.refine_board_corners_from_pcb.assert_not_called()
+    assert not local["evidence"]["contact_visibility_verified"]
+
+
+@pytest.mark.parametrize("box", [[1,2,1,20], [1200,100,1300,200],
+                                 [0,0,float("nan"),400], [100,100,105,105], [100,200,400]])
+def test_invalid_body_roi_never_becomes_a_photo_pose(monkeypatch, box):
+    frame,result,detector,recovery,_,_=pi_setup(monkeypatch,j8_accepted=True)
+    raw=replace(result,outline_px=None,pins=[],body={"box":box,"confidence":.99})
+    updated,local=PhotoGeometry().board(frame,raw,detector)
+    assert updated.pins==[] and updated.tracking=="searching"
+    assert local["corrected_outline_px"] is None and not local["evidence"]["pin_geometry_verified"]
+    recovery.locate.assert_not_called()
+
+
+def test_body_roi_is_not_accepted_without_independent_reference_support(monkeypatch):
+    frame,result,detector,recovery,_,_=pi_setup(monkeypatch,j8_accepted=True,
+        reference_evidence={"source":"reference_sift","accepted":False,"inliers":100})
+    raw=replace(result,outline_px=None,body={"box":[100,100,900,700],"confidence":.99})
+    updated,local=PhotoGeometry().board(frame,raw,detector)
+    assert updated.pins==[] and local["status"]=="uncertain"
+    assert not local["evidence"]["board_geometry_verified"]
+    assert local["candidate_pins"]==[] and local["corrected_outline_px"] is None
+    recovery.locate.assert_called_once()
+    geometry_module.refine_board_corners_from_pcb.assert_not_called()
+
+
+def test_body_box_over_blank_pixels_cannot_recover_from_reference_alone(monkeypatch):
+    from app.vision.yolo_profile_detector import _canonical_reference_board
+    store=ProfileStore(PROFILES)
+    profile=store.profile("raspberry-pi-5")
+    directory=store.board_dir("raspberry-pi-5")
+    detector=NS(_profile=profile,_profile_dir=directory,
+        _reference_board_bgr=_canonical_reference_board(profile,directory))
+    frame=np.full((800,1000,3),110,np.uint8)
+    raw=DetectionResult("raspberry-pi-5",27,1234.,"searching",0.,
+        body={"box":[0,0,1000,800],"confidence":.99,"partial":True})
+    j8=Mock(side_effect=AssertionError("No board evidence may project pins"))
+    monkeypatch.setattr(geometry_module,"_correct_pi5_j8_from_image",j8)
+    updated,local=PhotoGeometry().board(frame,raw,detector)
+    assert local["status"]=="uncertain" and updated.pins==[]
+    assert local["corrected_outline_px"] is None
+    assert not local["evidence"]["board_geometry_verified"]
+    j8.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["stronger", "fewer_inliers", "less_coverage", "distant", "weak_reference", "ambiguous_j8"])
+def test_native_detail_retry_requires_stronger_nearby_board_and_independent_j8(monkeypatch, change):
+    frame,result,detector,recovery,_,corrected=pi_setup(monkeypatch,j8_accepted=False)
+    detail=dict(recovery.evidence, inliers=25,unique_inliers=25,coverage=.35)
+    candidate=corrected+2.
+    if change=="fewer_inliers": detail["unique_inliers"]=18
+    if change=="less_coverage": detail["coverage"]=.25
+    if change=="distant": candidate=corrected+100.
+    if change=="weak_reference": detail["accepted"]=False
+    fallback=NS(evidence=detail,locate=Mock(return_value=observation(candidate,.83)))
+    recovery.supplemented=Mock(return_value=fallback)
+    detector.primary._profile_dir=PROFILES/"boards/raspberry-pi-5"
+    native=Mock(return_value=NS(keypoints=[],descriptors=np.zeros((1,128),np.float32)))
+    monkeypatch.setattr(geometry_module,"_native_board_reference",native)
+    calls=[]
+    def j8(image,profile,pins,size,*,diagnostic):
+        calls.append(image)
+        diagnostic.update(accepted=len(calls)>1 and change!="ambiguous_j8",support=[18,19])
+        return pins
+    monkeypatch.setattr(geometry_module,"_correct_pi5_j8_from_image",j8)
+    updated,local=PhotoGeometry().board(frame,result,detector)
+    assert recovery.locate.call_count==fallback.locate.call_count==native.call_count==1
+    assert len(local["evidence"]["reference_attempts"])==2
+    assert all(image is frame for image in calls)
+    if change=="stronger":
+        assert len(updated.pins)==40 and local["status"]=="located" and len(calls)==2
+        assert local["evidence"]["inliers"]==25
+        np.testing.assert_allclose(updated.outline_px,candidate)
+    else:
+        assert updated.pins==[] and local["status"]=="uncertain"
+        assert not local["evidence"]["pin_geometry_verified"]
+        assert len(calls)==(2 if change=="ambiguous_j8" else 1)
+
+
 def test_saved_replay_rejects_different_photo_identity_without_building_any_detector(tmp_path):
     import json
     capture=tmp_path/"capture.json"; image=tmp_path/"photo.jpg"
