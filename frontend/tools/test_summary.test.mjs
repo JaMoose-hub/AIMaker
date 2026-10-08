@@ -14,17 +14,39 @@ function fixture(cid='hc-sr04') {
   return {design,session,run,tests:{status:{connected:false,active:null,results:[run]}}};
 }
 
-test('stale guide result has one short instruction; history stays accessible but is not a current pass',async()=>{
+test('stale guide result has one short instruction without compact diagnostics or a repeated safety footer',async()=>{
   for(const cid of ['hc-sr04','mrd-tf240-8p-cs']) {
     const f=fixture(cid),before=structuredClone(f);
     const html=await renderGuide(f);
     const info=html.slice(html.indexOf('<div class="guide-panel-body"'),html.indexOf('<footer'));
-    const visible=info.split('<details class="test-diagnostics">')[0];
+    const visible=info.split('class="compact-guide-details" hidden=""')[0];
     assert.match(visible,/待重測/);
     assert.match(visible,/舊結果已失效，請重新測試/);
     assert.doesNotMatch(visible,/本模組人工紀錄|上次測試紀錄|功能通過|無法判定/);
-    assert.match(info,/<details class="test-diagnostics">[\s\S]*非目前接線證據/);
-    assert.match(html,/改線前斷電/);
+    assert.doesNotMatch(info,/test-diagnostics|test-safety-note/);
+    const history=await renderTestCard({...f,view:'all'});
+    assert.match(history,/test-diagnostics/);
+    assert.match(history,/非目前接線證據/);
+    assert.match(history,/test-safety-note/);
+    assert.deepEqual(f,before);
+  }
+});
+
+test('TFT last-wire bottom guide removes the three marked rows in both languages without changing result or actions',async()=>{
+  for(const locale of ['zh-TW','en']) {
+    const f=fixture('mrd-tf240-8p-cs');
+    f.session=maker.previousProjectWire(f.design,f.session);
+    Object.assign(f.run,{invalidated:false,outcome:'failed',reason:'display_white',created_at:Date.now()/1000+60,finished_at:Date.now()/1000+60});
+    f.run.guide_key=componentTests.componentTestKey(f.design,f.session,'mrd-tf240-8p-cs');
+    const before=structuredClone(f);
+    const html=await renderGuide({...f,locale,floating:true,embedded:true});
+    const visible=html.split('class="compact-guide-details" hidden=""')[0];
+    assert.match(visible,/<strong>VCC<\/strong>/);
+    assert.match(visible,/<strong>Pin 17<\/strong>/);
+    assert.doesNotMatch(visible,/guide-pin-caution|BLK 留空|Leave BLK unconnected|test-diagnostics|test-safety-note|測試詳情|Test details/);
+    assert.match(visible,locale==='zh-TW'?/未通過/:/Not passed/);
+    assert.match(visible,/SPI/);
+    assert.match(html,locale==='zh-TW'?/下一步/:/Next/);
     assert.deepEqual(f,before);
   }
 });

@@ -21,7 +21,7 @@ export function HardwarePartsCheck({ onAsk, disabledReason, photoLabel, photoKey
   const ready = demoHardware.some(key => purchased[key].trim()) || includePhoto;
   const parts = [
     { name: 'Raspberry Pi 5', kind: tr('控制板', 'Controller'), hint: tr('填寫板上型號或商品名稱', 'Board model or product name') },
-    { name: 'HC-SR04+ · 3.3V', kind: tr('超音波感測器', 'Ultrasonic sensor'), hint: tr('填寫型號、供電與 ECHO 規格；外觀相似不代表同版本', 'Model, supply and ECHO rating; similar appearance is not the same variant') },
+    { name: 'HC-SR04+ · 3.3V', kind: tr('超音波感測器', 'Ultrasonic sensor'), hint: tr('型號、供電與 ECHO 規格', 'Model and voltage'), detail: tr('請填寫供電與 ECHO 規格；外觀相似不代表同版本。', 'Include supply voltage and ECHO rating. Similar appearance does not mean the same variant.') },
     { name: 'MRD_TFT240_8P_CS · ILI9341', kind: tr('TFT 螢幕', 'TFT display'), hint: tr('填寫型號、控制晶片或腳位數量', 'Model, controller or pin count') },
   ];
   async function ask() {
@@ -47,7 +47,9 @@ export function HardwarePartsCheck({ onAsk, disabledReason, photoLabel, photoKey
       <div className="blueprint-hardware-info"><span>{parts[index].kind}</span><strong>{parts[index].name}</strong>
         <label htmlFor={`${id}-${key}`}>{tr('我買的零件', 'My purchased part')}</label>
         <input id={`${id}-${key}`} value={purchased[key]} maxLength={600} placeholder={parts[index].hint}
+          aria-describedby={parts[index].detail ? `${id}-${key}-hint` : undefined}
           onChange={event => { setPurchased(value => ({ ...value, [key]: event.target.value })); setStatus(''); }} />
+        {parts[index].detail ? <small id={`${id}-${key}-hint`} className="blueprint-hardware-hint">{parts[index].detail}</small> : null}
       </div>
     </li>)}</ol>
     {photoLabel ? <label className="blueprint-photo-choice"><input type="checkbox" checked={includePhoto}

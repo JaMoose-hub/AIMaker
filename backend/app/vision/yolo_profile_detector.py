@@ -750,6 +750,12 @@ class YoloProfileDetector:
         self._pose_filter.reset()
         self._reset_temporal()
 
+    def reset_stream_geometry(self) -> None:
+        """Called by the owning worker, preserving phone calibration policy."""
+        self.reset_for_camera(horizontal_fov_deg=self._horizontal_fov_deg,
+            camera_calibration_path=self._camera_calibration_path,
+            use_camera_calibration=self._use_camera_calibration)
+
     def set_scale_recovery(self, enabled: bool) -> None:
         """Configure the existing Pi ROI model while its worker is stopped."""
         self._scale_recovery_enabled = bool(enabled)
@@ -1539,6 +1545,10 @@ class HybridBoardDetector:
         result.pose_mode = "feature_fallback"
         result.pose_landmarks_visible = 0
         return replace(result, body=body)
+
+    def reset_stream_geometry(self) -> None:
+        self.primary.reset_stream_geometry()
+        self.fallback.reset_stream_geometry()
 
     def close(self) -> None:
         self.primary.close()

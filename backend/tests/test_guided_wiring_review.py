@@ -82,8 +82,23 @@ def _cloud(state, answer, hook=None):
         if hook:
             hook()
         result = deepcopy(answer)
+        if 'POC EXIT INVENTORY:' in prompt:
+            manifest = json.loads(prompt.split('Images are attached in this order:\n')[-1])
+            roles = {row['image_id'] for row in manifest}
+            return dict(images=[dict(image_id=v['role'], markers=[dict(id=c['id'],
+                x_normalized=150+i*100, y_normalized=300, wire_color=c['wire_color']['name'],
+                visibility='clear', wire_roi=None, evidence=c['wire_color']['evidence'])
+                for i, c in enumerate(v['connectors'])], limitations=v['limitations'])
+                for v in result['views'] if v['role'] in roles], limitations='Fake source-bound exits')
         roles = json.loads(prompt.split('Board pin references are naming references only: ')[-1])['requested_roles']
         result['views'] = [v for v in result['views'] if v['role'] in roles]
+        properties = schema['$defs']['ReviewConnector']['properties']
+        assert not {'wire_color', 'position', 'evidence'} & properties.keys()
+        for view in result['views']:
+            for connector in view['connectors']:
+                for field in ('wire_color', 'position', 'evidence'):
+                    connector.pop(field, None)
+        result.setdefault('wire_paths', [])
         return result
     bridge.generate = generate
 
@@ -122,7 +137,7 @@ def test_shared_entry_collects_without_cloud_or_hardware(setup, purpose):
     _photos(service, sid, context)
     result = _analyse(service, state, sid, context)
     assert result['status'] == 'ready' and len(result['results']) == 4
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2
     assert len(state.design_service.bridge.images[0]) == 3
     assert all(r['comparison'] == 'similar' for r in result['results'])
     assert result['reviews'] == {} and all(r['authority'] == 'visual_advisory' for r in result['results'])
@@ -166,7 +181,7 @@ def test_legacy_complete_photo_review_can_still_analyse_without_photo_receipts(s
     _act(service, sid, context, 'analyse')
     service.tick(sid)
     assert service.get(sid)['wiring_review']['status'] == 'ready'
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2
 
 
 def test_unknown_pin_retains_colours_and_duplicate_candidates(setup):
@@ -229,7 +244,7 @@ def test_crop_keeps_original_and_restoring_input_reuses_analysis(setup):
     _act(service, sid, context, 'crop', role='pi_side_a', crop=None)
     _act(service, sid, context, 'analyse')
     service.tick(sid)
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2
     _act(service, sid, context, 'crop', role='pi_side_a', crop=[.1, .2, .8, .9])
     r = _analyse(service, state, sid, context)
     assert len(state.design_service.bridge.images[-1]) == 2  # Changed Pi side overview + detail only.
@@ -246,7 +261,7 @@ def test_crop_keeps_original_and_restoring_input_reuses_analysis(setup):
     assert r['model_receipt']['reused_roles'] == ['pi_side_b', 'component_header']
 
 
-def test_resized_input_receipts_describe_actual_cloud_pixels(setup):
+def test_bounded_input_receipts_describe_actual_cloud_pixels(setup):
     service, state = setup
     old = service.capture_fn
     def capture(st, target, **kwargs):
@@ -261,13 +276,19 @@ def test_resized_input_receipts_describe_actual_cloud_pixels(setup):
     _photos(service, sid, context)
     result = _analyse(service, state, sid, context)
     manifest = result['model_receipt']['image_inputs']
-    assert [v['size'] for v in manifest] == [[1920, 1080], [1920, 1080], [1080, 1440]]
+    assert [v['size'] for v in manifest] == [[2048, 1152], [2048, 1152], [1536, 2048]]
     assert all(v['resized'] and not v['original_pixels'] for v in manifest)
+    assert all(v['encoding'].lower() == 'jpeg' and v['jpeg_quality'] == 92 and v['subsampling'] == 0 for v in manifest)
     assert manifest[2]['source_size'] == [2880, 3840]
     for row, raw in zip(manifest, state.design_service.bridge.images[-1]):
+        assert raw.startswith(b'\xff\xd8')
         decoded = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
         assert row['size'] == [decoded.shape[1], decoded.shape[0]]
         assert row['supplied_sha256'] == hashlib.sha256(raw).hexdigest()
+        original = service.images[sid][row['capture_id']]
+        assert row['source_sha256'] == hashlib.sha256(original).hexdigest()
+        source = cv2.imdecode(np.frombuffer(original, np.uint8), cv2.IMREAD_COLOR)
+        assert row['source_size'] == [source.shape[1], source.shape[0]]
 
 
 def test_same_request_is_idempotent_and_stale_model_result_is_discarded(setup):
@@ -352,8 +373,8 @@ def test_two_repeated_no_progress_rounds_stop_cloud_retries(setup):
     wire_id = result['results'][0]['wire_id']
     _act(service, sid, context, 'review', wire_id=wire_id, decision='confirmed')
     assert service.get(sid)['wiring_review']['reviews'][wire_id]['source'] == 'human'
-    assert len(state.design_service.bridge.calls) == 3
-    assert list(map(len, state.design_service.bridge.images)) == [3, 1, 1]
+    assert len(state.design_service.bridge.calls) == 6
+    assert list(map(len, state.design_service.bridge.images)) == [3, 3, 1, 1, 1, 1]
 
 
 def test_component_switch_reuses_pi_slots_and_only_analyses_new_header(setup):
@@ -465,7 +486,7 @@ def test_restart_keeps_review_summary_but_expires_photos(setup, tmp_path):
     review = restored.get(sid)['wiring_review']
     assert review['status'] == 'stale' and all(not s['available'] for s in review['slots'].values())
     restored.tick(sid)
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2
 
 
 def test_auto_crop_demands_independent_same_source_evidence():
@@ -554,3 +575,32 @@ def test_cloud_schema_uses_provider_supported_array_items_not_tuple_prefix_items
             for child in value:
                 walk(child)
     walk(schema)
+
+
+def test_pin_failure_retry_reuses_poc_inventory_with_one_call_left(setup):
+    service, state = setup
+    _capture_stub(service); sid, context = _start(service); _photos(service, sid, context)
+    def fail_pin():
+        if 'PIN AND ROUTE REVIEW:' in state.design_service.bridge.calls[-1][0]:
+            raise TimeoutError('synthetic pin timeout')
+    _cloud(state, _answer(context), hook=fail_pin)
+    _act(service, sid, context, 'analyse'); service.tick(sid)
+    review = service.get(sid)['wiring_review']
+    assert review['status'] == 'error' and len(review['exit_inventory']) == 3
+    assert not review['results'] and len(state.design_service.bridge.calls) == 2
+    service.sessions[sid]['budget']['model_calls'] = 5
+    result = _analyse(service, state, sid, context)
+    assert result['status'] == 'ready' and result['pipeline_stages'][0]['cached']
+    assert service.sessions[sid]['budget']['model_calls'] == 6
+    assert len(state.design_service.bridge.calls) == 3
+    assert not state.pi_execution.jobs and not state.component_tests.actions
+
+
+def test_new_poc_analysis_reserves_both_calls_before_spending_remaining_budget(setup):
+    service, state = setup
+    _capture_stub(service); sid, context = _start(service); _photos(service, sid, context)
+    service.sessions[sid]['budget']['model_calls'] = 5
+    with pytest.raises(ValueError, match='model_call_limit_reached'):
+        _act(service, sid, context, 'analyse')
+    assert service.get(sid)['wiring_review']['status'] == 'collecting'
+    assert not state.design_service.bridge.calls and not state.pi_execution.jobs

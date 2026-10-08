@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
+import {markdownFixture} from './assistant_markdown_fixture.mjs';
 import {systemText} from './system_text_fixture.mjs';
 import {passiveCountdown,passiveChat} from './capture_ui_fixture.mjs';
 import {recommendWiringReview,WiringReviewEntry} from './wiring_review_entry_fixture.mjs';
@@ -35,10 +36,10 @@ assert.ok(declaration);
 const js = ts.transpileModule(declaration.getText(tree).replace(/^export\s+/, ''), {
   compilerOptions: {target:ts.ScriptTarget.ES2022, jsx:ts.JsxEmit.React},
 }).outputText;
-const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys','PhotoEvidenceCard','DiagramEvidenceCard','debugEvidenceUrl','evidenceSessionId','makerCatalog','systemText','useCaptureCountdown','CaptureCountdown','useChatScroll','recommendWiringReview','WiringReviewEntry',
+const makePanel = (effect = () => {}) => new Function('React','useMakerText','useState','useEffect','useLayoutEffect','useRef','isTerminal','epochTime','componentComplete','sameDebugTestKeys','PhotoEvidenceCard','DiagramEvidenceCard','debugEvidenceUrl','evidenceSessionId','makerCatalog','systemText','useCaptureCountdown','CaptureCountdown','useChatScroll','recommendWiringReview','WiringReviewEntry','AssistantMarkdown',
   `${js}; return AiDebugPanel;`)(React, () => (zh) => zh, value => [value, () => {}], effect, effect, value => ({current:value}),
     status => ['complete','stopped','error'].includes(status), value => String(value), (_, guide) => guide.complete, sameDebugTestKeys,
-    photoModule.PhotoEvidenceCard,()=>null,evidenceHelpers.debugEvidenceUrl,evidenceHelpers.evidenceSessionId,makerCatalog,systemText,passiveCountdown,()=>null,passiveChat,recommendWiringReview,WiringReviewEntry);
+    photoModule.PhotoEvidenceCard,()=>null,evidenceHelpers.debugEvidenceUrl,evidenceHelpers.evidenceSessionId,makerCatalog,systemText,passiveCountdown,()=>null,passiveChat,recommendWiringReview,WiringReviewEntry,markdownFixture('zh-TW').AssistantMarkdown);
 const AiDebugPanel = makePanel();
 
 const context = {project:{id:'project',component_ids:['hc-sr04','mrd-tf240-8p-cs']}, code:'draft', test_keys:{'hc-sr04':'hc-key','mrd-tf240-8p-cs':'tft-key'}, entry:{}}; // gitleaks:allow -- synthetic wiring signatures, not credentials
@@ -466,6 +467,17 @@ test('a fresh server camera revision does not invalidate a session while browser
     assert.equal(notifications,expected,`revision ${revision}, current ${record.camera_current}`);
     if(expected===0)assert.doesNotMatch(html,/作品、接線、程式或相機已變更/);
   }
+});
+
+test('server-confirmed saved photo analysis is independent of live camera but not a changed draft',()=>{
+  const saved={...base,status:'awaiting_capture',phase:'wiring_review_analysing',camera_current:false,wiring_photos_current:true,
+    binding:{...base.binding,test_keys:context.test_keys}};
+  const effects=[];let notifications=0;
+  const html=render(saved,{revision:99,effects,onContextChanged(){notifications++;}});
+  for(const effect of effects)effect();
+  assert.equal(notifications,0);
+  assert.doesNotMatch(html,/作品、接線、程式或相機已變更/);
+  assert.match(render(saved,{revision:99,hash:'changed'}),/作品、接線、程式或相機已變更/);
 });
 
 test('wire binding maps ignore property order but still detect changed, added and removed wires',()=>{

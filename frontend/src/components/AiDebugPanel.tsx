@@ -113,10 +113,11 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
   // A newly created session can know the new camera revision before the
   // browser's config request catches up. Only trust that lag when the server
   // confirms this session still uses the current camera.
-  const sameCamera = !record?.camera || cameraSource === null || cameraRuntimeRevision === null ||
+  const sameCamera = record?.wiring_photos_current === true || !record?.camera || cameraSource === null || cameraRuntimeRevision === null ||
     (record.camera.source === cameraSource && (record.camera.runtime_revision === cameraRuntimeRevision ||
       (record.camera_current === true && record.camera.runtime_revision > cameraRuntimeRevision)));
-  const current = record?.current_target !== false && record?.camera_current !== false && sameProject && sameCode && sameWiring && sameCamera;
+  const current = record?.current_target !== false && (record?.camera_current !== false || record?.wiring_photos_current === true)
+    && sameProject && sameCode && sameWiring && sameCamera;
   const wiringRecommendation = recommendWiringReview(record, actionContext, current);
   const invitation = testHelpInvitation;
   const invitationCurrent = Boolean(invitation && state.design && !phonePreview && onReviewGuideChange && onTestHelpHandled
@@ -297,7 +298,7 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
         if (active && !await session.action("stop")) return false;
         if (!unchanged()) return false;
         currentRecord = await session.create(actionContext,
-          state.debug?.symptom || tr("對照 Pi 兩側與零件接頭的腳位和線色，逐條由我確認。", "Compare both Pi sides and the component header; I will confirm each wire."),
+          state.debug?.symptom || tr("對照 Pi 排針與零件接頭的腳位和線色，逐條由我確認。", "Compare the Pi header and the component header; I will confirm each wire."),
           state.aiModel, state.aiEffort, responseMode, { purpose: "wiring_review", initial_action: "collect" }) ?? null;
         if (!currentRecord || !unchanged()) return false;
         // A new session has no review yet; discard the old card's CAS token.
@@ -432,11 +433,14 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
       restart_requires_stop: ["請先核對 Pi 工作並停止重啟前的案件，再開始新的 AI 除錯。", "Check Pi jobs and stop the session from before the restart before starting a new one."],
       stale_wiring_review: ["照片輪次已更新，請查看目前這一輪再操作。", "The photo round changed. Review the current round before continuing."],
       stale_wiring_review_photo: ["這張照片已被更新，請查看目前的照片再選用。", "This photo was replaced. Review the current photo before selecting it."],
-      wiring_review_photos_not_accepted: ["請先逐張選用 Pi 兩側與零件接頭照片，再開始分析。", "Select both Pi-side photos and the module-header photo before analysing."],
-      wiring_review_photos_incomplete: ["請先拍攝 Pi 兩側及零件接頭，再分析這組照片。", "Capture both Pi sides and the module header before analysing."],
+      wiring_review_photos_not_accepted: ["請先逐張選用這輪要求的接線照片，再開始分析。", "Select the wiring photos requested for this round before analysing."],
+      wiring_review_photos_incomplete: ["請先完成這輪要求的三張接線照片，再開始分析。", "Capture the three requested wiring photos before analysing."],
       wiring_review_photos_expired: ["這組照片已不適用，請為目前接線重新拍照。", "These photos are no longer current. Capture the present wiring."],
       wiring_review_photo_required: ["這個視角尚無可用照片，請先拍攝。", "Capture this view before selecting a region."],
       wiring_review_crop_too_small: ["框選範圍太小，請包含接頭、插接底部與線色。", "Expand the crop to include the housing, insertion point and wire color."],
+      wiring_review_analysis_timeout: ["照片分析逾時，原圖與已完成的觀察會保留，可重新分析。", "Photo analysis timed out. Originals and completed observations are retained; retry the analysis."],
+      wiring_review_image_budget_exceeded: ["照片總尺寸超出分析上限，請選用較小尺寸的照片後重試。", "The total photo size exceeds the analysis limit. Select smaller photos and retry."],
+      photo_color_profile_invalid: ["無法讀取照片的色彩設定，請轉存為 sRGB 照片後重試。", "The photo color profile could not be read. Save an sRGB copy and retry."],
       human_review_required: ["補查尚未改善證據，請親自沿線核對兩端，再記錄結果。", "Photo checks have not improved the evidence. Trace both ends yourself and record your decision."],
       pi_busy_for_wiring: ["Pi 工作尚未確認停止，請先在執行管理完成停止，再調整接線。", "Pi work has not been confirmed stopped. Stop it in execution management before changing wiring."],
       wiring_review_result_required: ["請先分析這輪照片，再逐條記錄人工核對。", "Analyse this photo round before recording wire reviews."],
@@ -458,8 +462,15 @@ export function AiDebugPanel({ state, context, currentCodeHash, repairCaseId, re
     <button type="button" disabled={invitation?.canDismiss === false || invitationWorking} onClick={() => void dismissTestHelp()}>{tr("稍後", "Later")}</button>
     {reviewError ? <small className="pi-error" role="alert">{readableError(reviewError)}</small> : null}
   </div> : null;
-  if (actionsOnly && chatGuidance) return invitationActions && testHelpActionTarget
-    ? createPortal(invitationActions, testHelpActionTarget) : null;
+  if (actionsOnly && chatGuidance) {
+    const invitationPortal = invitationActions && testHelpActionTarget ? createPortal(invitationActions, testHelpActionTarget) : null;
+    const canStop = active && !phonePreview;
+    if (!invitationPortal && !canStop) return null;
+    return <>{invitationPortal}{canStop ? <div className="assistant-debug-toolbar">
+      <button className="assistant-debug-stop" type="button" disabled={session.pending} onClick={() => act("stop")}>{wiringMode ? tr("停止本次檢查", "Stop this check") : tr("停止本次除錯", "Stop this session")}</button>
+      {session.error ? <small className="pi-error" role="alert">{readableError(session.error)}</small> : null}
+    </div> : null}</>;
+  }
   return <section ref={panelRef} className={`ai-debug-panel${wiringMode ? " is-wiring-review" : ""}${actionsOnly ? " is-actions-only" : ""}`} aria-label={wiringMode ? tr("與 AI 一起接線", "Wire with AI") : tr("與 AI 一起除錯", "Debug with AI")}
     onKeyDown={event => {
       if (actionsOnly && toolsOpen && event.key === "Escape" && !event.defaultPrevented) {

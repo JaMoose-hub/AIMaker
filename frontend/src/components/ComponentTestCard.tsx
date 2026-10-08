@@ -135,8 +135,16 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     } catch { if (mounted.current && currentHelp.current.target === helpTarget) setHelpError(helpTarget); }
     finally { helpFlight.current = false; if (mounted.current) setAskingAI(false); }
   }
+  const helpLabel = tr(askingAI ? "正在送出…" : "請 AI 幫忙", askingAI ? "Sending…" : "Ask AI for help");
+  const shortHelpLabel = tr(askingAI ? "送出中…" : "AI 求助", askingAI ? "Sending…" : "Ask AI");
+  const shortTestLabel = busy ? tr("處理中…", "Working…") : tr(last ? "重測" : "測試", last ? "Retest" : "Test");
+  const testLabel = busy ? tr("處理中…", "Working…") : !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`;
   const debugAction = onDebug && canAskHelp
-    ? <button type="button" className="component-test-debug-action" disabled={busy || askingAI} onClick={() => void askAI()}>{tr(askingAI ? "正在送出…" : "請 AI 幫忙", askingAI ? "Sending…" : "Ask AI for help")}</button> : null;
+    ? <button type="button" className={`component-test-debug-action${inlineActions ? " guide-action-icon-button" : ""}`} disabled={busy || askingAI}
+        aria-label={inlineActions ? shortHelpLabel : undefined} title={inlineActions ? helpLabel : undefined} aria-busy={askingAI || undefined} onClick={() => void askAI()}>
+        {inlineActions ? <><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m12 3 2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6L12 3ZM20 2v4m-2-2h4" />
+        </svg><span>{shortHelpLabel}</span></> : helpLabel}</button> : null;
   const historyNote = run && !run.reserved ? <small className="test-history">{historical ? tr("上次測試紀錄", "Last test record") : tr("本次測試結果", "This test result")}{!compact ? ` · ${finishedTime}` : ""}{historical ? tr("（先前保存，非目前接線證據）", " (saved history, not current wiring evidence)") : ""}</small> : null;
   const compactStale = compact && stale && !run?.reserved && !tests.error && !failedJob && !foreign;
   const wiringCount = design.wiring.filter(wire => wire.componentId === cid).length;
@@ -174,13 +182,12 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     </> : null}
     {showControls ? <><div className="test-actions">
       {!tests.status.connected && !compactActions ? <small>{tr("請使用上方「連線 Pi」", "Use Connect Pi at the top")}</small> : null}
-      {!runId && session.phase !== "prepare" && complete && (!active || foreign) && !queued ? <button className={inlineActions && last ? "guide-secondary-test-action" : "guide-primary-action"} disabled={busy || !tests.status.connected}
-        aria-label={inlineActions ? `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}` : undefined}
-        title={!tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>
-        {inlineActions ? <svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      {!runId && session.phase !== "prepare" && complete && (!active || foreign) && !queued ? <button className={`${inlineActions && last ? "guide-secondary-test-action" : "guide-primary-action"}${inlineActions ? " guide-action-icon-button" : ""}`} disabled={busy || !tests.status.connected}
+        aria-label={inlineActions ? `${shortTestLabel} ${name}` : undefined}
+        title={inlineActions ? testLabel : !tests.status.connected ? tr("請使用上方「連線 Pi」", "Use Connect Pi at the top") : undefined} aria-busy={busy || undefined} onClick={() => {setCopied(false);void tests.start(cid);}}>
+        {inlineActions ? <><svg aria-hidden="true" viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           {last ? <path d="M3.5 8a6.5 6.5 0 1 1 .6 5M3.5 3.5V8H8" /> : <path d="m7 4 9 6-9 6V4Z" />}
-        </svg> : null}
-        {busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : inlineActions ? tr(last ? "重新測試" : "測試零件", last ? "Retest" : "Test module") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
+        </svg><span>{shortTestLabel}</span></> : busy ? tr("處理中…", "Working…") : compactActions && !tests.status.connected ? tr("連接 Pi 後測試", "Connect Pi to test") : `${tr(last ? "重新測試" : "測試", last ? "Retest" : "Test")} ${name}`}</button> : null}
       {compactActions ? debugAction : null}
       {canAct && phase === "awaiting_stop_consent" ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, "stop_project")}>{tr("確認停止原作品，開始測試", "Stop original project and test")}</button> : null}
       {canAct && (phase === "awaiting_near" || phase === "awaiting_far") ? <button className="guide-primary-action" disabled={busy} onClick={() => void tests.action(run, phase === "awaiting_near" ? "near" : "far")}>{tr("準備好了，取樣 5 秒", "Ready · sample for 5 seconds")}</button> : null}
@@ -190,7 +197,7 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
     {canAct && phase === "awaiting_visual" ? <fieldset disabled={busy} className="test-visual-confirm"><legend>{tr("本次螢幕顯示哪個數字？", "Which code is on the screen?")}</legend>
       <div className="test-code-options">{run.options.map(code => <label key={code}><input type="radio" name={`test-code-${run.id}`} checked={choice.runId === run.id && choice.code === code}
         onChange={() => setChoice(c => ({runId:run.id,code,normal:c.runId === run.id && c.normal}))} />{code}</label>)}</div>
-      <label><input type="checkbox" checked={choice.runId === run.id && choice.normal} onChange={event => setChoice(c => ({runId:run.id,code:c.runId === run.id ? c.code : "",normal:event.target.checked}))} />{tr("紅、綠、藍三色正常", "Red, green and blue were normal")}</label>
+      <label><input type="checkbox" checked={choice.runId === run.id && choice.normal} onChange={event => setChoice(c => ({runId:run.id,code:c.runId === run.id ? c.code : "",normal:event.target.checked}))} /><span>{tr("紅、綠、藍三色正常", "RGB colors are correct")}</span></label>
       <button className="guide-primary-action" disabled={choice.runId !== run.id || !choice.code || !choice.normal} onClick={() => void tests.action(run, "visual", {code:choice.code,appearance:"normal"})}>{tr("確認顯示結果", "Confirm display result")}</button>
       <div className="test-actions">{([['black','全黑','Black screen'],['white','白屏','White screen'],['abnormal','亂碼／顏色異常','Abnormal image/colors']] as const).map(([appearance,zh,en]) => <button key={appearance} onClick={() => void tests.action(run,"visual",{appearance})}>{tr(zh,en)}</button>)}</div>
     </fieldset> : null}
@@ -198,17 +205,13 @@ export function ComponentTestCard({ design, session, tests, onViewWiring, onDebu
       <button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button>
     </div></details> : null}
     </> : null}
-    {showResults ? <details className="test-diagnostics"><summary>{compact ? tr("測試詳情", "Test details") : tr("診斷與環境設定", "Diagnostics and setup")}</summary>
-      {view === "dock" ? <div className="test-diagnostic-actions"><button type="button" disabled={busy} onClick={onViewWiring}>{tr("查看本零件接線", "Review module wiring")}</button></div> : null}
-      {compactStale ? historyNote : null}
-      {compact ? facts : null}
-      {compact && finishedTime ? <p>{finishedTime}</p> : null}
+    {showResults && !compact ? <details className="test-diagnostics"><summary>{tr("診斷與環境設定", "Diagnostics and setup")}</summary>
       <p>{tr("Pi 需先準備 gpiozero、lgpio；TFT 另需 spidev、Pillow、luma.lcd 2.13.0 與 SPI0。沿用部署頁的環境設定，不會自動安裝。", "Prepare gpiozero/lgpio on Pi; TFT also needs spidev, Pillow, luma.lcd 2.13.0 and SPI0. Use the deployment setup instructions; nothing is installed automatically.")}</p>
       <p>{tr("缺套件：到「03 部署與執行 → 執行環境與硬體準備」，依指定部署目錄建立虛擬環境並手動安裝套件。SPI：在 Pi 執行 sudo raspi-config → Interface Options → SPI。權限：用 id 與 ls -l /dev/gpiochip* /dev/spidev0.0 核對群組與裝置權限，調整後重新登入。", "Dependencies: open 03 Deploy & run → Runtime prerequisites and prepare the configured virtual environment manually. SPI: sudo raspi-config → Interface Options → SPI. Permissions: compare id with ls -l /dev/gpiochip* /dev/spidev0.0 and log in again after correcting groups.")}</p>
       <pre>{JSON.stringify(run ? {id:run.id,target:run.target_id,phase:run.phase,failed_phase:run.failed_phase,reason:run.reason,error:tests.error,detail:run.detail,exit_code:run.exit_code,latest_valid_at:run.latest_valid_at,template:run.template_version,samples:run.samples,logs:run.logs} : {error:tests.error},null,2)}</pre>
       <button onClick={() => { void navigator.clipboard.writeText(JSON.stringify({run,error:tests.error},null,2)).then(()=>setCopied(true)).catch(()=>setCopied(false)); }}>{tr(copied ? "已複製" : "複製診斷", copied ? "Copied" : "Copy diagnostics")}</button>
     </details> : null}
     {canAskHelp && helpError === helpTarget ? <small role="alert">{tr("求助訊息尚未送出，請查看右側 AI 狀態後重試。", "Help was not sent. Check the AI status on the right and retry.")}</small> : null}
-    {showInstructions ? <small className="test-safety-note">{compact ? tr("改線前斷電 · 測試僅確認功能", "Power off to rewire · Function check only") : tr("改接線前斷電，接好再上電測試。功能通過不等於所有線路與電壓均已驗證。", "Power off before rewiring. Function success is not complete electrical verification.")}</small> : null}
+    {showInstructions && !compact ? <small className="test-safety-note">{tr("改接線前斷電，接好再上電測試。功能通過不等於所有線路與電壓均已驗證。", "Power off before rewiring. Function success is not complete electrical verification.")}</small> : null}
   </section>;
 }

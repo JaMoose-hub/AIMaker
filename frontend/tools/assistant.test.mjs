@@ -8,6 +8,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import * as jsxRuntime from 'react/jsx-runtime';
 import {maker, designFor} from './project_guide_fixture.mjs';
 import {markdownFixture} from './assistant_markdown_fixture.mjs';
+import {flowModule, reviewHelpers} from './wiring_photo_flow_fixture.mjs';
 
 const code = ts.transpileModule(readFileSync(new URL('../src/lib/assistant.ts', import.meta.url), 'utf8'), {
   compilerOptions: {target:ts.ScriptTarget.ES2022, module:ts.ModuleKind.CommonJS},
@@ -31,6 +32,7 @@ const progressHelpers = {};
 new Function('exports', ts.transpileModule(readFileSync(new URL('../src/lib/assistantProgress.ts', import.meta.url), 'utf8'), {
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS},
 }).outputText)(progressHelpers);
+const wiringChatHelpers = flowModule('../src/lib/wiringChat.ts', {'./wiringReview': reviewHelpers});
 function harness(request, {demo=null, guard=async()=>true, brokenStorage=false, persisted=new Map()}={}) {
   const values=[], refs=[], calls=[]; let index=0, ref=0;
   let state={...maker.initialMaker(), design:designFor(), prompt:'original draft', code:'manual code'};
@@ -145,6 +147,64 @@ const wiringReply = (message=wiringQuestion()) => ({conversation:{...record(),me
 function wiringHarness(request) {
   const h=harness(request);h.render().acceptExternal({...record(),messages:[wiringQuestion()],total:1});return h;
 }
+
+const wiringStartReply = body => ({...wiringReply(), request_id:body.request_id, resumed:false,
+  debug_session:{id:'debug-1',wiring_review:{id:'review-1',revision:5,round:1,component_id:body.component_id}}});
+function wiringStartHarness(request, options) {
+  const h=harness(request,options);h.update(s=>({...s,stage:'guide',aiModel:'fixture-model'}));return h;
+}
+test('wiring review entry transport starts in the shared chat and preserves the draft, code and guide',async()=>{
+  const h=wiringStartHarness((_path,body)=>wiringStartReply(body));
+  const before=JSON.stringify(h.state()),controller=h.render();
+  const result=await controller.startWiringReview('hc-sr04');
+  assert.ok(result);assert.equal(h.calls.length,1);
+  assert.equal(h.calls[0].path,'assistant/conversations/project/wiring-review/start');
+  const body=h.calls[0].body;
+  assert.equal(body.component_id,'hc-sr04');assert.equal(body.context_epoch,0);assert.equal(body.model,'fixture-model');
+  assert.equal(body.response_mode,'fast');assert.deepEqual(body.context.project,h.state().design);
+  assert.equal(body.context.code,'manual code');assert.equal(body.context.wiring_target.component_id,'hc-sr04');
+  assert.equal(JSON.stringify(h.state()),before);assert.equal(h.render().project.messages.at(-1).id,'next-prompt');
+  assert.doesNotMatch(JSON.stringify(body),/hardware_authorized|asset_ids|inherit_media|original draft/);
+  const mismatch=wiringStartHarness((_path,body)=>({...wiringStartReply(body),debug_session_id:'another-session'}));
+  assert.equal(await mismatch.render().startWiringReview('hc-sr04'),false);
+  assert.equal(mismatch.render().project.messages.length,0,'mismatched session receipts cannot alter shared chat');
+});
+test('wiring review entry transport deduplicates clicks and retries the same request after a lost response',async()=>{
+  const response=deferred();let attempt=0;
+  const h=wiringStartHarness((_path,body)=>attempt++===0?response.promise:wiringStartReply(body));
+  const controller=h.render(),waiting=controller.startWiringReview('hc-sr04');
+  assert.equal(await controller.startWiringReview('hc-sr04'),false);assert.equal(h.calls.length,1);
+  response.reject(Error('lost response'));assert.equal(await waiting,false);
+  assert.ok(await h.render().startWiringReview('hc-sr04'));
+  assert.equal(h.calls.length,2);assert.deepEqual(h.calls[1].body,h.calls[0].body);
+  assert.equal(h.state().prompt,'original draft');
+});
+test('wiring review entry transport ignores a late result after project, wiring or chat context changes',async()=>{
+  for(const change of ['project','guide','epoch']) {
+    const response=deferred(),h=wiringStartHarness(()=>response.promise);
+    const waiting=h.render().startWiringReview('hc-sr04');
+    if(change==='epoch')h.render().acceptExternal({...record(),context_epoch:1});
+    else if(change==='project')h.update(s=>({...s,design:{...s.design,id:'other-project'}}));
+    else h.update(s=>({...s,guide:{...s.guide,run:1}}));
+    h.render();response.resolve(wiringStartReply(h.calls[0].body));
+    assert.equal(await waiting,false,change);assert.equal(h.state().prompt,'original draft',change);
+    assert.ok(!h.render().project.messages.some(message=>message.id==='next-prompt'),change);
+  }
+});
+test('wiring review entry transport blocks unsupported modules, busy analysis, demos and non-wiring pages',async()=>{
+  for(const block of ['component','analysis','demo','stage']) {
+    const h=wiringStartHarness(()=>assert.fail('Blocked start must not submit'),block==='demo'?{demo:record('demo')}:undefined);
+    if(block==='analysis')h.render().acceptExternal({...record(),wiring_analysis:runningAnalysis});
+    if(block==='stage')h.update(s=>({...s,stage:'deploy'}));
+    assert.equal(await h.render().startWiringReview(block==='component'?'not-in-project':'hc-sr04'),false,block);
+    assert.equal(h.calls.length,0,block);assert.equal(h.state().prompt,'original draft',block);
+  }
+  const persisted=new Map([['boardvision.assistant.v1.wiring-outbox',JSON.stringify({request_id:'old-decision',
+    conversation_id:'old-project',context_epoch:7,action:{op:'review'},context:{},before_signature:'old-wiring'})]]);
+  const recovered=wiringStartHarness((_path,body)=>wiringStartReply(body),{persisted});
+  assert.equal(recovered.render().wiringReceiptPending,false);
+  assert.ok(await recovered.render().startWiringReview('hc-sr04'),'an unrelated old decision cannot block this project');
+});
 
 test('wiring chat transport sends the exact message reference and accepts the next question without consuming a draft',async()=>{
   const h=wiringHarness(()=>wiringReply()),controller=h.render(),message=controller.project.messages[0];
@@ -722,10 +782,10 @@ function chatComponents(locale) {
     './ConversationGuideDock.css':{},
     '../lib/assistant':harness(()=>record()).exports,
     '../lib/assistantHistory':history, '../lib/assistantAnalysis':analysisHelpers,
-    '../lib/assistantProgress':progressHelpers, './assistantJobProgress.css':{},
+    '../lib/assistantProgress':progressHelpers, './assistantJobProgress.css':{}, '../lib/wiringChat':wiringChatHelpers,
     './MobileCompanion':{MobileCompanion:()=>null,MobileAttachmentCards:()=>null},
     '../lib/useChatScroll':{useChatScroll:()=>({chatRef:null,contentRef:null,unread:false})}};
-  for (const name of ['AIModelControls','MakerModelMenu','AssistantAnalysisTime','AssistantJobProgress','UnifiedAssistant','AssistantWorkspace']) {
+  for (const name of ['AIModelControls','MakerModelMenu','AssistantAnalysisTime','AssistantJobProgress','WiringAnalysisEntry','UnifiedAssistant','AssistantWorkspace']) {
     const exports={};
     const compiled=ts.transpileModule(readFileSync(new URL(`../src/components/${name}.tsx`,import.meta.url),'utf8'),{
       compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX},

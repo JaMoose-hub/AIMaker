@@ -1,8 +1,24 @@
 # Dot-sourcing defines helpers only; no processes or network changes.
 function Get-TinkroMobileLanAddress {
     param([object[]]$Configurations, [object[]]$Adapters)
-    if (-not $PSBoundParameters.ContainsKey('Configurations')) { $Configurations = @(Get-NetIPConfiguration) }
-    if (-not $PSBoundParameters.ContainsKey('Adapters')) { $Adapters = @(Get-NetAdapter -Physical) }
+    $probeSession = $null
+    try {
+        if (-not $PSBoundParameters.ContainsKey('Configurations') -or -not $PSBoundParameters.ContainsKey('Adapters')) {
+            # Get-NetIPConfiguration creates a persistent implicit CimSession
+            # when none is supplied. A five-second watcher must own and release
+            # its probe session, including on partial/failed network queries.
+            $probeSession = New-CimSession -ErrorAction Stop
+            if (-not $PSBoundParameters.ContainsKey('Configurations')) {
+                $Configurations = @(Get-NetIPConfiguration -CimSession $probeSession -ErrorAction Stop)
+            }
+            if (-not $PSBoundParameters.ContainsKey('Adapters')) {
+                $Adapters = @(Get-NetAdapter -Physical -CimSession $probeSession -ErrorAction Stop)
+            }
+        }
+    } finally {
+        # Never enumerate/remove sessions owned by another caller.
+        if ($null -ne $probeSession) { Remove-CimSession -CimSession $probeSession -ErrorAction Stop }
+    }
     $candidates = foreach ($adapter in $Adapters) {
         if ($adapter.Status -ne 'Up' -or -not $adapter.HardwareInterface -or $adapter.Virtual) { continue }
         foreach ($network in $Configurations) {

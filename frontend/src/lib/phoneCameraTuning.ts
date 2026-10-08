@@ -125,10 +125,9 @@ export function phoneTransportPlan(reports: BrowserRtcStats[], before: number | 
     .map(r => [r.measuredAtMs, r])).values()];
   const slow = fresh.filter(r => typeof r.sendFps === "number" && r.sendFps < 20);
   const bandwidth = slow.filter(r => r.qualityLimitationReason === "bandwidth");
-  const cpu = slow.filter(r => r.qualityLimitationReason === "cpu");
   const bitrate = bandwidth.length >= 2 && before !== null ? Math.min(before, bandwidth.every(r => r.sendFps! < 12) ? 3000 : 8000) : before;
-  const resolution = cpu.length >= 2 && cpu.every(r => Math.max(r.width ?? 0, r.height ?? 0) > 1280) ? "720p" as const : null;
-  return { bitrate, resolution };
+  // Keep the 1080p recognition floor, including the manual smart-adjust path.
+  return { bitrate, resolution: null };
 }
 
 function settings(track: MediaStreamTrack): CameraModes { return track.getSettings() as MediaTrackSettings & CameraModes; }

@@ -53,7 +53,7 @@ test('guide keeps physical screen instructions left and run-bound confirmation c
   assert.match(actions,/<button class="guide-primary-action" disabled="">確認顯示結果/);
 });
 
-test('compact test phases expose distance samples and keep raw telemetry in closed details',async()=>{
+test('compact test phases expose distance samples without a raw telemetry disclosure',async()=>{
   const phases = [
     ['hc-sr04','awaiting_near','15 cm'], ['hc-sr04','awaiting_far','30 cm'],
     ['hc-sr04','sampling_near','5 秒'], ['hc-sr04','sampling_far','5 秒'],
@@ -66,13 +66,11 @@ test('compact test phases expose distance samples and keep raw telemetry in clos
     const tests=state(runFor(design,session,{reserved:true,outcome:'running',reason:null,phase,
       samples:{near:{count:8,median_cm:15.2}}})),before=structuredClone(tests);
     const html=await renderTestCard({design,session,tests,view:'instructions',locale});
-    const [visible,details]=html.split('<details class="test-diagnostics">');
-    assert.ok(details,'telemetry disclosure is closed by default');
+    const visible=html;
+    assert.doesNotMatch(visible,/test-diagnostics|test-safety-note/);
     assert.doesNotMatch(visible,/test-facts|test-reading|最後回報時間|Last report time|1234|2468|4567|7890/);
     if(cid==='hc-sr04') assert.match(visible,/test-distance-samples/);
     else assert.doesNotMatch(visible,/test-distance-summary/);
-    assert.match(details,/test-facts/);
-    assert.match(details,/15.2 cm/);
     assert.ok(visible.includes(locale==='en'?'Function test':'功能測試'));
     const instruction=visible.match(/class="test-next-step" role="status">([^<]+)</)[1];
     assert.ok(instruction.length<105,`${locale}/${phase}: ${instruction}`);
@@ -97,14 +95,15 @@ test('compact readings never show placeholders, stale data or data during a conn
   assert.match(html,/class="test-reading">15.2/);
 });
 
-test('review removes repeated readiness text but retains manual evidence, BLK caution and history',async()=>{
+test('review removes repeated readiness text and BLK callout but retains manual evidence and history',async()=>{
   const design=designFor(['mrd-tf240-8p-cs']),session=complete(design);
   const {info}=guidePanes(await renderGuide({design,session}));
   const visible=info.split('class="compact-guide-details" hidden=""')[0];
   assert.match(visible,/人工確認.*7\/7/);
   assert.doesNotMatch(visible,/本模組人工紀錄/);
   assert.doesNotMatch(visible,/現在可以測試|接上 Pi USB-C|開機後前往部署/);
-  assert.match(visible,/BLK 留空；背光不亮先查規格，勿接 GPIO／5V/);
+  assert.doesNotMatch(visible,/BLK 留空|test-diagnostics|test-safety-note/);
+  assert.match(info.split('class="compact-guide-details" hidden=""')[1],/BLK/);
   const historical=await renderTestCard({design,session,view:'instructions',tests:state(runFor(design,session,
     {outcome:'passed',reason:null,evidence:'user_visual_confirmation'}))});
   const beforeDetails=historical.split('<details')[0];
@@ -399,7 +398,7 @@ test('no-echo, reader failure, missing dependency and busy diagnostics give dist
   for(const [reason,text] of [['no_echo','平整目標物'],['reader_error','不是判定沒有回波或接錯線'],['missing_dependency','不必重接線'],['resource_busy','不會強制停止無關程式']]) {
     const html=await renderGuide({design,session,tests:state(runFor(design,session,{reason}))});
     assert.ok(html.includes(text));
-    assert.match(html,/<details class="test-diagnostics"><summary>測試詳情/);
+    assert.doesNotMatch(html,/class="test-diagnostics"|測試詳情/);
   }
 });
 

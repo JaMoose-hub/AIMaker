@@ -65,6 +65,13 @@
 .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .test-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; width: auto; min-height: 34px; padding: 7px 11px; border-radius: 8px; font-size: 12px; box-shadow: none; }
 .wiring-task-toolbar .test-visual-confirm { max-width: 100%; }
 .wiring-task-toolbar :is(button, summary, input):focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+/* Compact test actions only; consent, sampling and Stop retain explicit text. */
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar :is(.test-actions, .guide-navigation) > .guide-action-icon-button {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: auto; min-width: 104px; min-height: 44px; padding: 8px 10px; gap: 6px; border-radius: 9px; white-space: nowrap;
+}
+.wiring-task-toolbar .guide-action-icon-button > svg { display: block; flex: none; width: 16px; height: 16px; }
+.wiring-task-toolbar .guide-action-icon-button[aria-busy="true"] { opacity: .55; }
 /* Override the older expanded active-wire card, not just its outer wrapper. */
 .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-connection-card { min-height: 0; padding: 0; }
 .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-pin-pair { margin: 0; background: transparent; }
@@ -88,6 +95,22 @@
 .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .component-test-card > .test-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .test-actions > button { flex: 0 0 auto; width: auto; grid-column: auto; min-width: 0; max-width: 100%; }
 .app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .guide-secondary-test-action { color: var(--brand-link); border-color: var(--brand-link); background: transparent; }
+/* Muted action colors supplement the short labels, never the test-result status. */
+.wiring-task-toolbar .test-actions > .guide-action-icon-button { --guide-action-rgb: 96 165 250; --guide-action-text: #a8ceff; }
+.wiring-task-toolbar .guide-action-icon-button.component-test-debug-action { --guide-action-rgb: 167 139 250; --guide-action-text: #d0baff; }
+.wiring-task-toolbar .guide-action-icon-button.guide-defer-test-action { --guide-action-rgb: 245 183 82; --guide-action-text: #f0cb86; }
+.wiring-task-toolbar .guide-navigation > .guide-action-icon-button.guide-primary-action { --guide-action-rgb: 45 212 191; --guide-action-text: #91e4d7; }
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-action-icon-button {
+  color: var(--guide-action-text, #c0cad6); background: rgb(var(--guide-action-rgb, 148 163 184) / .12);
+  border-color: rgb(var(--guide-action-rgb, 148 163 184) / .38);
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-action-icon-button:not(:disabled):is(:hover, :focus-visible) {
+  background: rgb(var(--guide-action-rgb, 148 163 184) / .22); border-color: rgb(var(--guide-action-rgb, 148 163 184) / .7);
+}
+.app.maker-layout:not(.display-mode-active) .is-unified .wiring-task-toolbar .compact-guide.guide-toolbar .guide-action-icon-button:disabled {
+  opacity: .45; filter: saturate(.3); cursor: not-allowed;
+}
 .app.maker-layout:not(.display-mode-active) .is-unified .has-task-toolbar .maker-2d-main > .circuit-workspace { display: flex; flex-direction: column; min-height: 0; }
 .app.maker-layout:not(.display-mode-active) .is-unified .has-task-toolbar .circuit-workspace > .circuit-zoom { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .app.maker-layout:not(.display-mode-active) .is-unified .has-task-toolbar .circuit-workspace .circuit-viewport { flex: 1; height: auto; min-height: 160px; }

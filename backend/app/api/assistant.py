@@ -47,6 +47,16 @@ class WiringFlowAction(BaseModel):
     context: SessionContext | None = None
 
 
+class StartWiringReview(BaseModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    context_epoch: int = Field(ge=0)
+    context: SessionContext
+    component_id: Literal["hc-sr04", "mrd-tf240-8p-cs"]
+    model: str | None = Field(default=None, max_length=150)
+    effort: str | None = Field(default=None, max_length=20)
+    response_mode: Literal["fast", "thorough"] = "fast"
+
+
 def guarded(fn):
     try:
         return fn()
@@ -95,6 +105,16 @@ def wiring_flow_action(cid: str, body: WiringFlowAction, request: Request):
     from app.api.mobile import desktop
     desktop(request)
     return guarded(lambda: request.app.state.assistant.wiring_flow_action(cid, body.model_dump()))
+
+
+@router.post("/{cid}/wiring-review/start")
+def start_wiring_review(cid: str, body: StartWiringReview, request: Request):
+    from app.api.mobile import desktop
+    desktop(request)
+    try:
+        return guarded(lambda: request.app.state.assistant.start_wiring_review(cid, body.model_dump()))
+    except (ValueError, KeyError) as error:
+        raise HTTPException(409, str(error)) from error
 
 
 @router.get("/{cid}/wiring-flow/receipts/{request_id}")

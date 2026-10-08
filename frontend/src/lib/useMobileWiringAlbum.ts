@@ -46,10 +46,10 @@ export function useMobileWiringAlbum(context: WiringAlbumContext) {
       return value && value.confirmed && value.key === live.current.key && value.key === requestKey(request)
         ? value.photos.find(photo => photo.role === request.role && !photo.sent)?.file ?? null : null;
     },
-    submitted(request: MobileWiringPhotoRequest) {
+    submitted(request: MobileWiringPhotoRequest, file: File) {
       const target = requestKey(request);
       setSelection(previous => previous && previous.key === target && target === live.current.key
-        ? { ...previous, photos: previous.photos.map(photo => photo.role === request.role ? { ...photo, sent: true } : photo) } : previous);
+        ? { ...previous, photos: previous.photos.map(photo => photo.role === request.role && photo.file === file ? { ...photo, sent: true } : photo) } : previous);
     },
     clear() { live.current.selection = null; setSelection(null); },
   };

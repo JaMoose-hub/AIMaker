@@ -25,6 +25,7 @@ export function PiConnectionControl() {
     || pending.some(job => job.state === "running"));
   const connectionLabel = pi.networkError ? tr("狀態未知", "State unknown")
     : pi.pending || status?.busy ? tr("處理中", "Working")
+    : !status ? tr("確認連線中", "Checking connection")
     : question ? tr("待確認", "Confirm handoff")
     : pi.error ? tr("操作失敗", "Action failed")
     : !connected ? tr("未連線", "Disconnected")

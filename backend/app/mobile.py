@@ -20,12 +20,13 @@ from uuid import uuid4
 
 import numpy as np
 from fastapi import HTTPException
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 
 from app.designs import GenerateRequest
 from app.mobile_rtc import BITRATE_PROFILES, MobileRTC
 from app.mobile_stability import DROPOUT_SECONDS, accept_candidate, clear_candidate, valid_points
+from app.photo_observations import load_photo
 
 ROOT = Path(__file__).resolve().parents[1] / "runs" / "mobile"
 MAX_UPLOAD = 200 * 1024 * 1024
@@ -49,6 +50,22 @@ def _id(value):
 
 def _digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def _workspace_id(record):
+    """Project ownership is separate from an immutable daily context snapshot."""
+    design = record.get("design") or {}
+    context = record.get("context") or {}
+    debug = context.get("debug_context")
+    if not isinstance(debug, dict):
+        debug = {}
+    return _digest(dict(
+        conversation_id=record["conversation_id"], title=record.get("title", "Tinkro"),
+        round=record.get("round", 0), context_epoch=record.get("context_epoch", 0),
+        design={key: design.get(key) for key in ("current", "component_ids", "design_mode")},
+        context={key: context.get(key) for key in ("workspace_project_id", "project_version", "preview_version")},
+        code=debug.get("code"),
+    ))[:32]
 
 
 def _clean(value):
@@ -120,7 +137,7 @@ class MobileAssets:
         with Image.open(source) as original:
             if original.width * original.height > 100_000_000:
                 raise HTTPException(413, "mobile_image_too_large")
-            image = ImageOps.exif_transpose(original).convert("RGB")
+            image = load_photo(source)
             original_size = image.size
             if image.width * image.height > MAX_IMAGE_PIXELS:
                 scale = math.sqrt(MAX_IMAGE_PIXELS / (image.width * image.height))
@@ -252,11 +269,16 @@ class MobileService:
         self.state, self.root = state, Path(root) if root else ROOT
         self.clock, self.wall = clock, wall
         self.lock = threading.RLock()
+        # Serialize workflow commits without blocking the RTC receive/event loop
+        # on filesystem latency. Media callbacks only acquire self.lock.
+        self.context_publish_lock = threading.Lock()
         self.assets = MobileAssets(self.root / "assets")
         self.contexts, self.latest, self.pairings, self.sessions, self.tokens = {}, None, {}, {}, {}
+        self.latest_by_conversation = {}
         self.captures, self.tickets, self.capture_requests = {}, {}, {}
         self.capture_order = {}
         self.listeners = []
+        self.stream_control_locks = {}
         self.monitor = None
         self.rtc = rtc_factory(self.on_frame, self.on_rtc_state, on_video_metrics=self.on_video_metrics,
                                on_receive=self.on_receive, clock=self.clock, wall=self.wall)
@@ -296,6 +318,10 @@ class MobileService:
                 await asyncio.to_thread(self.state.mobile_photo.release, sid)
 
     def publish_context(self, payload):
+        with self.context_publish_lock:
+            return self._publish_context(payload)
+
+    def _publish_context(self, payload):
         payload = _clean(deepcopy(payload))
         # Desktop-only presentation intent must not replace the wiring context,
         # invalidate captures, or interrupt an already paired phone's stream.
@@ -312,16 +338,40 @@ class MobileService:
         payload["design"] = GenerateRequest.model_validate(payload["design"]).model_dump()
         payload["context_epoch"] = self.state.assistant.read(cid).get("context_epoch", 0)
         identifier = _digest(payload)[:32]
+        workspace_id = _workspace_id(payload)
+        record = {**payload, "ui": {"parts_check": parts_check}, "context_id": identifier,
+                  "workspace_id": workspace_id, "published_at": self.wall()}
+        # Persist first, outside the media lock. A failed save must not expose a
+        # half-published context or revoke the current photo/stream ownership.
+        _write_json(self.root / "contexts" / (identifier + ".json"), record)
         with self.lock:
-            record = {**payload, "ui": {"parts_check": parts_check}, "context_id": identifier, "published_at": self.wall()}
             self.contexts[identifier] = record
-            _write_json(self.root / "contexts" / (identifier + ".json"), record)
             self.latest = record
+            self.latest_by_conversation[cid] = record
             for session in self.sessions.values():
-                if session["context_id"] != identifier:
+                if session["conversation_id"] == cid and session["context_id"] != identifier:
+                    previous = self.context(session["context_id"])
+                    if (session.get("workspace_id") or previous.get("workspace_id") or _workspace_id(previous)) == workspace_id:
+                        # Adopt a new daily snapshot without releasing the camera,
+                        # saved photo view, or conversation. Old photo geometry
+                        # and tickets remain tied to their immutable context.
+                        session.update(context_id=identifier, workspace_id=workspace_id,
+                                       context_revision=session.get("context_revision", 0)+1)
                     self._invalidate(session, "desktop_context_changed")
+                    for ticket in self.tickets.values():
+                        if ticket["session_id"] == session["session_id"]:
+                            ticket["invalid"] = True
                 self.notify(session)
             return deepcopy(record)
+
+    def current_context(self, cid):
+        """Published workspace ownership, independent of another desktop tab.
+
+        Callers hold the service lock. Global latest remains the explicit
+        'join this desktop' destination; it never retires a different project.
+        """
+        return self.latest_by_conversation.get(cid) or (
+            self.latest if self.latest and self.latest["conversation_id"] == cid else None)
 
     def context(self, identifier):
         if identifier not in self.contexts:
@@ -354,7 +404,8 @@ class MobileService:
 
     def create_pairing(self, cid, base_url):
         with self.lock:
-            if self.latest is None or self.latest["conversation_id"] != cid:
+            current = self.current_context(cid)
+            if current is None:
                 raise HTTPException(409, "mobile_publish_current_context_first")
             parsed = urlsplit(base_url)
             if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
@@ -369,7 +420,7 @@ class MobileService:
             code = f"{secrets.randbelow(1_000_000):06d}"
             while code in self.pairings:
                 code = f"{secrets.randbelow(1_000_000):06d}"
-            item = {"code": code, "context_id": self.latest["context_id"], "base_url": chosen,
+            item = {"code": code, "context_id": current["context_id"], "base_url": chosen,
                     "expires": self.clock()+300, "expires_at": self.wall()+300}
             self.pairings[code] = item
             return {"code": code, "expires_at": item["expires_at"], "base_urls": urls,
@@ -394,6 +445,7 @@ class MobileService:
             context = self.context(pairing["context_id"])
             sid, token = uuid4().hex, secrets.token_urlsafe(32)
             session = dict(session_id=sid, conversation_id=context["conversation_id"], context_id=context["context_id"],
+                           workspace_id=context.get("workspace_id") or _workspace_id(context), context_revision=0,
                            device_name=device_name, base_url=pairing["base_url"], created_at=self.wall(),
                            expires=self.clock()+12*3600, stream=self._empty_stream(),
                            view=dict(capture_id=None, wire_id=None, revision=0))
@@ -454,7 +506,10 @@ class MobileService:
             self._expire_stream(session)
             context = self.context(session["context_id"])
             result = {k: deepcopy(v) for k, v in session.items() if k != "expires"}
-            result["stream"] = {k: deepcopy(v) for k, v in stream.items() if k not in {"_expiry_pending", "last_received", "last_video_received", "stable_since", "stable_count", "previous", "anchor", "lock_id", "recognition_started", "recognition_count", "stable_times", "qualified_received", "invalid_count"}}
+            result["workspace_id"] = session.get("workspace_id") or context.get("workspace_id") or _workspace_id(context)
+            result["context_revision"] = session.get("context_revision", 0)
+            context.setdefault("workspace_id", result["workspace_id"])
+            result["stream"] = {k: deepcopy(v) for k, v in stream.items() if k not in {"_publisher_id", "_expiry_pending", "last_received", "last_video_received", "stable_since", "stable_count", "previous", "anchor", "lock_id", "recognition_started", "recognition_count", "stable_times", "qualified_received", "invalid_count"}}
             age = self.clock()-stream["last_video_received"] if stream["last_video_received"] is not None else None
             fresh = bool(stream["active"] and age is not None and 0 <= age <= PREVIEW_TTL)
             result["stream"].update(video_receive_age_ms=max(0, round(age*1000)) if age is not None else None,
@@ -466,8 +521,11 @@ class MobileService:
             recognition = result["stream"].get("recognition")
             if recognition is not None:
                 recognition["valid_for_ms"] = max(0, int((PREVIEW_TTL-(self.clock()-stream["last_received"]))*1000))
-            result.update(context=context, title=context.get("title", "Tinkro"),
-                available_context=({k: self.latest.get(k) for k in ("context_id", "conversation_id", "title", "stage", "published_at")} if self.latest else None))
+            available = None
+            if self.latest:
+                available = {k: self.latest.get(k) for k in ("context_id", "conversation_id", "title", "stage", "published_at")}
+                available["workspace_id"] = self.latest.get("workspace_id") or _workspace_id(self.latest)
+            result.update(context=context, title=context.get("title", "Tinkro"), available_context=available)
             return result
 
     def desktop_connection(self, cid):
@@ -493,7 +551,7 @@ class MobileService:
             matches = [s for s in self.sessions.values() if s["conversation_id"] == cid and s["expires"] >= self.clock()]
             latest = max(matches, key=lambda s: s["created_at"]) if matches else None
             return {"session": self.snapshot(latest["session_id"]) if latest else None,
-                    "context": deepcopy(self.latest) if self.latest and self.latest["conversation_id"] == cid else None}
+                    "context": deepcopy(self.current_context(cid))}
 
     async def disconnect(self, sid):
         """Revoke this pairing and live resources; retain its saved project media."""
@@ -521,13 +579,22 @@ class MobileService:
             await asyncio.to_thread(self.state.mobile_photo.release, sid)
 
     async def join(self, sid):
-        await self.rtc.close(sid)
-        await asyncio.to_thread(self.state.mobile_photo.release, sid)
         with self.lock:
             session = self.require(sid)
             if self.latest is None:
                 raise HTTPException(409, "mobile_no_desktop_context")
-            session.update(conversation_id=self.latest["conversation_id"], context_id=self.latest["context_id"])
+            destination = (self.latest["conversation_id"], self.latest["context_id"])
+            if (session["conversation_id"], session["context_id"]) == destination:
+                return self.snapshot(sid)
+        await self.rtc.close(sid)
+        await asyncio.to_thread(self.state.mobile_photo.release, sid)
+        with self.lock:
+            session = self.require(sid)
+            if not self.latest or (self.latest["conversation_id"], self.latest["context_id"]) != destination:
+                raise HTTPException(409, "mobile_context_changed")
+            session.update(conversation_id=destination[0], context_id=destination[1],
+                           workspace_id=self.latest.get("workspace_id") or _workspace_id(self.latest),
+                           context_revision=session.get("context_revision", 0)+1)
             session["view"] = dict(capture_id=None, wire_id=None, revision=session["view"]["revision"]+1)
             for ticket in self.tickets.values():
                 if ticket["session_id"] == sid:
@@ -541,8 +608,18 @@ class MobileService:
         with self.lock:
             session = self.require(sid)
             if body["context_id"] != session["context_id"]:
-                raise HTTPException(409, "mobile_context_changed")
-            context = self.context(body["context_id"])
+                try:
+                    context = self.context(body["context_id"])
+                except HTTPException as error:
+                    raise HTTPException(409, "mobile_context_changed") from error
+                bound = self.context(session["context_id"])
+                workspace_id = session.get("workspace_id") or bound.get("workspace_id") or _workspace_id(bound)
+                if context["conversation_id"] != session["conversation_id"] or _workspace_id(context) != workspace_id:
+                    raise HTTPException(409, "mobile_context_changed")
+                # A saved outbox retries its original request and snapshot, so
+                # AssistantService can deduplicate exactly the same payload.
+            else:
+                context = self.context(body["context_id"])
             ids = body.get("asset_ids", [])
             parts_check = body.get("purpose") == "parts_check"
             if parts_check and context["stage"] != "design":
@@ -586,7 +663,7 @@ class MobileService:
     def test_help_workspace(self, cid, offer, sid=None, context_id=None):
         """Frozen published facts only; no client-selected runtime session or camera frame."""
         with self.lock:
-            latest = deepcopy(self.latest)
+            latest = deepcopy(self.current_context(cid))
             if not latest or latest["conversation_id"] != cid:
                 return None
             if sid is not None:
@@ -685,70 +762,72 @@ class MobileService:
             offer = message.get("test_help_offer") if message else None
             if not offer or offer["offer_id"] != action.offer_id:
                 raise HTTPException(409, "test_help_stale")
-            with self.lock:
-                workspace = self.test_help_workspace(cid, offer, sid, context_id)
-                if not workspace:
-                    raise HTTPException(409, "test_help_context_changed")
-                public = assistant.test_help_projection(record, message)
-                if not public["can_dismiss"]:
-                    assistant._save(record)
-                    raise HTTPException(409, "test_help_stale")
-                if action.op == "later":
-                    offer.update(state="dismissed", handled_at=time.time())
-                    assistant._save(record)
-                    result = {"offer": assistant.test_help_projection(record, message)}
-                else:
-                    if not public["can_act"] or offer["mode"] != "wiring":
-                        raise HTTPException(409, "test_help_busy")
-                    with owner.lock:
-                        reusable = self.test_help_reusable(cid, offer, workspace, record)
-                        context = workspace["context"]["debug_context"]
-                        project = workspace["design"]["current"]
-                        wires = [wire for wire in project["wiring"] if wire["componentId"] == offer["component_id"]]
-                        current_context = dict(project=deepcopy(project), code=context["code"],
-                            test_keys=deepcopy(context["test_keys"]), guide_run=offer["guide_run"],
-                            guide_confirmations=deepcopy(context.get("guide_confirmations", {})),
-                            locale=workspace["design"].get("locale", "zh-TW"), entry=deepcopy(context.get("entry", {})),
-                            wiring_target=dict(component_id=offer["component_id"], wire_id=wires[0]["id"]))
-                        if not reusable:
-                            existing_ids = set(owner.sessions)
-                            locale = current_context["locale"]
-                            names = MODULES.get(offer["component_id"], {}).get("name", {})
-                            name = names.get(locale, offer["component_id"])
-                            action_text = f"Photograph {name} wiring for review." if locale == "en" else f"拍照檢查 {name} 接線。"
-                            created = owner.create(current_context, action_text, workspace["design"].get("model"),
-                                workspace["design"].get("effort"), request_id="test-help:" + offer["offer_id"],
-                                purpose="wiring_review", initial_action="collect")
-                            session = owner.sessions[created["id"]]
-                            if (not self.test_help_workspace(cid, offer, sid, context_id)
-                                    or offer.get("source_signature") != assistant._test_help_source(offer)):
-                                raise HTTPException(409, "test_help_stale")
-                            # Never stop or convert an existing functional-debug case implicitly.
-                            if not self._test_help_session_matches(session, offer, workspace, require_review=False):
-                                raise HTTPException(409, "test_help_busy")
-                            if created["id"] in existing_ids:
-                                # create can return any active case with the same binding;
-                                # it does not establish this conversation's authority to reuse it.
-                                reusable = self.test_help_reusable(cid, offer, workspace, record)
-                                if not reusable or reusable["id"] != created["id"]:
-                                    raise HTTPException(409, "test_help_busy")
-                            else:
-                                owner.action(created["id"], "wiring_review", "test-help-start:" + offer["offer_id"],
-                                             context=current_context, wiring_review=dict(op="start", component_id=offer["component_id"]))
-                                reusable = deepcopy(owner.sessions[created["id"]])
-                        # Pairing, workspace, test source and exact offer are checked again before adoption.
+            # Media receipt must never wait on debug/assistant locks or disk I/O.
+            # The assistant/owner locks serialize consent; workspace/source are
+            # revalidated below after creation and again before adoption.
+            workspace = self.test_help_workspace(cid, offer, sid, context_id)
+            if not workspace:
+                raise HTTPException(409, "test_help_context_changed")
+            public = assistant.test_help_projection(record, message)
+            if not public["can_dismiss"]:
+                assistant._save(record)
+                raise HTTPException(409, "test_help_stale")
+            if action.op == "later":
+                offer.update(state="dismissed", handled_at=time.time())
+                assistant._save(record)
+                result = {"offer": assistant.test_help_projection(record, message)}
+            else:
+                if not public["can_act"] or offer["mode"] != "wiring":
+                    raise HTTPException(409, "test_help_busy")
+                with owner.lock:
+                    reusable = self.test_help_reusable(cid, offer, workspace, record)
+                    context = workspace["context"]["debug_context"]
+                    project = workspace["design"]["current"]
+                    wires = [wire for wire in project["wiring"] if wire["componentId"] == offer["component_id"]]
+                    current_context = dict(project=deepcopy(project), code=context["code"],
+                        test_keys=deepcopy(context["test_keys"]), guide_run=offer["guide_run"],
+                        guide_confirmations=deepcopy(context.get("guide_confirmations", {})),
+                        locale=workspace["design"].get("locale", "zh-TW"), entry=deepcopy(context.get("entry", {})),
+                        wiring_target=dict(component_id=offer["component_id"], wire_id=wires[0]["id"]))
+                    if not reusable:
+                        existing_ids = set(owner.sessions)
+                        locale = current_context["locale"]
+                        names = MODULES.get(offer["component_id"], {}).get("name", {})
+                        name = names.get(locale, offer["component_id"])
+                        action_text = f"Photograph {name} wiring for review." if locale == "en" else f"拍照檢查 {name} 接線。"
+                        created = owner.create(current_context, action_text, workspace["design"].get("model"),
+                            workspace["design"].get("effort"), request_id="test-help:" + offer["offer_id"],
+                            purpose="wiring_review", initial_action="collect")
+                        session = owner.sessions[created["id"]]
                         if (not self.test_help_workspace(cid, offer, sid, context_id)
-                                or offer.get("source_signature") != assistant._test_help_source(offer)
-                                or record["context_epoch"] != offer["context_epoch"]):
+                                or offer.get("source_signature") != assistant._test_help_source(offer)):
                             raise HTTPException(409, "test_help_stale")
-                        offer.update(state="started", handled_at=time.time(), debug_session_id=reusable["id"])
-                        message["session_id"] = reusable["id"]
-                        owner.guided_wiring_review.enable_dialogue(reusable["id"], cid,
-                            record["context_epoch"], offer["guide_run"])
-                        assistant._save(record)
-                        result = dict(offer=assistant.test_help_projection(record, message),
-                                      debug_session_id=reusable["id"], debug_session=owner.get(reusable["id"]),
-                                      conversation=assistant.read(cid))
+                        # Never stop or convert an existing functional-debug case implicitly.
+                        if not self._test_help_session_matches(session, offer, workspace, require_review=False):
+                            raise HTTPException(409, "test_help_busy")
+                        if created["id"] in existing_ids:
+                            # create can return any active case with the same binding;
+                            # it does not establish this conversation's authority to reuse it.
+                            reusable = self.test_help_reusable(cid, offer, workspace, record)
+                            if not reusable or reusable["id"] != created["id"]:
+                                raise HTTPException(409, "test_help_busy")
+                        else:
+                            owner.action(created["id"], "wiring_review", "test-help-start:" + offer["offer_id"],
+                                         context=current_context, wiring_review=dict(op="start", component_id=offer["component_id"]))
+                            reusable = deepcopy(owner.sessions[created["id"]])
+                    # Pairing, workspace, test source and exact offer are checked again before adoption.
+                    if (not self.test_help_workspace(cid, offer, sid, context_id)
+                            or offer.get("source_signature") != assistant._test_help_source(offer)
+                            or record["context_epoch"] != offer["context_epoch"]):
+                        raise HTTPException(409, "test_help_stale")
+                    offer.update(state="started", handled_at=time.time(), debug_session_id=reusable["id"])
+                    message["session_id"] = reusable["id"]
+                    owner.guided_wiring_review.enable_dialogue(reusable["id"], cid,
+                        record["context_epoch"], offer["guide_run"])
+                    assistant._save(record)
+                    result = dict(offer=assistant.test_help_projection(record, message),
+                                  debug_session_id=reusable["id"], debug_session=owner.get(reusable["id"]),
+                                  conversation=assistant.read(cid))
         if sid is not None:
             result.pop("debug_session_id", None)
             result.pop("debug_session", None)
@@ -759,14 +838,14 @@ class MobileService:
     def conversation(self, sid, before=None, limit=50):
         with self.lock:
             phone = deepcopy(self.require(sid))
-            current = bool(self.latest and self.latest["context_id"] == phone["context_id"]
-                           and self.latest["conversation_id"] == phone["conversation_id"])
+            latest = self.current_context(phone["conversation_id"])
+            current = bool(latest and latest["context_id"] == phone["context_id"])
         record = self.state.assistant.read(phone["conversation_id"], before, limit)
         for message in record["messages"]:
             flow = message.get("wiring_flow")
             if not flow:
                 continue
-            flow["actions"] = [op for op in flow.get("actions", []) if op in {"capture", "crop"}] if current else []
+            flow["actions"] = [op for op in flow.get("actions", []) if op in {"capture", "crop", "analyse"}] if current else []
             flow["can_act"] = bool(flow["actions"])
             if flow.get("capture_id"):
                 flow["image_url"] = f'/api/mobile/wiring-review/evidence/{flow["capture_id"]}'
@@ -783,8 +862,8 @@ class MobileService:
         """Resolve the paired workspace's linked review; callers cannot select a debug ID."""
         with self.lock:
             phone = deepcopy(self.require(sid))
-            if (not self.latest or self.latest["context_id"] != phone["context_id"]
-                    or self.latest["conversation_id"] != phone["conversation_id"]):
+            latest = self.current_context(phone["conversation_id"])
+            if not latest or latest["context_id"] != phone["context_id"]:
                 return None, None
             mobile_context = self.context(phone["context_id"])
         owner = getattr(self.state, "debug_sessions", None)
@@ -794,16 +873,19 @@ class MobileService:
         # Assistant and debug histories have separate conversation IDs. The
         # already imported session references are their existing server link.
         assistant = self.state.assistant
-        if hasattr(assistant, "_load"):
+        if hasattr(assistant, "debug_session_links"):
+            linked = assistant.debug_session_links(phone["conversation_id"])
+        elif hasattr(assistant, "_load"):
             with assistant.lock:
-                record = deepcopy(assistant._load(phone["conversation_id"]))
+                record = assistant._load(phone["conversation_id"])
         else:
             record = assistant.read(phone["conversation_id"], limit=100)
-        epoch = record.get("context_epoch", 0)
-        linked = {m.get("session_id") for m in record.get("messages", [])
-                  if m.get("epoch", 0) == epoch and not m.get("archived")}
-        linked.update(j.get("debug_session_id") for j in record.get("jobs", []) if j.get("epoch", 0) == epoch)
-        linked -= set(record.get("cleared_debug_sessions", []))
+        if not hasattr(assistant, "debug_session_links"):
+            epoch = record.get("context_epoch", 0)
+            linked = {m.get("session_id") for m in record.get("messages", [])
+                      if m.get("epoch", 0) == epoch and not m.get("archived")}
+            linked.update(j.get("debug_session_id") for j in record.get("jobs", []) if j.get("epoch", 0) == epoch)
+            linked -= set(record.get("cleared_debug_sessions", []))
         debug_context = mobile_context.get("context", {}).get("debug_context", {})
         with owner.lock:
             matches = []
@@ -834,9 +916,9 @@ class MobileService:
     def _review_pairing_current(self, identity):
         sid, context_id, conversation_id = identity
         session = self.sessions.get(sid)
+        latest = self.current_context(conversation_id)
         return bool(session and session["expires"] >= self.clock() and session["context_id"] == context_id
-                    and session["conversation_id"] == conversation_id and self.latest
-                    and self.latest["context_id"] == context_id and self.latest["conversation_id"] == conversation_id)
+                    and session["conversation_id"] == conversation_id and latest and latest["context_id"] == context_id)
 
     def _review_collection_available(self, session):
         review = session.get("wiring_review") or {}
@@ -879,7 +961,7 @@ class MobileService:
             raise HTTPException(409, "mobile_wiring_review_context_changed")
         owner = self.state.debug_sessions
         if dialogue:
-            if action.op not in {"capture", "crop"}:
+            if action.op not in {"capture", "crop", "analyse"}:
                 raise HTTPException(403, "mobile_wiring_review_action_forbidden")
             assistant = self.state.assistant
             with assistant.lock:
@@ -972,17 +1054,19 @@ class MobileService:
                 self.assets.authorize(slot["provenance"]["asset_id"], identity[2])
             return owner.evidence_view(debug_id, capture_id)
 
-    async def start_stream(self, sid, bitrate_kbps=8000):
+    async def start_stream(self, sid, bitrate_kbps=8000, publisher_id=None):
         self.require(sid)
         if bitrate_kbps not in BITRATE_PROFILES:
             raise HTTPException(422, "mobile_invalid_bitrate_profile")
-        generation = await self.rtc.start(sid, bitrate_kbps=bitrate_kbps)
-        with self.lock:
-            session = self.require(sid)
-            session["stream"] = self._empty_stream(generation)
-            session["stream"].update(active=True, reason="finding_board", bitrate_kbps=bitrate_kbps)
-            self.notify(session)
-            return self.snapshot(sid)["stream"]
+        async with self.stream_control_locks.setdefault(sid, asyncio.Lock()):
+            generation = await self.rtc.start(sid, bitrate_kbps=bitrate_kbps)
+            with self.lock:
+                session = self.require(sid)
+                session["stream"] = self._empty_stream(generation)
+                session["stream"].update(active=True, reason="finding_board", bitrate_kbps=bitrate_kbps,
+                                         _publisher_id=publisher_id)
+                self.notify(session)
+                return self.snapshot(sid)["stream"]
 
     def publisher_metrics(self, sid, values):
         """Untrusted client diagnostics cannot establish receipt or capture lock."""
@@ -1021,14 +1105,22 @@ class MobileService:
             self.notify(session)
             return deepcopy(result)
 
-    async def stop_stream(self, sid):
-        await self.rtc.close(sid)
-        with self.lock:
-            session = self.require(sid)
-            session["stream"].update(active=False, publisher_connected=False, video_fps=0., recognition_fps=0., recognition_ms=None)
-            self._invalidate(session, "stream_stopped")
-            self.notify(session)
-            return self.snapshot(sid)["stream"]
+    async def stop_stream(self, sid, publisher_id=None):
+        # Validate and close atomically relative to Start. Delayed cleanup from
+        # a previous phone tab/context must not tear down a newer publication.
+        # Legacy clients retain their stop path only for legacy publications.
+        async with self.stream_control_locks.setdefault(sid, asyncio.Lock()):
+            with self.lock:
+                owner = self.require(sid)["stream"].get("_publisher_id")
+                if owner != publisher_id:
+                    raise HTTPException(409, "mobile_stream_publisher_changed")
+            await self.rtc.close(sid)
+            with self.lock:
+                session = self.require(sid)
+                session["stream"].update(active=False, publisher_connected=False, video_fps=0., recognition_fps=0., recognition_ms=None)
+                self._invalidate(session, "stream_stopped")
+                self.notify(session)
+                return self.snapshot(sid)["stream"]
 
     async def on_rtc_state(self, sid, generation, reason):
         with self.lock:
@@ -1045,8 +1137,7 @@ class MobileService:
             session = self.sessions.get(sid)
             if not session or not session["stream"]["active"] or session["stream"]["generation"] != generation:
                 return
-            context = (deepcopy(self.latest) if self.latest and self.latest["conversation_id"] == session["conversation_id"]
-                       else self.context(session["context_id"]))
+            context = deepcopy(self.current_context(session["conversation_id"]) or self.context(session["context_id"]))
         identity = dict(session_id=sid, generation=generation, seq=seq, sample_seq=seq, frame_id=seq,
                         received_monotonic=received, ts_ms=self.wall()*1000)
         started = self.clock()
@@ -1069,7 +1160,11 @@ class MobileService:
         except Exception:
             result = dict(board_present=False, target_present=False, sharp=False, framed=False, objects=[], quality={}, reason="preview_analysis_failed")
         result["recognition_ms"] = (self.clock()-started)*1000
-        self.accept_preview(sid, generation, seq, received, result, (frame.shape[1], frame.shape[0]), context["context_id"])
+        # Projecting recognition state / notifying clients must not stall RTC
+        # scheduling after the analyzer has returned. The sampler already keeps
+        # at most one preview task in flight; this does not add a frame queue.
+        await asyncio.to_thread(self.accept_preview, sid, generation, seq, received,
+                                result, (frame.shape[1], frame.shape[0]), context["context_id"])
 
     def on_receive(self, sid, generation, seq, received, received_at, size):
         """Called at native receipt, before the sampled inference/metrics awaits."""
@@ -1083,25 +1178,48 @@ class MobileService:
             if not 0 <= self.clock()-received <= PREVIEW_TTL:
                 return
             previous = stream["last_video_received"]
+            resized = stream.get('received_video_size') not in (None, list(size))
             resumed = previous is None or received-previous > PREVIEW_TTL or not stream["publisher_connected"]
-            if resumed:
+            if resumed or resized:
                 self._invalidate(session, "receiving_video")
+                stream['geometry_received'] = received
                 stream.update(video_fps=None, recognition_fps=0., recognition_ms=None,
                               recognition_started=None, recognition_count=0)
             stream.update(last_video_received=received, video_received_at=received_at, video_receive_seq=seq,
-                          received_frames=seq, publisher_connected=True, video_size=list(size))
-            if resumed:
+                          received_frames=seq, publisher_connected=True, video_size=list(size), received_video_size=list(size))
+            if resumed or resized:
                 self.notify(session)
 
     async def on_video_metrics(self, sid, generation, values):
+        # UI projection can wait on workflow state and copy a large context.
+        # Neither that wait nor notification fan-out belongs on the RTC loop.
+        await asyncio.to_thread(self._apply_video_metrics, sid, generation, values, self.clock())
+
+    def _apply_video_metrics(self, sid, generation, values, measured):
         with self.lock:
             session = self.sessions.get(sid)
-            if session and session["stream"]["active"] and session["stream"]["generation"] == generation:
-                session["stream"].update({key: value for key, value in values.items() if key in {
-                    "video_fps", "video_size", "video_color", "publisher_codec", "viewer_codecs", "codec_source", "server_metrics"}})
-                self.notify(session)
+            if (not session or not session["stream"]["active"] or session["stream"]["generation"] != generation
+                    or not 0 <= self.clock()-measured <= PREVIEW_TTL):
+                return
+            stream = session["stream"]
+            updates = {key: value for key, value in values.items() if key in {
+                "video_fps", "video_size", "video_color", "publisher_codec", "viewer_codecs", "codec_source", "server_metrics"}}
+            # Native receipt may have rotated/resized while optional reporting
+            # was pending. Late metrics must not restore the previous geometry.
+            if stream.get("received_video_size") is not None and values.get("video_size") != stream["received_video_size"]:
+                updates.pop("video_size", None)
+                updates.pop("video_color", None)
+            stream.update(updates)
+        self.notify(session)
 
     def accept_preview(self, sid, generation, seq, received, result, size, context_id):
+        session = self._accept_preview_state(sid, generation, seq, received, result, size, context_id)
+        if session is not None:
+            # Notification reads the current session again; never retain the
+            # media lock while copying/publishing the full UI state.
+            self.notify(session)
+
+    def _accept_preview_state(self, sid, generation, seq, received, result, size, context_id):
         with self.lock:
             session = self.sessions.get(sid)
             if session is None or session["expires"] < self.clock():
@@ -1109,11 +1227,16 @@ class MobileService:
             stream = session["stream"]
             if not stream["active"] or generation != stream["generation"] or seq <= stream["preview_seq"]:
                 return
-            if (not self.latest or context_id != self.latest["context_id"] or self.latest["conversation_id"] != session["conversation_id"]
-                    or not 0 <= self.clock()-received <= PREVIEW_TTL):
-                self._invalidate(session, "context_changed_or_preview_expired")
-                self.notify(session)
+            if received < stream.get('geometry_received', float('-inf')):
+                return  # Analysis completed after native rotation/resize; never re-lock old geometry.
+            latest = self.current_context(session["conversation_id"])
+            if not latest or context_id != latest["context_id"] or context_id != session["context_id"]:
+                # Work already running during a daily context update cannot
+                # publish old geometry or revoke the new context's fresh lock.
                 return
+            if not 0 <= self.clock()-received <= PREVIEW_TTL:
+                self._invalidate(session, "context_changed_or_preview_expired")
+                return session
             if stream["last_received"] is not None and received <= stream["last_received"]:
                 return
             if stream["last_received"] is not None and received-stream["last_received"] > PREVIEW_TTL:
@@ -1147,8 +1270,7 @@ class MobileService:
                 # Live geometry follows the desktop lesson without restarting
                 # the camera or adopting the phone's frozen photo/chat context.
                 self._invalidate(session, "desktop_context_changed", preserve_recognition=True)
-                self.notify(session)
-                return
+                return session
             ready = all(result.get(key) is True for key in ("board_present", "target_present", "sharp", "framed"))
             points = {}
             required = {"raspberry-pi-5"}
@@ -1177,14 +1299,15 @@ class MobileService:
                               reason="ready_to_capture" if locked else "hold_still")
                 if locked and not stream["lock_id"]:
                     stream["lock_id"] = uuid4().hex
-            self.notify(session)
+            return session
 
     def capture_ticket(self, sid):
         with self.lock:
             self.snapshot(sid)
             session = self.require(sid)
             stream = session["stream"]
-            if not stream["can_capture"] or not self.latest or self.latest["context_id"] != session["context_id"]:
+            latest = self.current_context(session["conversation_id"])
+            if not stream["can_capture"] or not latest or latest["context_id"] != session["context_id"]:
                 raise HTTPException(409, "mobile_capture_not_locked")
             tid = uuid4().hex
             record = dict(ticket_id=tid, session_id=sid, context_id=session["context_id"],
@@ -1209,9 +1332,10 @@ class MobileService:
                 future = existing["future"]
             else:
                 ticket = self.tickets.get(body["ticket_id"])
+                latest = self.current_context(session["conversation_id"])
                 if (not ticket or ticket["session_id"] != sid or ticket["invalid"] or ticket["expires"] < self.clock()
-                        or ticket["context_id"] != session["context_id"] or not self.latest
-                        or self.latest["context_id"] != ticket["context_id"]):
+                        or ticket["context_id"] != session["context_id"] or not latest
+                        or latest["context_id"] != ticket["context_id"]):
                     raise HTTPException(409, "mobile_capture_ticket_expired")
                 if ticket.get("request_id"):
                     raise HTTPException(409, "mobile_capture_ticket_consumed")
@@ -1243,8 +1367,9 @@ class MobileService:
                 stream = session["stream"]
                 if not stream["active"] or stream["generation"] != body["generation"]:
                     raise HTTPException(409, "mobile_stream_generation_changed")
-                if (session["context_id"] != body["context_id"] or not self.latest
-                        or self.latest["context_id"] != body["context_id"]):
+                latest = self.current_context(session["conversation_id"])
+                if (session["context_id"] != body["context_id"] or not latest
+                        or latest["context_id"] != body["context_id"]):
                     raise HTTPException(409, "mobile_context_changed")
                 # No await between checking ownership and freezing the current
                 # incoming frame. Retry joins this task, never another frame.
@@ -1276,24 +1401,47 @@ class MobileService:
             packet["stream_identity"] = deepcopy(session["stream_identity"])
         cid = _id(packet["capture_id"])
         bind_reference = False
+        # Persist first, off the native RTC event loop and outside its receipt
+        # lock. Only publish a fully saved capture, then recheck current ownership.
+        await asyncio.to_thread(_write_json, self.root / "captures" / (cid+".json"),
+                                {"packet": packet, "conversation_id": session["conversation_id"]})
         with self.lock:
-            _write_json(self.root / "captures" / (cid+".json"), {"packet": packet, "conversation_id": session["conversation_id"]})
             self.captures[cid] = {"packet": deepcopy(packet), "conversation_id": session["conversation_id"]}
             current = self.sessions.get(sid)
+            latest = self.current_context(session["conversation_id"])
             if (current and current["expires"] >= self.clock() and current["context_id"] == context["context_id"]
-                    and self.latest and self.latest["context_id"] == context["context_id"]
+                    and latest and latest["context_id"] == context["context_id"]
                     and current["stream"]["generation"] == session["generation"]
                     and self.capture_order.get(sid) == session.get("_capture_order")
                     and current["view"]["revision"] == session["view"]["revision"]):
                 current["view"] = dict(capture_id=cid, wire_id=None, revision=current["view"]["revision"]+1)
-                bind_reference = bool(self.latest and self.latest["context_id"] == context["context_id"])
+                bind_reference = bool(latest and latest["context_id"] == context["context_id"])
                 self.notify(current)
         # Model and chat locks must not be acquired while holding the session lock.
         if bind_reference:
-            bind = getattr(self.state.assistant, "bind_photo_reference", None)
-            if callable(bind):
-                bind(session["conversation_id"], packet, context)
+            await asyncio.to_thread(self._bind_capture_reference, sid, session, packet, context)
         return deepcopy(packet)
+
+    def _bind_capture_reference(self, sid, session, packet, context):
+        from contextlib import nullcontext
+        assistant = self.state.assistant
+        bind = getattr(assistant, "bind_photo_reference", None)
+        if not callable(bind):
+            return
+        # Waiting for chat persistence is worker-only. Recheck after that wait,
+        # so a newer capture, selection, context or publisher wins over this one.
+        with assistant.lock if hasattr(assistant, "lock") else nullcontext():
+            with self.lock:
+                current = self.sessions.get(sid)
+                latest = self.current_context(session["conversation_id"])
+                if (not current or current["expires"] < self.clock() or not latest
+                        or current["context_id"] != context["context_id"]
+                        or latest["context_id"] != context["context_id"]
+                        or current["stream"]["generation"] != session["generation"]
+                        or current["view"]["capture_id"] != packet["capture_id"]
+                        or self.capture_order.get(sid) != session.get("_capture_order")):
+                    return
+            bind(session["conversation_id"], packet, context)
 
     def capture(self, cid, sid=None):
         with self.lock:

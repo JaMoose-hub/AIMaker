@@ -17,6 +17,23 @@ export function flowModule(path, imports = {}) {
   return exports;
 }
 export const reviewHelpers = flowModule('../src/lib/wiringReview.ts');
+export const expectedLocationHelpers = flowModule('../src/lib/wiringExpectedLocation.ts', {
+  './wiringReview': reviewHelpers,
+  '../../../profiles/boards/raspberry-pi-5/board.json': {default: JSON.parse(readFileSync(new URL('../../profiles/boards/raspberry-pi-5/board.json', import.meta.url), 'utf8'))},
+  './piHeaderGuide': flowModule('../src/lib/piHeaderGuide.ts'),
+});
+export function expectedLocationComponent(language = 'en', hooks = React) {
+  return flowModule('../src/components/WiringExpectedLocation.tsx', {
+    react: hooks, '../lib/useMaker': {useMakerText: () => (zh, en) => language === 'en' ? en : zh},
+    '../lib/wiringExpectedLocation': expectedLocationHelpers, './wiringExpectedLocation.css': {},
+  });
+}
+export function framingGuide(language = 'en') {
+  return flowModule('../src/components/WiringFramingGuide.tsx', {
+    '../lib/useMaker': {useMakerText: () => (zh, en) => language === 'en' ? en : zh},
+    '../lib/wiringReview': reviewHelpers,
+  }).WiringFramingGuide;
+}
 export const photoFlow = flowModule('../src/lib/wiringPhotoFlow.ts', {'./wiringReview': reviewHelpers});
 export function photoSequence(hooks = React, language = 'en') {
   return flowModule('../src/components/WiringPhotoSequence.tsx', {react: hooks,

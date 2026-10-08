@@ -2034,6 +2034,10 @@ class ComponentPoseWorker:
         """Call while stopped to retain the loaded model across camera changes."""
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("stop component worker before resetting tracking")
+        self._reset_stream_geometry()
+
+    def _reset_stream_geometry(self) -> None:
+        """Only the worker itself (or its stopped owner) may mutate its trackers."""
         self._tracker.reset_tracking()
         self._tft_rings.reset()
         self._scale_recovery.reset()
@@ -2206,6 +2210,10 @@ class ComponentPoseWorker:
         return ComponentPhotoContext(self)
 
     def _publish_result(self, result: ComponentPoseResult, slot: FrameSlot | None = None) -> None:
+        if slot is not None:
+            latest = self._bus.get_latest(timeout=0)
+            if latest is None or latest.geometry_epoch != slot.geometry_epoch:
+                return
         self._state.set(result, slot)
         self._publish(component_pose_message(result))
 
@@ -2228,6 +2236,7 @@ class ComponentPoseWorker:
 
     def _run(self) -> None:
         last_seq = -1
+        geometry_epoch = None
         while not self._stop.is_set():
             slot = self._bus.get_latest(timeout=_FRAME_WAIT_TIMEOUT_S, newer_than=last_seq)
             if slot is None:
@@ -2235,6 +2244,9 @@ class ComponentPoseWorker:
             last_seq = slot.seq
             cycle_started = time.monotonic()
             try:
+                if geometry_epoch is not None and geometry_epoch != slot.geometry_epoch:
+                    self._reset_stream_geometry()
+                geometry_epoch = slot.geometry_epoch
                 if self._yolo_only:
                     self._publish_result(self.detect_yolo_frame(slot), slot)
                     if self._stop.wait(self._interval_s):

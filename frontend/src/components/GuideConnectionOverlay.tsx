@@ -1,7 +1,8 @@
 import { useMemo, type CSSProperties } from "react";
 import { toDisplay, type Letterbox } from "../lib/geometry";
 import { useSmoothedDetection } from "../lib/useSmoothedDetection";
-import { guideConnectionColor } from "../lib/recognitionStyle";
+import { guideConnectionColor, guideConnectionPath } from "../lib/recognitionStyle";
+import { componentHeaderAtTop } from "../lib/componentHeaderGuide";
 import type { ComponentPoseMessage, DetectionMessage } from "../lib/types";
 
 interface GuideConnectionOverlayProps {
@@ -52,6 +53,7 @@ export function GuideConnectionOverlay({
     );
     if (!boardPin || !componentPin) return null;
 
+    const headerAtTop = componentHeaderAtTop(componentPose.component_id);
     return {
       from: toDisplay(
         letterbox,
@@ -59,6 +61,10 @@ export function GuideConnectionOverlay({
         boardPin.y + boardDisplayOffsetPx.y,
       ),
       to: toDisplay(letterbox, componentPin.x, componentPin.y),
+      target: headerAtTop !== null && componentPose.outline ? {
+        headerAtTop,
+        outline: componentPose.outline.map(([x, y]) => toDisplay(letterbox, x, y)),
+      } : undefined,
       stale:
         held
         || visualDetection.tracking === "stale"
@@ -79,14 +85,7 @@ export function GuideConnectionOverlay({
 
   const color = guideConnectionColor(componentPinId ?? "");
   const style = { "--guide-connection-color": color } as CSSProperties;
-  // Display-only clearance: leave the real Pin centres unobstructed. Never
-  // change the detected coordinates or feed this shortened line to checking.
-  const dx = geometry.to.x - geometry.from.x;
-  const dy = geometry.to.y - geometry.from.y;
-  const distance = Math.hypot(dx, dy);
-  const inset = Math.min(8, distance / 3) / (distance || 1);
-  const lineFrom = { x: geometry.from.x + dx * inset, y: geometry.from.y + dy * inset };
-  const lineTo = { x: geometry.to.x - dx * inset, y: geometry.to.y - dy * inset };
+  const path = guideConnectionPath(geometry.from, geometry.to, 8, geometry.target);
 
   return (
     <svg
@@ -111,21 +110,20 @@ export function GuideConnectionOverlay({
           <path className="guide-connection-arrowhead" d="M 1 1 L 9 5 L 1 9" />
         </marker>
       </defs>
-      <line
-        className="guide-connection-glow"
-        x1={lineFrom.x}
-        y1={lineFrom.y}
-        x2={lineTo.x}
-        y2={lineTo.y}
+      <path
+        className="guide-connection-contrast"
+        d={path}
       />
-      <line
+      <path
+        className="guide-connection-glow"
+        d={path}
+      />
+      <path
         className="guide-connection-line"
-        x1={lineFrom.x}
-        y1={lineFrom.y}
-        x2={lineTo.x}
-        y2={lineTo.y}
+        d={path}
         markerEnd="url(#guide-connection-arrowhead)"
       />
+      <path className="guide-connection-spark" d={path} />
       <circle
         className="guide-connection-origin"
         cx={geometry.from.x}

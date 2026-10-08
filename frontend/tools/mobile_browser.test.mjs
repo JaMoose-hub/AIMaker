@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import ts from 'typescript';
 function load(file,modules={}){const exports={};const code=ts.transpileModule(readFileSync(new URL(file,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;new Function('exports','require',code)(exports,name=>{if(!(name in modules))throw Error(`Unexpected import ${name}`);return modules[name];});return exports;}
-const domain=load('../src/lib/mobileBrowser.ts'),rtc=load('../src/lib/mobileBrowserRtc.ts');
+const domain=load('../src/lib/mobileBrowser.ts'),policy=load('../src/lib/mobileStreamPolicy.ts'),rtc=load('../src/lib/mobileBrowserRtc.ts',{'./mobileStreamPolicy':policy});
 const session=(stream={})=>({session_id:'s',conversation_id:'chat',context_id:'ctx',view:{capture_id:null,wire_id:null,revision:1},stream:{active:true,publisher_connected:true,generation:3,preview_seq:8,can_capture:true,valid_for_ms:1200,...stream}});
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
 
@@ -117,6 +117,28 @@ test('conversation-based persistence survives a new pairing without crossing pro
   assert.notEqual(domain.mobileBrowserDraftKey('https://pc.local','chat'),domain.mobileBrowserDraftKey('https://pc.local','other'));
   assert.notEqual(domain.mobileBrowserDraftKey('https://pc.local','chat'),domain.mobileBrowserDraftKey('https://other.local','chat'));
 });
+
+test('live context updates preserve workspace ownership but changed or unknown bindings do not',()=>{
+  const before={...session(),workspace_id:'project-version'};
+  assert.equal(domain.sameBrowserWorkspace(before,{...before,context_id:'next-step',context_revision:1}),true);
+  for(const next of [{...before,workspace_id:'new-version'},{...before,conversation_id:'other-chat'},
+    {...before,session_id:'other-phone'},{...before,workspace_id:undefined}])
+    assert.equal(domain.sameBrowserWorkspace(before,next),false);
+  assert.equal(domain.sameBrowserWorkspace(session(),{...session(),context_id:'next'}),false,'Legacy context changes retain explicit handoff');
+});
+
+test('late context snapshots cannot restore old workspace notices or erase a newer photo selection',()=>{
+  const before={...session(),workspace_id:'project-version',context_revision:4};
+  const next={...before,context_id:'next-step',context_revision:5,available_context:{context_id:'next-step'},
+    stream:{...before.stream,can_capture:false,preview_seq:9}};
+  const accepted=domain.mergeBrowserSession(before,next);
+  assert.equal(accepted.context_id,'next-step');assert.equal(accepted.stream.can_capture,false);
+  assert.equal(domain.mergeBrowserSession(accepted,before),accepted);
+  const selected={...before,view:{capture_id:'saved-photo',wire_id:'wire',revision:3}};
+  const combined=domain.mergeBrowserSession(selected,next);
+  assert.equal(combined.context_id,'next-step');assert.equal(combined.context_revision,5);
+  assert.deepEqual(combined.view,selected.view);assert.equal(combined.stream.can_capture,false);
+});
 test('fresh preview has bounded TTL, cannot be renewed by repeated events, and revokes on disconnect',()=>{
   const first=domain.browserLease(session(),100,{key:'',deadline:0});assert.equal(first.deadline,1300);
   assert.equal(domain.browserLease(session(),1000,first).deadline,1300);
@@ -190,19 +212,73 @@ test('publisher sends one rear camera, real generation and requested 8 Mbps with
   const s=setup();await s.publisher.start();
   assert.equal(s.constraints.length,1);assert.deepEqual(s.constraints[0].video.facingMode,{ideal:'environment'});assert.equal(s.constraints[0].video.width.ideal,1920);
   assert.equal(s.parameters().encodings[0].maxBitrate,8000000);assert.equal(s.parameters().degradationPreference,'maintain-resolution');
+  assert.equal(s.parameters().encodings[0].scaleResolutionDownBy,1);
   assert.equal(s.parameters().encodings[0].maxFramerate,30);
-  assert.deepEqual(s.calls.find(c=>c.path==='stream'&&c.method==='POST').body,{bitrate_kbps:8000});
+  const body=s.calls.find(c=>c.path==='stream'&&c.method==='POST').body;
+  assert.equal(body.bitrate_kbps,8000);assert.match(body.publisher_id,/^[a-f0-9-]{36}$/);
   assert.deepEqual(s.calls.find(c=>c.path==='stream/offer').body,{sdp:'offer',type:'offer',role:'publisher',generation:7});
   assert.equal(s.states.at(-1).settings.frameRate,30);assert.equal(s.states.at(-1).stats.sendFps,undefined);
   assert.equal(s.states.at(-1).generation,7,'Recovery identity comes from this successful publisher offer');
   await s.publisher.stop();assert.equal(s.stops(),1);assert.equal(s.peer.closed,true);
+  assert.deepEqual(s.calls.find(c=>c.method==='DELETE').body,{publisher_id:body.publisher_id});
 });
 
 test('12 Mbps selection configures both phone upload and the laptop relay profile',async()=>{
   const s=setup();await s.publisher.start({bitrateKbps:12000});
   assert.equal(s.parameters().encodings[0].maxBitrate,12000000);
-  assert.deepEqual(s.calls.find(c=>c.path==='stream'&&c.method==='POST').body,{bitrate_kbps:12000});
+  assert.equal(s.calls.find(c=>c.path==='stream'&&c.method==='POST').body.bitrate_kbps,12000);
   await s.publisher.stop();
+});
+
+test('an idle or already stopped phone page cannot delete another page publication',async()=>{
+  const s=setup();await s.publisher.stop();
+  assert.equal(s.calls.length,0,'No remote stream is owned before Start');
+  await s.publisher.start();await s.publisher.stop();await s.publisher.stop();
+  assert.equal(s.calls.filter(c=>c.method==='DELETE').length,1,'Repeated cleanup is local');
+});
+
+test('each restart has a distinct owner and an uncertain start is cleaned up by that owner',async()=>{
+  const s=setup();await s.publisher.start();await s.publisher.stop();await s.publisher.start();await s.publisher.stop();
+  const starts=s.calls.filter(c=>c.method==='POST'&&c.path==='stream');
+  assert.notEqual(starts[0].body.publisher_id,starts[1].body.publisher_id);
+  assert.deepEqual(s.calls.filter(c=>c.method==='DELETE').map(c=>c.body.publisher_id),starts.map(c=>c.body.publisher_id));
+  const failed=setup(),request=failed.api.request;
+  failed.api.request=async(path,options)=>{const result=await request(path,options);if(path==='stream'&&options.method==='POST')throw Error('response lost');return result;};
+  await assert.rejects(failed.publisher.start(),/response lost/);
+  const owner=failed.calls.find(c=>c.method==='POST').body.publisher_id;
+  assert.ok(owner);assert.deepEqual(failed.calls.find(c=>c.method==='DELETE').body,{publisher_id:owner});
+});
+
+test('retired publication cannot use source recovery to take the stream back from a newer page',async()=>{
+  let invalidate;
+  const s=setup({normalizeStream:async(stream,resolution,signal,options)=>{invalidate=options.invalidated;return{stream,dispose(){},readFrame:()=>({sourceSize:[1920,1080],outputSize:[1920,1080],rotation:0})};}});
+  const request=s.api.request;
+  s.api.request=async(path,options)=>{await request(path,options);if(options.method==='DELETE')throw{status:409,detail:'mobile_stream_publisher_changed'};return options.method==='POST'&&path==='stream'?{generation:7}:{type:'answer',sdp:'answer'};};
+  await s.publisher.start();invalidate({sourceSize:[1080,1920],outputSize:[1080,1920],rotation:0});await turn();
+  assert.equal(s.states.some(state=>state.sourceChanged),false);
+  await s.publisher.stop();assert.equal(s.calls.filter(c=>c.method==='DELETE').length,1);
+});
+
+test('adaptive publisher preserves the 1080p floor during starvation without opening another camera',async()=>{
+  const clock=connectionClock(),oldNow=Date.now;let now=10000,samples=0,parameters={encodings:[{}]};
+  Date.now=()=>now;
+  const s=setup();const track=s.media.getVideoTracks()[0];track.readyState='live';
+  const sender={track,getParameters:()=>structuredClone(parameters),async setParameters(value){parameters=value;}};
+  s.peer.addTrack=()=>sender;s.peer.getSenders=()=>[sender];
+  s.peer.getStats=async()=>new Map([
+    ['camera',{type:'media-source',kind:'video',framesPerSecond:30}],
+    ['video',{id:'video',ssrc:1,type:'outbound-rtp',kind:'video',timestamp:++samples*1000,framesSent:samples,
+      framesEncoded:samples,bytesSent:samples*3000,targetBitrate:30000,qualityLimitationReason:'none'}],
+  ]);
+  try {
+    await s.publisher.start({bitrateKbps:12000});await turn();
+    for(let i=0;i<3;i++){now+=1000;clock.fire(1000);await turn();}
+    assert.equal(parameters.encodings[0].scaleResolutionDownBy,1);
+    assert.equal(parameters.encodings[0].maxBitrate,12000000);
+    assert.equal(s.constraints.length,1);assert.equal(sender.track,track);assert.equal(s.stops(),0);
+    assert.deepEqual(s.states.at(-1).frame.sourceSize,[1920,1080]);
+    assert.equal(s.calls.filter(call=>call.path==='stream/offer').length,1);
+  } finally {await s.publisher.stop();Date.now=oldNow;clock.restore();}
 });
 
 test('publisher transport measures selected path and counter deltas without inventing missing or reset rates',()=>{
@@ -362,10 +438,9 @@ test('stop during remote description cannot publish a released camera afterwards
   const started=s.publisher.start();await turn();const stopped=s.publisher.stop();release();await Promise.all([started,stopped]);
   assert.equal(s.states.at(-1).stream,null);assert.equal(s.stops(),1);assert.equal(s.peer.closed,true);
 });
-test('unsupported 1080 falls back to 720 once, permission denial never reprompts',async()=>{
-  let count=0,outputResolution;const s=setup({getUserMedia:()=>{if(!count++)throw new DOMException('constraint','OverconstrainedError');return s.media;},
-    normalizeStream:async(stream,resolution)=>{outputResolution=resolution;return{stream,dispose(){},readFrame:()=>({sourceSize:[1280,720],outputSize:[1280,720],rotation:0})};}});
-  await s.publisher.start();assert.equal(s.constraints[1].video.width.ideal,1280);assert.equal(outputResolution,'720p');await s.publisher.stop();
+test('unsupported 1080 is explicit, never falls back to 720 or reprompts for permission',async()=>{
+  const s=setup({getUserMedia:()=>{throw new DOMException('constraint','OverconstrainedError');}});
+  await assert.rejects(s.publisher.start(),/1080p/);assert.equal(s.constraints.length,1);assert.equal(s.calls.length,0);
   const denied=setup({getUserMedia:()=>{throw new DOMException('denied','NotAllowedError');}});await assert.rejects(denied.publisher.start());assert.equal(denied.constraints.length,1);
 });
 
@@ -400,10 +475,10 @@ test('stop during normalization drains and disposes late output without negotiat
   assert.equal(s.calls.some(call=>call.path==='stream/offer'),false);
 });
 
-test('camera verification failure releases the camera and session instead of publishing unavailable pixels',async()=>{
+test('camera verification failure releases only its local camera without stopping another publication',async()=>{
   const s=setup({normalizeStream:async()=>{throw Error('camera pixels unavailable');}});
   await assert.rejects(s.publisher.start(),/camera pixels unavailable/);assert.equal(s.stops(),1);assert.equal(s.states.at(-1).stream,null);
-  assert.equal(s.calls.some(call=>call.path==='stream/offer'),false);assert.ok(s.calls.some(call=>call.path==='stream'&&call.method==='DELETE'));
+  assert.equal(s.calls.length,0,'No remote publication was created, so none may be stopped');
 });
 
 test('native camera ending stops normalized output and clears capture-ready media',async()=>{
@@ -448,35 +523,82 @@ test('phone orientation metadata never overrides the actual native video dimensi
     const result=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal,{readOrientation:()=> 'portrait'});
     assert.deepEqual(result.readFrame().sourceSize,[1920,1080]);assert.deepEqual(result.readFrame().outputSize,[1920,1080]);
     assert.equal(result.readFrame().phoneOrientation,'portrait');assert.equal(result.readFrame().ready,true);
+    assert.equal(result.readFrame().issue,undefined);
     assert.equal(env.stats().perFrameCallbacks,0);result.dispose();
   } finally {abort.abort();env.restore();}
 });
 
-test('square native frames are valid and retain their exact pixels',async()=>{
+test('undersized square native frames retain exact pixels but cannot claim ready',async()=>{
   const env=nativeEnvironment({width:1024,height:1024}),abort=new AbortController();
   try {
     const prepared=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal);
     assert.equal(prepared.stream,env.input);assert.deepEqual(prepared.readFrame().outputSize,[1024,1024]);
-    assert.equal(prepared.readFrame().ready,true);assert.equal(prepared.readFrame().rotation,0);prepared.dispose();
+    assert.equal(prepared.readFrame().ready,false);assert.equal(prepared.readFrame().issue,'resolution');assert.equal(prepared.readFrame().rotation,0);prepared.dispose();
     assert.deepEqual(env.stats(),{inputStops:0,removed:1,perFrameCallbacks:0});
   } finally {abort.abort();env.restore();}
 });
 
-test('portrait native publication uses direction-specific 1080p and 720p ideals with one camera acquisition',async()=>{
+test('portrait native publication honors either selected resolution without rotating or manufacturing pixels',async()=>{
   for(const [resolution,width,height] of [['1080p',1080,1920],['720p',720,1280]]) {
     const env=nativeEnvironment({width,height});env.orientation.type='portrait-primary';let added;
     const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream,
       peer:{addTrack(track,stream){added=[track,stream];return{getParameters:()=>({encodings:[]})};}}});
     try {
       await s.publisher.start({resolution,bitrateKbps:12000});assert.equal(s.constraints.length,1);
-      assert.deepEqual(s.constraints[0].video.width,{ideal:width});assert.deepEqual(s.constraints[0].video.height,{ideal:height});
-      assert.deepEqual(s.constraints[0].video.aspectRatio,{ideal:9/16});assert.deepEqual(s.constraints[0].video.frameRate,{ideal:30,max:30});
+      const limit=resolution==='720p'?{max:1280}:{};
+      assert.deepEqual(s.constraints[0].video.width,{min:width,ideal:height,...limit});assert.deepEqual(s.constraints[0].video.height,{min:width,ideal:width,...limit});
+      assert.deepEqual(s.constraints[0].video.resizeMode,{ideal:resolution==='720p'?'crop-and-scale':'none'});assert.deepEqual(s.constraints[0].video.frameRate,{ideal:30,max:30});
+      assert.equal(s.states.at(-1).resolution,resolution);
       assert.equal(added[0],env.track);assert.equal(added[1],env.input);assert.equal(s.states.at(-1).publishing,true);
       assert.equal(s.states.at(-1).frame.phoneOrientation,'portrait');assert.deepEqual(s.states.at(-1).frame.sourceSize,[width,height]);
       assert.deepEqual(s.states.at(-1).frame.outputSize,[width,height]);assert.deepEqual(env.elements,['video']);
       await s.publisher.stop();assert.equal(env.stats().inputStops,1);
     } finally {await s.publisher.stop();env.restore();}
   }
+});
+
+test('720p landscape capture uses native 1280 by 720 and refuses undersized frames',async()=>{
+  for(const [width,height,ready] of [[1280,720,true],[720,1280,true],[960,540,false],[720,720,false]]) {
+    const env=nativeEnvironment({width,height});
+    const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream});
+    try {
+      if(ready) {
+        await s.publisher.start({resolution:'720p'});
+        assert.equal(s.states.at(-1).frame.ready,true);assert.deepEqual(s.states.at(-1).frame.outputSize,[width,height]);
+        assert.equal(s.states.at(-1).resolution,'720p');assert.equal(s.constraints.length,1);
+      } else {
+        await assert.rejects(s.publisher.start({resolution:'720p'}),/720p/);
+        assert.equal(s.calls.some(call=>call.method==='POST'),false);
+      }
+    } finally {await s.publisher.stop();env.restore();}
+  }
+});
+
+test('720p rotation keeps its resolution, native track and peer without restarting',async()=>{
+  const env=nativeEnvironment({width:720,height:1280}),applied=[];env.orientation.type='portrait-primary';
+  env.track.applyConstraints=async value=>{
+    applied.push(value);env.source.videoWidth=value.width.ideal;env.source.videoHeight=value.height.ideal;
+    env.source.dispatchEvent(new Event('resize'));
+  };
+  const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await s.publisher.start({resolution:'720p'});const stream=s.states.at(-1).stream;
+    for(const [orientation,size] of [['landscape-primary',[1280,720]],['portrait-primary',[720,1280]]]) {
+      env.orientation.type=orientation;env.orientation.dispatchEvent(new Event('change'));
+      await new Promise(resolve=>setTimeout(resolve,650));
+      assert.deepEqual(s.states.at(-1).frame.sourceSize,size);assert.equal(s.states.at(-1).frame.ready,true);
+      assert.equal(s.states.at(-1).stream,stream);assert.equal(s.states.at(-1).resolution,'720p');
+    }
+    assert.equal(applied.length,2);assert.ok(applied.every(value=>value.width.min===720&&value.height.min===720));
+    assert.equal(s.constraints.length,1);assert.equal(s.peer.closed,false);assert.equal(env.stats().inputStops,0);
+    assert.equal(s.calls.filter(call=>call.method==='DELETE').length,0);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('unsupported 720p is explicit and does not silently retry another resolution',async()=>{
+  const s=setup({getUserMedia:async()=>{throw new DOMException('unsupported','OverconstrainedError');}});
+  await assert.rejects(s.publisher.start({resolution:'720p'}),/720p/);
+  assert.equal(s.constraints.length,1);assert.equal(s.calls.length,0);await s.publisher.stop();
 });
 
 test('same-size viewport resize cannot reinterpret keyboard geometry as a camera direction change',async()=>{
@@ -490,39 +612,39 @@ test('same-size viewport resize cannot reinterpret keyboard geometry as a camera
   } finally {abort.abort();env.restore();}
 });
 
-test('an upside-down landscape orientation change invalidates even when native dimensions stay the same',async()=>{
+test('an upside-down landscape orientation change clears hints without invalidating transport',async()=>{
   const env=nativeEnvironment(),abort=new AbortController();let invalidated=0;
   try {
     const prepared=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal,{invalidated(){invalidated++;}});
     env.orientation.type='landscape-secondary';env.orientation.dispatchEvent(new Event('change'));
-    assert.equal(invalidated,1);assert.equal(prepared.readFrame().ready,false);assert.equal(prepared.readFrame().phoneOrientation,'landscape');
+    assert.equal(invalidated,0);assert.equal(prepared.readFrame().ready,false);assert.equal(prepared.readFrame().phoneOrientation,'landscape');
     assert.deepEqual(prepared.readFrame().sourceSize,[1920,1080]);assert.equal(env.stats().inputStops,0);
   } finally {abort.abort();env.restore();}
 });
 
-test('a portrait camera resize revokes publication and leaves native track disposal to its owner',async()=>{
+test('a portrait camera resize preserves publication and leaves native track disposal to its owner',async()=>{
   const env=nativeEnvironment(),abort=new AbortController();let invalidated=0;
   try {
     const result=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal,{invalidated(){invalidated++;}});
     env.source.videoWidth=1080;env.source.videoHeight=1920;env.source.dispatchEvent(new Event('resize'));
-    assert.equal(invalidated,1);assert.equal(result.readFrame().ready,false);assert.deepEqual(result.readFrame().outputSize,[1080,1920]);
+    assert.equal(invalidated,0);assert.equal(result.readFrame().ready,false);assert.deepEqual(result.readFrame().outputSize,[1080,1920]);
     assert.equal(env.stats().inputStops,0);result.dispose();assert.equal(env.stats().removed,1);
   } finally {abort.abort();env.restore();}
 });
 
-test('a landscape size change invalidates once, while ordinary resize notifications keep the native stream',async()=>{
-  const env=nativeEnvironment(),abort=new AbortController(),invalidated=[];
+test('a landscape size change updates geometry only, while ordinary resize notifications keep the native stream',async()=>{
+  const env=nativeEnvironment(),abort=new AbortController(),invalidated=[],changes=[];
   try {
-    const result=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal,{invalidated:frame=>invalidated.push(frame)});
+    const result=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal,{invalidated:frame=>invalidated.push(frame),changed:frame=>changes.push(frame)});
     env.source.dispatchEvent(new Event('resize'));
     globalThis.window.dispatchEvent(new Event('resize'));
     assert.equal(invalidated.length,0,'unchanged decoded pixels do not stop the camera');
     env.source.videoWidth=1280;env.source.videoHeight=720;env.source.dispatchEvent(new Event('resize'));
-    assert.equal(invalidated.length,1);assert.equal(invalidated[0].ready,false);
+    assert.equal(invalidated.length,0);assert.equal(changes.length,1);assert.equal(changes[0].ready,false);
     assert.deepEqual(result.readFrame().sourceSize,[1280,720]);assert.deepEqual(result.readFrame().outputSize,[1280,720]);
     env.source.videoWidth=1920;env.source.videoHeight=1080;env.source.dispatchEvent(new Event('resize'));
     env.orientation.dispatchEvent(new Event('change'));result.dispose();
-    assert.equal(invalidated.length,1,'disposed callbacks cannot revive or invalidate the old generation again');
+    assert.equal(invalidated.length,0,'framing changes never invalidate transport');
     assert.deepEqual(env.stats(),{inputStops:0,removed:1,perFrameCallbacks:0});
   } finally {abort.abort();env.restore();}
 });
@@ -532,11 +654,11 @@ test('physical portrait orientation revokes capture before Safari changes its de
   try {
     const result=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal,{invalidated:frame=>invalidated.push(frame)});
     env.orientation.type='portrait-primary';env.orientation.dispatchEvent(new Event('change'));
-    assert.equal(invalidated.length,1);assert.equal(result.readFrame().ready,false);
+    assert.equal(invalidated.length,0);assert.equal(result.readFrame().ready,false);
     assert.equal(result.readFrame().phoneOrientation,'portrait');assert.deepEqual(result.readFrame().outputSize,[1920,1080]);
     env.orientation.type='landscape-primary';env.orientation.dispatchEvent(new Event('change'));
     assert.equal(result.readFrame().ready,false,'old pixel dimensions cannot restore the invalidated publication');
-    assert.equal(invalidated.length,1);assert.equal(env.stats().inputStops,0);
+    assert.equal(invalidated.length,0);assert.equal(env.stats().inputStops,0);
   } finally {abort.abort();env.restore();}
 });
 
@@ -568,6 +690,60 @@ test('stop while native video play is pending drains startup without an offer or
     assert.equal(s.calls.some(call=>call.method==='POST'),false);assert.equal(env.stats().inputStops,1);
     assert.deepEqual(env.stats(),{inputStops:1,removed:1,perFrameCallbacks:0});
   } finally {await s.publisher.stop();env.restore();}
+});
+
+test('rotation and encoder resizing keep one live peer and recover capture readiness without a DELETE',async()=>{
+  const env=nativeEnvironment();
+  env.track.applyConstraints=async()=>{};
+  const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await s.publisher.start();await turn();
+    const stream=s.states.at(-1).stream;
+    env.orientation.type='portrait-primary';env.orientation.dispatchEvent(new Event('change'));
+    env.source.videoWidth=1080;env.source.videoHeight=1920;env.source.dispatchEvent(new Event('resize'));
+    assert.equal(s.states.at(-1).frame.ready,false);
+    // A duplicate video resize must not restore capture readiness prematurely.
+    env.source.dispatchEvent(new Event('resize'));
+    env.orientation.type='landscape-primary';env.orientation.dispatchEvent(new Event('change'));
+    env.source.videoWidth=960;env.source.videoHeight=540;env.source.dispatchEvent(new Event('resize'));
+    assert.equal(s.states.at(-1).stream,stream);assert.equal(s.states.at(-1).publishing,true);
+    assert.equal(s.states.at(-1).generation,7);assert.equal(s.peer.closed,false);
+    assert.equal(env.stats().inputStops,0);assert.equal(env.stats().removed,0);
+    assert.equal(s.calls.filter(c=>c.method==='DELETE').length,0);
+    assert.equal(s.calls.filter(c=>c.path==='stream'&&c.method==='POST').length,1);
+    assert.equal(s.constraints.length,1);assert.equal(s.states.some(state=>state.sourceChanged),false);
+    await new Promise(resolve=>setTimeout(resolve,650));
+    assert.equal(s.states.at(-1).frame.ready,false);assert.equal(s.states.at(-1).frame.issue,'resolution');
+    assert.deepEqual(s.states.at(-1).frame.sourceSize,[960,540]);
+    env.source.videoWidth=1920;env.source.videoHeight=1080;env.source.dispatchEvent(new Event('resize'));
+    await new Promise(resolve=>setTimeout(resolve,650));assert.equal(s.states.at(-1).frame.ready,true);
+    await s.publisher.stop();assert.equal(env.stats().inputStops,1);assert.equal(env.stats().removed,1);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('stopping during rotation cancels readiness callbacks and cannot revive capture',async()=>{
+  const env=nativeEnvironment();
+  const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await s.publisher.start();env.orientation.type='portrait-primary';env.orientation.dispatchEvent(new Event('change'));
+    await s.publisher.stop();const count=s.states.length;
+    await new Promise(resolve=>setTimeout(resolve,650));
+    assert.equal(s.states.length,count);assert.equal(s.states.at(-1).stream,null);
+    assert.equal(env.stats().inputStops,1);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('delayed native playback after rotation resumes readiness without reopening the camera',async()=>{
+  const env=nativeEnvironment(),changes=[],abort=new AbortController();
+  try {
+    const prepared=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal,{changed:f=>changes.push(f)});
+    env.source.paused=true;env.source.dispatchEvent(new Event('pause'));
+    await new Promise(resolve=>setTimeout(resolve,650));
+    assert.equal(prepared.readFrame().ready,false);
+    env.source.paused=false;env.source.dispatchEvent(new Event('playing'));
+    assert.equal(prepared.readFrame().ready,true);assert.equal(changes.at(-1).ready,true);
+    assert.equal(env.stats().inputStops,0);assert.equal(env.stats().removed,0);
+  } finally {abort.abort();env.restore();}
 });
 
 test('orientation state respects screen type, legacy angle and viewport fallback',()=>{
@@ -659,15 +835,139 @@ test('an unconfirmed old stream DELETE never emits an automatic reconnect signal
   } finally {await s.publisher.stop();}
 });
 
-test('a 1080p request preserves actual 720p camera pixels without upscaling or a synthetic frame clock',async()=>{
+test('a 1080p request reports undersized pixels honestly without upscaling or a synthetic frame clock',async()=>{
   const env=nativeEnvironment({width:1280,height:720}),abort=new AbortController();
   try {
     const result=await rtc.prepareBrowserLandscapeStream(env.input,'1080p',abort.signal);
     assert.equal(result.stream,env.input);assert.deepEqual(result.readFrame().outputSize,[1280,720]);assert.deepEqual(result.readFrame().sourceSize,[1280,720]);
+    assert.equal(result.readFrame().ready,false);assert.equal(result.readFrame().issue,'resolution');
     env.source.currentTime=.1;env.source.dispatchEvent(new Event('resize'));
     assert.deepEqual(env.elements,['video']);assert.equal(env.stats().perFrameCallbacks,0);
     result.dispose();assert.equal(env.stats().inputStops,0);
   } finally {env.restore();}
+});
+
+test('Full HD constraints prefer direction without tying the long-edge minimum to sensor axes',()=>{
+  assert.deepEqual(rtc.browserCameraConstraints('landscape').width,{min:1080,ideal:1920});
+  assert.deepEqual(rtc.browserCameraConstraints('portrait').height,{min:1080,ideal:1920});
+  for(const size of [[1920,1080],[1080,1920],[3840,2160]])assert.equal(rtc.isFullHdSize(...size),true);
+  for(const size of [[1280,720],[1080,1080],[1920,720],[NaN,1080]])assert.equal(rtc.isFullHdSize(...size),false);
+});
+
+test('undersized actual camera pixels cannot start a publication even if constraints were accepted',async()=>{
+  const env=nativeEnvironment({width:1280,height:720});
+  const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await assert.rejects(s.publisher.start(),/1080p/);
+    assert.equal(s.calls.length,0);assert.equal(env.stats().inputStops,1);assert.equal(env.stats().removed,1);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('upright startup accepts native landscape-coded Full HD without asking the user to rotate',async()=>{
+  const env=nativeEnvironment();env.orientation.type='portrait-primary';
+  const s=setup({getUserMedia:async constraints=>{
+    // This camera exposes a 1920x1080 native mode even when the screen is upright.
+    if(constraints.video.height.min>1080)throw new DOMException('sensor height','OverconstrainedError');
+    return env.input;
+  },normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await s.publisher.start();await turn();
+    const current=s.states.at(-1);
+    assert.equal(current.publishing,true);assert.equal(current.frame.ready,true);
+    assert.equal(current.frame.phoneOrientation,'portrait');assert.deepEqual(current.frame.sourceSize,[1920,1080]);
+    assert.equal(current.frame.issue,undefined);assert.equal(current.waitingForLandscape,undefined);
+    assert.equal(s.constraints.length,1);assert.equal(s.calls.filter(c=>c.path==='stream/offer').length,1);
+    assert.equal(env.stats().inputStops,0);assert.equal(s.states.some(state=>/自動旋轉|目前方向的/.test(state.status)),false);
+    env.orientation.type='landscape-primary';env.track.applyConstraints=async()=>{};
+    env.orientation.dispatchEvent(new Event('change'));await new Promise(resolve=>setTimeout(resolve,650));
+    assert.equal(s.states.at(-1).stream,current.stream);assert.equal(s.states.at(-1).generation,current.generation);
+    assert.equal(s.states.at(-1).frame.ready,true);assert.equal(s.calls.filter(c=>c.method==='DELETE').length,0);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('landscape startup accepts portrait-coded Full HD and later native resize without reopening',async()=>{
+  const env=nativeEnvironment({portrait:true});
+  const s=setup({getUserMedia:async constraints=>{
+    if(constraints.video.width.min>1080)throw new DOMException('sensor width','OverconstrainedError');
+    return env.input;
+  },normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await s.publisher.start();await turn();const stream=s.states.at(-1).stream;
+    assert.equal(s.states.at(-1).publishing,true);assert.equal(s.states.at(-1).frame.ready,true);
+    assert.deepEqual(s.states.at(-1).frame.sourceSize,[1080,1920]);
+    env.source.videoWidth=1920;env.source.videoHeight=1080;env.source.dispatchEvent(new Event('resize'));
+    await new Promise(resolve=>setTimeout(resolve,650));
+    assert.equal(s.states.at(-1).stream,stream);assert.equal(s.states.at(-1).frame.ready,true);
+    assert.deepEqual(s.states.at(-1).frame.sourceSize,[1920,1080]);
+    assert.equal(s.constraints.length,1);assert.equal(s.peer.closed,false);assert.equal(env.stats().inputStops,0);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('turning a portrait phone to landscape reapplies Full HD on the same track and peer',async()=>{
+  const env=nativeEnvironment({portrait:true}),applied=[];env.orientation.type='portrait-primary';
+  env.track.getConstraints=()=>({facingMode:{ideal:'environment'},advanced:[{focusMode:'continuous'}]});
+  env.track.applyConstraints=async constraints=>{
+    applied.push(constraints);env.source.videoWidth=constraints.width.ideal;env.source.videoHeight=constraints.height.ideal;
+    env.source.dispatchEvent(new Event('resize'));
+  };
+  const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await s.publisher.start();const stream=s.states.at(-1).stream;
+    env.orientation.type='landscape-primary';env.orientation.dispatchEvent(new Event('change'));await turn();
+    await new Promise(resolve=>setTimeout(resolve,650));
+    assert.equal(applied.length,1);assert.deepEqual(applied[0].width,{min:1080,ideal:1920});
+    assert.deepEqual(applied[0].advanced,[{focusMode:'continuous'}]);
+    assert.equal(s.states.at(-1).frame.ready,true);assert.deepEqual(s.states.at(-1).frame.sourceSize,[1920,1080]);
+    assert.equal(s.states.at(-1).stream,stream);assert.equal(s.states.at(-1).generation,7);
+    assert.equal(s.constraints.length,1);assert.equal(s.peer.closed,false);assert.equal(env.stats().inputStops,0);
+    assert.equal(s.calls.filter(c=>c.method==='DELETE').length,0);assert.equal(s.calls.filter(c=>c.path==='stream/offer').length,1);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('rapid direction changes serialize native constraints and latest landscape intent wins',async()=>{
+  const abort=new AbortController(),calls=[],states=[],pending=[];
+  const track={getConstraints:()=>({frameRate:{max:30}}),applyConstraints:value=>{calls.push(value);return new Promise(resolve=>pending.push(resolve));}};
+  const sync=rtc.syncBrowserCameraOrientation(track,'portrait',abort.signal,(...value)=>states.push(value));
+  sync.request('landscape');sync.request('portrait');
+  assert.equal(calls.length,1);pending.shift()();await turn();
+  assert.equal(calls.length,2);sync.request('landscape');pending.shift()();await turn();
+  assert.equal(calls.length,3);pending.shift()();await turn();
+  assert.deepEqual(calls.map(c=>[c.width.ideal,c.height.ideal]),[[1920,1080],[1080,1920],[1920,1080]]);
+  assert.ok(calls.every(c=>c.width.min===1080 && c.height.min===1080));
+  assert.deepEqual(states.at(-1),[false,false]);sync.dispose();
+});
+
+test('failed optional orientation controls retain transport and stable native Full HD capture',async()=>{
+  const env=nativeEnvironment({portrait:true});env.orientation.type='portrait-primary';
+  env.track.applyConstraints=async()=>{throw Error('unsupported');};
+  const s=setup({getUserMedia:async()=>env.input,normalizeStream:rtc.prepareBrowserLandscapeStream});
+  try {
+    await s.publisher.start();env.orientation.type='landscape-primary';env.orientation.dispatchEvent(new Event('change'));
+    await new Promise(resolve=>setTimeout(resolve,650));
+    assert.equal(s.states.at(-1).frame.ready,true);assert.equal(s.states.at(-1).frame.issue,'constraints');
+    assert.equal(s.states.at(-1).publishing,true);assert.equal(env.stats().inputStops,0);assert.equal(s.peer.closed,false);
+    assert.equal(s.calls.filter(c=>c.method==='DELETE').length,0);
+  } finally {await s.publisher.stop();env.restore();}
+});
+
+test('stop while applying native orientation suppresses queued changes and late callbacks',async()=>{
+  const abort=new AbortController(),states=[];let release,calls=0;
+  const track={applyConstraints:()=>{calls++;return new Promise(resolve=>release=resolve);}};
+  const sync=rtc.syncBrowserCameraOrientation(track,'portrait',abort.signal,(...value)=>states.push(value));
+  sync.request('landscape');sync.request('portrait');abort.abort();const count=states.length;
+  release();await turn();sync.request('landscape');assert.equal(calls,1);assert.equal(states.length,count);sync.dispose();
+});
+
+test('hung orientation adjustment reports a problem but cannot launch overlapping native calls',async()=>{
+  const clock=connectionClock(),abort=new AbortController(),states=[];let release,calls=0;
+  const track={applyConstraints:()=>{calls++;return new Promise(resolve=>release=resolve);}};
+  const sync=rtc.syncBrowserCameraOrientation(track,'portrait',abort.signal,(...value)=>states.push(value));
+  try {
+    sync.request('landscape');clock.fire(3000);sync.request('portrait');
+    assert.equal(calls,1);assert.deepEqual(states.at(-1),[true,true]);
+    abort.abort();const count=states.length;release();await turn();
+    assert.equal(calls,1);assert.equal(states.length,count);
+  } finally {sync.dispose();clock.restore();}
 });
 
 test('aborting before the first decoded image removes the source and never creates an output',async()=>{
@@ -697,8 +997,8 @@ test('formal capture obtains ticket before releasing RTC and never manufactures 
 async function streamHookFixture(run) {
   const names=['window','document','WebSocket','navigator','setTimeout','clearTimeout','setInterval','clearInterval'];
   const saved=Object.fromEntries(names.map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)])),oldNow=Date.now;
-  let now=10000,failPath=null,negotiationFails=false,startCalls=0;
-  const sockets=[],tickers=new Set(),states=[],refs=[],memos=[],effects=[];
+  let now=10000,failPath=null,negotiationFails=false,startCalls=0,stopCalls=0;
+  const sockets=[],tickers=new Set(),states=[],refs=[],memos=[],effects=[],startOptions=[];
   let si=0,ri=0,mi=0,ei=0;
   const same=(a,b)=>a&&b&&a.length===b.length&&a.every((value,index)=>Object.is(value,b[index]));
   const hooks={useState(initial){const index=si++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return[states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},
@@ -720,9 +1020,10 @@ async function streamHookFixture(run) {
   }
   class Publisher {
     constructor(api,changed){this.changed=changed;}
-    async stop(){this.changed(rtc.idleBrowserRtc());}
+    async stop(){stopCalls++;this.changed(rtc.idleBrowserRtc());}
     stopLocal(){this.changed(rtc.idleBrowserRtc());}
-    async start(){
+    async start(options){
+      startOptions.push(structuredClone(options));
       startCalls++;backend.stream={...backend.stream,active:true,generation:7};
       this.changed({...rtc.idleBrowserRtc(),status:'negotiating'});
       if(negotiationFails)throw Error('negotiation failed');
@@ -745,7 +1046,7 @@ async function streamHookFixture(run) {
   const flush=async()=>{for(let i=0;i<4;i++){await turn();render();}};
   try {
     render();await flush();
-    await run({render,flush,startCalls:()=>startCalls,setFailure:path=>{failPath=path;},failNegotiation:()=>{negotiationFails=true;},
+    await run({render,flush,startCalls:()=>startCalls,startOptions,stopCalls:()=>stopCalls,backend,setFailure:path=>{failPath=path;},failNegotiation:()=>{negotiationFails=true;},
       pushSession(){sockets.at(-1).onmessage?.({data:JSON.stringify({type:'state',session:backend})});},
       tick(ms){now+=ms;for(const ticker of tickers)ticker();}});
   } finally {
@@ -754,6 +1055,35 @@ async function streamHookFixture(run) {
     for(const name of names){if(saved[name])Object.defineProperty(globalThis,name,saved[name]);else delete globalThis[name];}
   }
 }
+
+test('720p selection survives the workspace hook and automatic reconnect',async()=>{
+  await streamHookFixture(async f=>{
+    await f.render().startStream({resolution:'720p',bitrateKbps:3000});await f.flush();
+    assert.deepEqual(f.startOptions,[{resolution:'720p',bitrateKbps:3000}]);
+    f.pushSession();f.tick(6000);await f.flush();
+    assert.equal(f.startCalls(),2);assert.deepEqual(f.startOptions[1],f.startOptions[0]);
+    await f.render().stopStream();await f.flush();
+    await f.render().startStream({resolution:'1080p'});
+    assert.deepEqual(f.startOptions.at(-1),{resolution:'1080p',bitrateKbps:12000});
+  });
+});
+
+test('wiring next, previous, review and component changes keep the same camera publication',async()=>{
+  await streamHookFixture(async f=>{
+    Object.assign(f.backend,{workspace_id:'project',context_revision:1});f.pushSession();await f.flush();
+    await f.render().startStream();await f.flush();
+    const stream=f.render().rtc.stream,stops=f.stopCalls();
+    for(const [index,component,phase] of [[1,'hc-sr04','active'],[2,'hc-sr04','active'],[3,'hc-sr04','review'],[4,'mrd-tft240','active'],[3,'hc-sr04','active']]){
+      f.backend.context_id=`step-${f.backend.context_revision++}`;
+      f.backend.context={round:1,guide:{index,component_id:component,phase}};
+      f.pushSession();await f.flush();
+      assert.equal(f.render().rtc.stream,stream);
+      assert.equal(f.render().rtc.publishing,true);
+      assert.equal(f.stopCalls(),stops,'Step metadata must not send DELETE stream');
+      assert.equal(f.startCalls(),1,'Step metadata must not reopen the native camera');
+    }
+  });
+});
 
 test('successful publication remains recoverable when session, chat or wiring refresh fails',async()=>{
   for(const path of ['session','conversation','wiring-review'])await streamHookFixture(async f=>{
@@ -781,4 +1111,72 @@ test('failed remote negotiation never exposes a successful publisher generation'
   const s=setup({peer:{async setRemoteDescription(){throw Error('answer rejected');}}});
   await assert.rejects(s.publisher.start(),/answer rejected/);
   assert.equal(s.states.some(state=>state.publishing||state.generation!==undefined),false);
+});
+
+function connectionClock() {
+  const saved={setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout};
+  const timers=new Map();let next=0;
+  globalThis.setTimeout=(callback,delay)=>{timers.set(++next,{callback,delay});return next;};
+  globalThis.clearTimeout=id=>timers.delete(id);
+  return {timers,fire(delay){const entry=[...timers].find(([,timer])=>timer.delay===delay);assert.ok(entry,`Missing ${delay}ms timer`);timers.delete(entry[0]);entry[1].callback();},
+    restore(){Object.assign(globalThis,saved);}};
+}
+
+test('publisher failure releases camera and capture eligibility, and deletes its stopped stream',async()=>{
+  const s=setup();
+  try {
+    await s.publisher.start();s.peer.connectionState='failed';s.peer.onconnectionstatechange();
+    assert.equal(s.states.at(-1).publishing,false);assert.equal(s.states.at(-1).stream,null);
+    assert.equal(s.stops(),1);assert.equal(s.peer.closed,true);await turn();
+    assert.equal(s.calls.filter(call=>call.method==='DELETE').length,1);
+  } finally {s.publisher.stopLocal();}
+});
+
+test('publisher transient disconnection revokes capture but reconnects without reopening the camera',async()=>{
+  const clock=connectionClock(),s=setup();
+  try {
+    await s.publisher.start();s.peer.connectionState='disconnected';s.peer.onconnectionstatechange();
+    assert.equal(s.states.at(-1).publishing,false);assert.equal(s.stops(),0);
+    assert.equal([...clock.timers.values()].filter(timer=>timer.delay===8000).length,1);
+    s.peer.onconnectionstatechange();assert.equal([...clock.timers.values()].filter(timer=>timer.delay===8000).length,1,'Repeated state must not extend grace');
+    s.peer.connectionState='connected';s.peer.onconnectionstatechange();
+    assert.equal(s.states.at(-1).publishing,true);assert.equal(s.constraints.length,1);
+    assert.equal([...clock.timers.values()].some(timer=>timer.delay===8000),false);
+  } finally {await s.publisher.stop();assert.equal(clock.timers.size,0);clock.restore();}
+});
+
+test('publisher prolonged disconnection cleans up once and late events cannot revive publication',async()=>{
+  const clock=connectionClock(),s=setup();
+  try {
+    await s.publisher.start();const late=s.peer.onconnectionstatechange;
+    s.peer.connectionState='disconnected';late();clock.fire(8000);await turn();
+    assert.equal(s.stops(),1);assert.equal(s.states.at(-1).stream,null);
+    const count=s.states.length;s.peer.connectionState='connected';late();
+    assert.equal(s.states.length,count);assert.equal(clock.timers.size,0);
+    assert.equal(s.calls.filter(call=>call.method==='DELETE').length,1);
+  } finally {s.publisher.stopLocal();clock.restore();}
+});
+
+test('publisher negotiation success is not a connected stream and a missing connection times out',async()=>{
+  const clock=connectionClock(),s=setup({peer:{connectionState:'connecting'}});
+  try {
+    await s.publisher.start();assert.equal(s.states.at(-1).publishing,false);
+    clock.fire(15000);await turn();
+    assert.equal(s.stops(),1);assert.equal(s.peer.closed,true);
+    assert.match(s.states.at(-1).status,/逾時/);assert.equal(s.states.at(-1).generation,undefined);
+  } finally {s.publisher.stopLocal();clock.restore();}
+});
+
+test('publisher restart waits for failure cleanup and old timers cannot close the new generation',async()=>{
+  const clock=connectionClock(),s=setup();let release;
+  const request=s.api.request;
+  s.api.request=(path,options)=>options.method==='DELETE'?new Promise(resolve=>release=resolve):request(path,options);
+  try {
+    await s.publisher.start();const late=s.peer.onconnectionstatechange;
+    s.peer.connectionState='failed';late();await turn();
+    const restart=s.publisher.start();await turn();assert.equal(s.constraints.length,1);
+    s.peer.connectionState='connected';release();await restart;
+    assert.equal(s.constraints.length,2);const count=s.states.length;late();assert.equal(s.states.length,count);
+    assert.equal([...clock.timers.values()].some(timer=>timer.delay===8000||timer.delay===15000),false);
+  } finally {s.api.request=request;await s.publisher.stop();clock.restore();}
 });

@@ -7,15 +7,17 @@ from __future__ import annotations
 
 import argparse
 import base64
-import colorsys
 import hashlib
 import io
 import json
 import math
 from pathlib import Path
-from collections import Counter
+import sys
 
 from PIL import Image, ImageCms, ImageDraw, ImageFont, ImageOps
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
+from app.photo_observations import classify_rgb, sample_color, load_photo as _load_photo
 
 HERE = Path(__file__).resolve().parent
 VERSION = 1
@@ -68,60 +70,10 @@ def font(size: int, bold: bool = False):
 
 
 def load_photo(path: Path) -> Image.Image:
-    with Image.open(path) as image:
-        original_profile = image.info.get("icc_profile")
-        oriented = ImageOps.exif_transpose(image).convert("RGB")
-        if original_profile:
-            try:
-                oriented = ImageCms.profileToProfile(
-                    oriented, ImageCms.ImageCmsProfile(io.BytesIO(original_profile)),
-                    ImageCms.createProfile("sRGB"), outputMode="RGB",
-                )
-            except (OSError, ValueError, ImageCms.PyCMSError) as error:
-                raise ValueError(f"照片色彩設定無法轉成 sRGB：{path.name}") from error
-        oriented.info.clear()
-        oriented.info["poc_color_management"] = "ICC converted to sRGB" if original_profile else "RGB interpreted as sRGB"
-        return oriented
-
-
-def classify_rgb(rgb):
-    h, s, v = colorsys.rgb_to_hsv(*(channel / 255 for channel in rgb))
-    hue = h * 360
-    if v < .17:
-        return "black"
-    if s < .16:
-        return "white" if v > .82 else "gray"
-    if s < .28 or v < .28:
-        return "unknown"
-    if hue < 15 or hue >= 345:
-        return "red"
-    if hue < 40:
-        return "orange"
-    if hue < 72:
-        return "yellow"
-    if hue < 175:
-        return "green"
-    if hue < 265:
-        return "blue"
-    return "purple"
-
-
-def sample_color(image: Image.Image, x: float, y: float):
-    """Local HSV patch vote, not a connector/wire detection or continuity verdict."""
-    radius = max(3, round(min(image.size) * .002))
-    box = (max(0, round(x) - radius), max(0, round(y) - radius),
-           min(image.width, round(x) + radius + 1), min(image.height, round(y) + radius + 1))
-    patch = image.crop(box)
-    pixels = list(patch.get_flattened_data() if hasattr(patch, "get_flattened_data") else patch.getdata())
-    votes = Counter(classify_rgb(rgb) for rgb in pixels)
-    name, count = votes.most_common(1)[0]
-    support = count / len(pixels)
-    if support < .60:
-        name = "unknown"
-    selected = [rgb for rgb in pixels if classify_rgb(rgb) == name] or pixels
-    rgb = [round(sum(p[channel] for p in selected) / len(selected)) for channel in range(3)]
-    return dict(name=name, label=COLOR_LABELS[name], rgb=rgb, support=round(support, 3),
-                method="local_hsv_vote", warning="局部色票，不證明腳號、插接或導通")
+    try:
+        return _load_photo(path)
+    except ValueError as error:
+        raise ValueError(f"照片色彩設定無法轉成 sRGB：{path.name}") from error
 
 
 def validate_markers(markers, size):

@@ -1014,6 +1014,7 @@ export default function App() {
             sourceError={liveCamera.error}
             sourceChanging={liveCamera.pending}
             sourceUnavailable={config?.camera_source === 'phone' && !phoneReady}
+            sourceStatusUnknown={config?.camera_source === 'phone' && liveCamera.status === null}
             onRetrySource={() => { if (!photoOperationBusy) void liveCamera.reconnect(); }}
             pinsById={pinsById}
             highlightIds={highlightIds}

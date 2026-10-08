@@ -557,3 +557,14 @@
 .unified-assistant .ai-debug-message .wiring-chat-crop input { width: 58px; padding: 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-card); color: var(--ink-primary); }
 .assistant-analysis-send-status { display: flex; gap: .25rem .75rem; flex-wrap: wrap; color: var(--text-muted); }
 .assistant-analysis-time { display: block; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+
+/* Always visible above the conversation, independent of its scroll position. */
+.wiring-analysis-entry { flex: none; min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-card); }
+.wiring-analysis-entry-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.wiring-analysis-entry-controls > label { flex: 1 1 120px; min-width: 0; }
+.wiring-analysis-entry-controls select { width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; background: var(--surface-card); color: var(--ink-primary); font: inherit; font-size: 12px; }
+.wiring-analysis-entry-controls > button { flex: 1 1 140px; min-height: 40px; white-space: normal; font-size: 12px; }
+.wiring-analysis-entry > small { display: block; margin-top: 6px; color: var(--text-muted); line-height: 1.5; font-size: 11px; }
+.wiring-analysis-entry > [role="alert"] { color: var(--danger, #ef9b9b); }
+.wiring-analysis-entry :is(button, select):focus-visible { outline: 2px solid var(--brand-link); outline-offset: 2px; }
+@media (pointer: coarse) { .wiring-analysis-entry-controls :is(button, select) { min-height: 44px; } }

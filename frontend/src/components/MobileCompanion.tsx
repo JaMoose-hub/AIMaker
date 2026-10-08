@@ -43,6 +43,8 @@ export function MobileVideo({ session, compact = false, pinsById, guideTarget }:
     displayFps: mobileMeasurementFresh(reading.displayAt, clock) ? reading.displayFps : null }
     : { transport: emptyViewerMetrics(), displayFps: null, size: "" };
   const receiveFresh = mobileVideoFresh(session.stream, clock);
+  const displayError = error === "mobile_viewer_connection_timeout" ? tr("畫面連線逾時，請確認網路後重新連接。", "Preview connection timed out. Check your network and reconnect.")
+    : error === "mobile_viewer_connection_lost" ? tr("畫面連線已中斷，請重新連接。", "Preview connection was lost. Please reconnect.") : error;
   const runtime = mobileModelRuntime(session.stream);
   useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 500); return () => clearInterval(timer); }, []);
   useEffect(() => {
@@ -101,13 +103,13 @@ export function MobileVideo({ session, compact = false, pinsById, guideTarget }:
       ? <MobileRecognitionOverlay key={owner} session={session} videoSize={decodedSize} pinsById={pinsById} guideTarget={guideTarget} /> : null}
     {session.stream.active && !receiveFresh ? <p className="mobile-video-placeholder" role="status">{tr("等待手機送來新影格；持續中斷時請在手機重新開啟串流。", "Waiting for new phone frames. Restart the stream on your phone if it remains interrupted.")}</p>
       : !active ? <p className="mobile-video-placeholder">{tr("在手機開啟串流，即可在這裡同步觀看。", "Start streaming on your phone to see it here.")}</p>
-      : state !== "connected" && !error ? <p className="mobile-video-placeholder">{tr("正在連接手機串流…", "Connecting phone stream…")}</p> : null}
+      : ["new", "connecting"].includes(state) && !error ? <p className="mobile-video-placeholder">{tr("正在連接手機串流…", "Connecting phone stream…")}</p> : null}
     <div className="mobile-video-metrics"><span>{current.size || tr("等待影像尺寸", "Waiting for video dimensions")}</span>
       <span>{tr("解碼", "Decoded")} {number(current.transport.decodeFps)} FPS</span>
       <span>{tr("顯示", "Displayed")} {number(current.displayFps)} FPS</span>
       <span>{tr("辨識", "Recognition")} {number(receiveFresh ? session.stream.recognition_fps : null)} FPS</span>
       {runtime.total ? <span>{runtime.available === 0 ? tr("YOLO 尚未就緒", "YOLO not ready") : runtime.cuda === runtime.total ? `YOLO CUDA ${runtime.cuda}/${runtime.total}` : `YOLO CUDA ${runtime.cuda}/${runtime.total} · ${tr("CPU／未就緒", "CPU / pending")}`}</span> : null}</div>
-    {error || ["failed", "disconnected"].includes(state) ? <p className="mobile-error" role="status">{error || tr("串流已中斷", "Stream disconnected")}
+    {error || ["failed", "disconnected"].includes(state) ? <p className="mobile-error" role="status">{displayError || tr("串流已中斷", "Stream disconnected")}
       <button type="button" onClick={() => setAttempt(value => value + 1)}>{tr("重新連接畫面", "Reconnect preview")}</button></p> : null}
   </div><MetricsContainer className={compact ? "mobile-stream-details" : undefined}>
     {compact ? <summary>{tr("串流資訊", "Stream details")}</summary> : null}

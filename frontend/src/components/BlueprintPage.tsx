@@ -9,22 +9,27 @@ import { CircuitDiagram } from "./CircuitDiagram";
 import { DesignViewSwitch, type DesignView } from "./DesignViewSwitch";
 import { HardwarePartsCheck } from "./HardwarePartsCheck";
 import { AssemblyGuide } from "./AssemblyGuide";
+import { MaterialPartArt } from "./MaterialPartArt";
 import './BlueprintPage.css';
 
 const blueprintTabs = ['overview', 'parts-check', 'materials', 'steps'] as const;
 type BlueprintTab = typeof blueprintTabs[number];
 
-export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandidate, generating, onCheckParts, partsCheckDisabledReason, partsPhotoLabel, partsPhotoKey, onOpenAI }: {
+export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandidate, generating, onCheckParts, partsCheckDisabledReason, partsPhotoLabel, partsPhotoKey, onOpenAI, partsCheckEnabled = false }: {
   design: ProjectDesign; onGuide: () => void; onEdit: () => void; onViewChange: (view: DesignView) => void;
   hasCandidate: boolean; generating: boolean;
   onCheckParts?: (prompt: string, includePhoto: boolean) => Promise<boolean>;
   partsCheckDisabledReason?: string; partsPhotoLabel?: string; partsPhotoKey?: string; onOpenAI?: () => void;
+  /** Hidden for the current demo; retain the comparison flow for later use. */
+  partsCheckEnabled?: boolean;
 }) {
   const tr = useMakerText();
   const { tx, locale } = useI18n();
   const projectText = (text: string) => design.source === "demo" ? systemText(text, locale) : text;
   const id = useId();
   const [tab, setTab] = useState<BlueprintTab>('overview');
+  const visibleTabs = blueprintTabs.filter(value => partsCheckEnabled || value !== 'parts-check');
+  const activeTab = !partsCheckEnabled && tab === 'parts-check' ? 'overview' : tab;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const structure = design.assembly?.parts.map(p => ({ ...structuralParts[p.kind], id: `structure-${p.kind}`, quantity: p.quantity, purpose: p.purpose })) ?? [];
   const materials = [...design.bom, ...structure].map(item => ({...item,
@@ -40,14 +45,17 @@ export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandid
   function switchTab(event: KeyboardEvent<HTMLButtonElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const next = event.key === 'Home' ? blueprintTabs[0] : event.key === 'End' ? blueprintTabs.at(-1)!
-      : blueprintTabs[(blueprintTabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : -1) + blueprintTabs.length) % blueprintTabs.length];
+    const next = event.key === 'Home' ? visibleTabs[0] : event.key === 'End' ? visibleTabs.at(-1)!
+      : visibleTabs[(visibleTabs.indexOf(activeTab) + (event.key === 'ArrowRight' ? 1 : -1) + visibleTabs.length) % visibleTabs.length];
     setTab(next);
     tabs.current?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus();
   }
   const cards = (items: typeof design.bom) => <div className="blueprint-shop-grid">{items.map(original => { const item = materials.find(material => material.id === original.id)!;
     const link = materialPurchaseLink(item);
     return <article key={item.id} className="blueprint-shop-card">
+    <div className="blueprint-shop-art"><div className="blueprint-shop-art-inner">
+      <MaterialPartArt material={item} label={`${item.name} · ${tr('零件示意圖', 'Part illustration')}`} />
+    </div><span className="blueprint-shop-art-caption">{tr('示意圖', 'Illustration')}</span></div>
     <span className="blueprint-shop-quantity">× {item.quantity}</span><strong>{item.name}</strong>
     <small>{item.id === 'hc-sr04' ? tr('核對供電與 ECHO 3.3V 相容性', 'Check supply and 3.3V ECHO compatibility')
       : item.id === 'mrd-tf240-8p-cs' ? 'ILI9341 · 8 pin · 240×320' : conciseMaterialName(item.purpose, locale)}</small>
@@ -70,23 +78,23 @@ export function BlueprintPage({ design, onGuide, onEdit, onViewChange, hasCandid
             aria-label={tr("有新版作品待確認 → 返回設計查看", "New revision ready → Review in Design")}>{tr("新版待確認", "New revision ready")} <span aria-hidden="true">↗</span></button> : null}
         </div>
       </div>
-        <div className="blueprint-actions"><button type="button" className="blueprint-check-shortcut" onClick={() => setTab('parts-check')}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m5 12 4 4L19 6" /><rect x="2" y="2" width="20" height="20" rx="6" /></svg>{tr('核對零件', 'Check parts')}</button>
+        <div className="blueprint-actions">{partsCheckEnabled && <button type="button" className="blueprint-check-shortcut" onClick={() => setTab('parts-check')}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m5 12 4 4L19 6" /><rect x="2" y="2" width="20" height="20" rx="6" /></svg>{tr('核對零件', 'Check parts')}</button>}
           <button className="maker-primary" onClick={onGuide}>{tr("開始 Pin 接線引導 →", "Start Pin wiring →")}</button></div>
       </div>
       <div className="blueprint-tabs" role="tablist" aria-label={tr("Blueprint 製作資料", "Blueprint build information")} ref={tabs}>
-        {blueprintTabs.map(value => <button key={value} id={`${id}-${value}-tab`} data-tab={value}
-          role="tab" aria-selected={tab === value} aria-controls={`${id}-${value}-panel`} tabIndex={tab === value ? 0 : -1}
+        {visibleTabs.map(value => <button key={value} id={`${id}-${value}-tab`} data-tab={value}
+          role="tab" aria-selected={activeTab === value} aria-controls={`${id}-${value}-panel`} tabIndex={activeTab === value ? 0 : -1}
           onClick={() => setTab(value)} onKeyDown={switchTab}>{tabNames[value]}</button>)}
       </div>
-      <div className="blueprint-panel blueprint-overview" role="tabpanel" id={`${id}-overview-panel`} aria-labelledby={`${id}-overview-tab`} hidden={tab !== 'overview'} tabIndex={0}>
+      <div className="blueprint-panel blueprint-overview" role="tabpanel" id={`${id}-overview-panel`} aria-labelledby={`${id}-overview-tab`} hidden={activeTab !== 'overview'} tabIndex={0}>
         <CircuitDiagram design={design} workspace readableDefault hideWorkspaceNotes selectedId={selectedId} onClearSelection={() => setSelectedId(null)}
           onSelect={wire => { setSelectedId(wire.id); }} />
         {selectedId ? <button type="button" className="blueprint-wire-reference" onClick={() => setTab('steps')}>{tr('查看此線接法與組裝說明 →', 'View this wire and assembly instructions →')}</button> : null}
       </div>
-      <div className="blueprint-panel" role="tabpanel" id={`${id}-parts-check-panel`} aria-labelledby={`${id}-parts-check-tab`} hidden={tab !== 'parts-check'} tabIndex={0}>
+      {partsCheckEnabled && <div className="blueprint-panel" role="tabpanel" id={`${id}-parts-check-panel`} aria-labelledby={`${id}-parts-check-tab`} hidden={activeTab !== 'parts-check'} tabIndex={0}>
         <HardwarePartsCheck projectScope={`${design.id}:${design.revision}`} onAsk={onCheckParts} disabledReason={partsCheckDisabledReason} photoLabel={partsPhotoLabel} photoKey={partsPhotoKey} onOpenAI={onOpenAI} />
-      </div>
+      </div>}
       <div className="blueprint-panel" role="tabpanel" id={`${id}-materials-panel`} aria-labelledby={`${id}-materials-tab`} hidden={tab !== "materials"} tabIndex={0}>
         <header className="blueprint-resource-heading">
           <div className="blueprint-material-heading"><h3>{tr('備齊作品材料', 'Find your project parts')}</h3>

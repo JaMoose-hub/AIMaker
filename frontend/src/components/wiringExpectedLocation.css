@@ -1,0 +1,15 @@
+.wiring-expected-location { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border, #43675a); border-radius: 8px; font-size: 12px; }
+.wiring-expected-body > header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.wiring-expected-body > header > span { font-weight: 650; }
+.wiring-expected-body > p { margin: 5px 0 2px; font-size: 12px; }
+.wiring-expected-body > svg { display: block; width: 100%; max-width: 360px; height: auto; margin: 3px auto; }
+.wiring-expected-body > details { margin-top: 2px; font-size: 11px; }
+.wiring-expected-body > details > summary { cursor: pointer; padding: 2px 0; }
+.wiring-expected-body > details p { margin: 5px 0; }
+.wiring-expected-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.wiring-expected-tabs > button { padding: 4px 8px; border: 1px solid var(--border, #527666); border-radius: 5px; font-size: 11px; background: transparent; color: inherit; cursor: pointer; }
+.wiring-expected-tabs > button[aria-pressed=true] { border-color: #b68a28; box-shadow: inset 0 0 0 1px #b68a28; }
+.wiring-expected-tabs > button:focus-visible { outline: 2px solid var(--brand-link, #6db9f4); outline-offset: 2px; }
+
+.wiring-expected-map > summary { cursor: pointer; font-size: 12px; font-weight: 600; }
+.wiring-expected-body { padding-top: 6px; }

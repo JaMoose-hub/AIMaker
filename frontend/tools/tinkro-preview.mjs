@@ -46,7 +46,7 @@ export function usePiConnection(){
   return {status,networkError:offline?'Offline fixture: connection unavailable. This is a deliberately long diagnostic message, not a real Pi failure.':false,
     pending,error,perform,connect:deny,action:deny};
 }`;
-const result=await build({entryPoints:[fileURLToPath(new URL('tools/tinkro-preview.tsx',base))],outdir:'preview',write:false,bundle:true,jsx:'automatic',plugins:[{
+const result=await build({entryPoints:[fileURLToPath(new URL('tools/tinkro-preview.tsx',base))],outdir:'preview',write:false,bundle:true,jsx:'automatic',external:['/brand/*'],plugins:[{
   name:'offline-hardware-hooks',setup(builder){
     builder.onResolve({filter:/\/lib\/(debug|PiConnection|useComponentTests)$/},args=>({path:args.path.split('/').at(-1),namespace:'offline'}));
     builder.onLoad({filter:/.*/,namespace:'offline'},args=>({resolveDir:fileURLToPath(base),contents:({

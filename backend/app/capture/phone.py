@@ -21,12 +21,15 @@ class PhoneFrameSource:
         self._last_seq = -1
         self._opened = False
         self.error = None
+        self.pending_size = None
 
     def open(self):
         with self._condition:
             self._opened = True
             self._latest = None
             self._last_seq = -1
+            self.error = None
+            self.pending_size = None
 
     def close(self):
         with self._condition:
@@ -41,11 +44,12 @@ class PhoneFrameSource:
             if not self._opened or seq <= self._last_seq or not 0 <= self.clock()-received < .5:
                 return True
             if frame.shape[:2] != (self.height, self.width):
-                # Do not put a rotated image under the old camera calibration.
-                self.error = 'phone_dimensions_changed'
-                self._latest = None
-                return True
+                # Same owner, new native pixels (rotation or encoder adaptation).
+                # FrameBus marks a geometry epoch; each inference worker resets
+                # its own temporal state, without restarting capture or models.
+                self.width, self.height = int(frame.shape[1]), int(frame.shape[0])
             self.error = None
+            self.pending_size = None
             self._last_seq = seq
             self._latest = (frame, seq, received * 1000)
             self._condition.notify_all()
@@ -90,8 +94,9 @@ class LiveSourceManager:
         return dict(kind='phone' if phone else 'webcam',
                     session_id=source.session_id if phone else None,
                     generation=source.generation if phone else None,
+                    pending_size=source.pending_size if phone else None,
                     runtime_revision=state.config.runtime_revision,
-                    ready=fresh, error=source.error if phone else None)
+                    ready=fresh and (not phone or source.error is None), error=source.error if phone else None)
 
     def select(self, kind, *, phone=None, timeout=6):
         # The route holds camera_control_lock and the photo-session barrier.

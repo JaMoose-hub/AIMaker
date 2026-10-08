@@ -25,21 +25,33 @@ export async function prepareProjectWiringEdit(projectId: string, request = make
     return {pi, tests, trials, session: sessions.active,
       jobs: [...pi.execution.jobs, ...(tests.execution?.jobs ?? [])].filter(job => pendingJob(job.state))};
   }
+  function hardwareWorkActive({pi, tests, trials, jobs}: Awaited<ReturnType<typeof snapshot>>) {
+    const unknownPriorWork = pi.program === "unknown" && Boolean(pi.pid || pi.invocation_id || pi.version);
+    return Boolean(jobs.length || tests.active || trials.active || tests.test_busy ||
+      tests.results.some(run => run.reserved) || trials.results.some(run => run.reserved) ||
+      pi.busy || pi.component_test_id || pi.pid || unknownPriorWork ||
+      ["running", "starting", "stopping", "reconnecting"].includes(pi.program));
+  }
   try {
     let current = await snapshot();
     const session = current.session;
     const ownSession = session?.binding?.project_id === projectId;
     const ownedJobs = new Set(ownSession ? session?.jobs.map(job => job.id) : []);
     if (current.jobs.some(job => !ownedJobs.has(job.id)) || !stopOwnedAI && current.jobs.length) throw new Error("hardware_work_active");
+    if (!stopOwnedAI && hardwareWorkActive(current)) throw new Error("hardware_work_active");
     if (session && !terminal(session.status)) {
       if (ownSession) {
-        // A whole-workflow Reset is UI-only: it must never stop an AI worker
-        // that could own a physical test. The user stops it explicitly first.
-        if (!stopOwnedAI) throw new Error("other_debug_active");
+        // Reset may close an idle photo check, never a worker or physical test.
+        // The dedicated backend action rechecks this atomically and has no
+        // hardware stop/cancel path, even if the state changed after this read.
+        if (!stopOwnedAI && (session.purpose !== "wiring_review" || session.model_busy ||
+            !["awaiting_capture", "paused"].includes(session.status) || session.wiring_review?.status === "analysing")) {
+          throw new Error("other_debug_active");
+        }
         // 'stop' is also supported by existing backends and by restored cases
         // whose original context is absent. It never starts a replacement check.
         const stopped = await request<DebugSession>(`debug/sessions/${encodeURIComponent(session.id)}/actions`, {
-          action: "stop", request_id: crypto.randomUUID(),
+          action: stopOwnedAI ? "stop" : "stop_idle_wiring_review", request_id: crypto.randomUUID(),
         });
         if (stopped.id !== session.id || !["stopped", "complete"].includes(stopped.status)) throw new Error("ai_stop_unconfirmed");
         current = await snapshot();
@@ -51,12 +63,7 @@ export async function prepareProjectWiringEdit(projectId: string, request = make
     // a hardware reservation. Do not stop or modify another project's check.
     if (current.session && !terminal(current.session.status) &&
         (current.session.status !== "paused" || current.session.model_busy)) throw new Error("other_debug_active");
-    const {pi, tests, trials, jobs} = current;
-    const unknownPriorWork = pi.program === "unknown" && Boolean(pi.pid || pi.invocation_id || pi.version);
-    if (jobs.length || tests.active || trials.active || tests.test_busy ||
-        tests.results.some(run => run.reserved) || trials.results.some(run => run.reserved) ||
-        pi.busy || pi.component_test_id || pi.pid || unknownPriorWork ||
-        ["running", "starting", "stopping", "reconnecting"].includes(pi.program)) throw new Error("hardware_work_active");
+    if (hardwareWorkActive(current)) throw new Error("hardware_work_active");
     return true;
   } catch (cause) {
     if ([404, 405, 422].includes((cause as {status?: number})?.status ?? 0)) throw new Error("wiring_backend_restart_required");

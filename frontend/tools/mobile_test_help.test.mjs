@@ -63,6 +63,7 @@ async function fixture(run) {
     const browser = { MobileBrowserApi: Api, loadBrowserPairing: () => ({ token: 'synthetic', session_id: 'phone', conversation_id: 'chat', context_id: 'context' }),
         emptyBrowserDraft: empty, mobileBrowserDraftKey: () => 'draft-key', loadBrowserDraft: async () => empty(), saveBrowserDraft: async () => {}, saveBrowserPairing() {},
         browserLease: () => ({ key: '', deadline: 0 }), mergeBrowserSession: (_, next) => next,
+        sameBrowserWorkspace: load('../src/lib/mobileBrowser.ts').sameBrowserWorkspace,
         mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false, browserMediaReference: () => ({ asset_ids: [] }) };
     const domain = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },
         './mobile': { mobileVideoFresh: () => false }, './mobileViewerStats': { mobileMeasurementFresh: () => false },

@@ -85,6 +85,29 @@ def test_unknown_module_endpoint_requests_only_its_missing_view():
     result = analyse([candidate("pi_side_a", "GPIO17", 11), candidate("pi_side_b", "GPIO17", 11),
         candidate("component_header", None)], [path()])
     assert result["diagnosis"]["retake_roles"] == ["component_header"]
+    assert "TRIG" in result["next_step"] and "補拍零件接頭" in result["next_step"]
+
+
+def test_visible_pin_on_one_side_does_not_request_another_photo_of_that_pin():
+    result = analyse([candidate("pi_side_a", "GPIO17", 11), candidate("component_header", "TRIG")])
+    assert result["diagnosis"]["status"] == "uncertain"  # The strand still isn't established.
+    assert result["diagnosis"]["retake_roles"] == []
+    assert "藍色 TRIG 線" in result["next_step"] and "接線圖中標示的應接位置" in result["next_step"]
+    assert "Pi Pin" not in result["next_step"]
+    assert "補拍" not in result["next_step"]
+
+
+def test_uncertain_reply_surfaces_actual_photo_observations_instead_of_colour_template():
+    pi = candidate("pi_side_a", None)
+    pi["limitations"] = "兩排針重疊，Pin 1 起點被遮住。"
+    module = candidate("component_header", "TRIG")
+    module["pin_evidence"] = "TRIG 標字上方可見藍線插頭。"
+    result = analyse([pi, module])
+    assert result["diagnosis"]["status"] == "uncertain"
+    assert pi["limitations"] in result["diagnosis"]["evidence"]
+    assert module["pin_evidence"] in result["diagnosis"]["evidence"]
+    assert result["diagnosis"]["retake_roles"] == ["pi_side_b"]
+    assert "板角方向" in result["next_step"]
 
 
 def wrong_trig_answer(context):
@@ -109,7 +132,7 @@ def test_three_selected_photos_produce_one_analysis_and_prioritise_the_wrong_pin
     row = next(row for row in result["results"] if row["expected"]["component_pin"] == "TRIG")
     assert row["diagnosis"]["status"] == "suspected"
     assert row["expected"]["physical_pin"] == 11 and row["diagnosis"]["observed_physical_pin"] == 12
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2
     assert result["reviews"] == {}
     assert not state.pi_execution.jobs
 
@@ -124,5 +147,5 @@ def test_partial_retake_cannot_reuse_a_previous_route_accusation(setup):
     result = _analyse(service, state, sid, context, wrong_trig_answer(context))
     assert all(row["diagnosis"]["status"] == "uncertain" for row in result["results"])
     assert service.sessions[sid]["wiring_review"]["last_opinion"]["wire_paths"] == []
-    assert len(state.design_service.bridge.calls) == 2
+    assert len(state.design_service.bridge.calls) == 4
     assert not state.pi_execution.jobs

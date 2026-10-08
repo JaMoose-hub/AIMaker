@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssistantController, AssistantConversation } from "./assistant";
 import { acceptPhotoCapture, type PhotoCapture } from "./photoWiring";
-import { preferBrowserH264 } from "./mobileBrowserRtc";
+import { preferBrowserH264, watchBrowserRtcConnection } from "./mobileBrowserRtc";
 import { requestLowJitterBuffer } from "./mobileViewerStats";
 import { receivePhoneRecognition, type MobileRecognition } from "./mobileRecognition";
 
@@ -44,9 +44,10 @@ export interface MobileStream {
 }
 export interface MobileSession {
   session_id: string; conversation_id: string; context_id: string; title: string; base_url: string;
+  workspace_id?: string; context_revision?: number;
   context: MobileContext; stream: MobileStream;
   view: { capture_id: string | null; wire_id: string | null; revision: number };
-  available_context?: { context_id: string; conversation_id?: string; title?: string } | null;
+  available_context?: { context_id: string; workspace_id?: string; conversation_id?: string; title?: string } | null;
 }
 /** Status-only identity. It cannot authorize photos, wiring or a camera switch. */
 export type MobileConnection = Pick<MobileSession, "session_id" | "conversation_id" | "context_id" | "title">;
@@ -61,7 +62,7 @@ export interface MobileStreamCaptureRequest { session_id: string; generation: nu
 export function followMobileSource(previous: string | null, session: MobileSession | null, selected: boolean, canChange: boolean) {
   if (!selected) return { key: null, reselect: false };
   if (!session) return { key: previous, reselect: false };
-  const key = `${session.session_id}:${session.context_id}:${session.stream.generation}`;
+  const key = `${session.session_id}:${session.workspace_id || session.context_id}:${session.stream.generation}`;
   if (previous === null) return { key, reselect: false };
   if (previous === key || !canChange || !mobileVideoFresh(session.stream)) return { key: previous, reselect: false };
   return { key, reselect: true };
@@ -95,17 +96,40 @@ export function mobileModelRuntime(stream: MobileStream) {
   return { total: models.length, available: available.length, cuda: cuda.length };
 }
 
-export async function mobileRequest<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal; cache?: RequestCache } = {}): Promise<T> {
-  const response = await fetch(`/api/mobile/${path}`, { method: options.method ?? "GET", signal: options.signal,
-    ...(options.cache ? { cache: options.cache } : {}),
-    headers: { Accept: "application/json", ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body) });
-  if (!response.ok) {
-    let detail = "";
-    try { const value = await response.json(); detail = typeof value.detail === "string" ? value.detail : JSON.stringify(value.detail ?? value.error ?? ""); } catch { /* Retain HTTP status. */ }
-    throw new Error(`${response.status}${detail ? ` · ${detail}` : ""}`);
-  }
-  return response.status === 204 ? undefined as T : response.json();
+export function mobileRequest<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal; cache?: RequestCache; timeoutMs?: number } = {}): Promise<T> {
+  const perform = async (signal?: AbortSignal): Promise<T> => {
+    const response = await fetch(`/api/mobile/${path}`, { method: options.method ?? "GET", signal,
+      ...(options.cache ? { cache: options.cache } : {}),
+      headers: { Accept: "application/json", ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+    if (!response.ok) {
+      let detail = "";
+      try { const value = await response.json(); detail = typeof value.detail === "string" ? value.detail : JSON.stringify(value.detail ?? value.error ?? ""); } catch { /* Retain HTTP status. */ }
+      throw new Error(`${response.status}${detail ? ` · ${detail}` : ""}`);
+    }
+    return response.status === 204 ? undefined as T : response.json();
+  };
+  if (!options.timeoutMs) return perform(options.signal);
+  const abort = new AbortController();
+  let timedOut = false;
+  let onAbort = () => {};
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new Error(timedOut ? "mobile_request_timeout" : "mobile_request_cancelled"));
+    abort.signal.addEventListener("abort", onAbort, { once: true });
+  });
+  const cancel = () => abort.abort();
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, options.timeoutMs);
+  return (async () => {
+    try {
+      if (options.signal?.aborted) { abort.abort(); return await cancelled; }
+      // Settle locally even if the transport or response body ignores abort.
+      return await Promise.race([perform(abort.signal), cancelled]);
+    } finally {
+      clearTimeout(timeout); options.signal?.removeEventListener("abort", cancel);
+      abort.signal.removeEventListener("abort", onAbort);
+    }
+  })();
 }
 
 /** Same frozen geometry checks as the photo PoC, with the mobile image route. */
@@ -215,6 +239,14 @@ export function openMobileViewer(sessionId: string, generation: number,
   const abort = new AbortController();
   let disposed = false;
   let cancelGather = () => {};
+  let cancelConnect = () => {};
+  let cancelOffer = () => {};
+  let detachConnection = () => {};
+  const close = () => {
+    if (disposed) return;
+    disposed = true; abort.abort(); cancelGather(); detachConnection(); cancelConnect(); cancelOffer();
+    peer.ontrack = null; peer.onconnectionstatechange = null; peer.close();
+  };
   const transceiver = peer.addTransceiver("video", { direction: "recvonly" });
   requestLowJitterBuffer(transceiver?.receiver);
   preferBrowserH264(peer);
@@ -233,12 +265,33 @@ export function openMobileViewer(sessionId: string, generation: number,
       check();
     });
     if (disposed) return;
-    const answer = await request<RTCSessionDescriptionInit>("stream/offer", { method: "POST", signal: abort.signal,
-      body: { session_id: sessionId, generation, role: "viewer", type: peer.localDescription!.type, sdp: peer.localDescription!.sdp } });
-    if (!disposed) await peer.setRemoteDescription(answer);
-  })();
-  return { peer, ready, close() { disposed = true; abort.abort(); cancelGather(); peer.ontrack = null;
-    peer.onconnectionstatechange = null; peer.close(); } };
+    let offerTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<null>((resolve, reject) => {
+      cancelOffer = () => resolve(null);
+      offerTimer = setTimeout(() => { reject(Error("mobile_viewer_connection_timeout")); abort.abort(); }, 20000);
+    });
+    const answer = await Promise.race([deadline, request<RTCSessionDescriptionInit>("stream/offer", { method: "POST", signal: abort.signal,
+      body: { session_id: sessionId, generation, role: "viewer", type: peer.localDescription!.type, sdp: peer.localDescription!.sdp } })])
+      .finally(() => { clearTimeout(offerTimer); cancelOffer = () => {}; });
+    if (disposed) return;
+    if (!answer) throw Error("mobile_viewer_connection_lost");
+    await peer.setRemoteDescription(answer);
+    if (disposed) return;
+    await new Promise<void>((resolve, reject) => {
+      cancelConnect = resolve;
+      detachConnection = watchBrowserRtcConnection(peer, state => {
+        if (disposed) return;
+        onState(state);
+        if (state === "connected") resolve();
+      }, reason => {
+        if (disposed) return;
+        reject(Error(reason === "connection_timeout" ? "mobile_viewer_connection_timeout" : "mobile_viewer_connection_lost"));
+        close();
+        onState("failed");
+      });
+    });
+  })().catch(cause => { close(); throw cause; });
+  return { peer, ready, close };
 }
 
 export function useMobileCompanion(context: MobileContext | undefined, enabled: boolean) {
@@ -307,6 +360,7 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
     let timer: ReturnType<typeof setTimeout>;
     let socket: WebSocket | null = null;
     let socketTimer: ReturnType<typeof setTimeout>;
+    let stateEventSerial = 0;
     const controller = new AbortController();
     const accept = (value: unknown) => {
       const next = mobileStateForConversation(value, conversationId);
@@ -315,7 +369,9 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
         // An existing phone's heartbeat does not consume a newly issued invitation.
         if (nextId !== pairedSession.current) setPairing(null);
         pairedSession.current = nextId; setSession(previous => receivePhoneRecognition(previous, next, performance.now())); setError("");
+        return true;
       }
+      return false;
     };
     const connect = () => {
       if (stopped) return;
@@ -323,13 +379,21 @@ export function useMobileCompanion(context: MobileContext | undefined, enabled: 
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("conversation_id", conversationId);
       socket = new WebSocket(url);
-      socket.onmessage = event => { try { accept(JSON.parse(event.data)); } catch { /* Ignore malformed events. */ } };
+      socket.onmessage = event => { try { if (accept(JSON.parse(event.data))) stateEventSerial++; } catch { /* Ignore malformed events. */ } };
       socket.onclose = () => { if (!stopped) socketTimer = setTimeout(connect, 2000); };
     };
     const poll = async () => {
+      const eventAtRequest = stateEventSerial;
       try {
-        const value = await mobileRequest(`desktop-session?conversation_id=${encodeURIComponent(conversationId)}`, { signal: controller.signal });
-        if (!stopped) { setConnectionStatus({ connection: mobileConnectionFromState(value), error: "" }); accept(value); }
+        const value = await mobileRequest(`desktop-session?conversation_id=${encodeURIComponent(conversationId)}`, { signal: controller.signal, timeoutMs: 10_000 });
+        // A socket update received during this request is newer than its
+        // snapshot, including pairing/stop events that have no frame counter.
+        if (!stopped) {
+          // Global device presence is only polled; scoped socket traffic must
+          // not starve it or conceal a failed status request.
+          setConnectionStatus({ connection: mobileConnectionFromState(value), error: "" });
+          if (eventAtRequest === stateEventSerial) accept(value);
+        }
       }
       catch (cause) { if (!stopped) { const message = mobileError(cause); setConnectionStatus({ connection: null, error: message }); setError(message); } }
       if (!stopped) timer = setTimeout(() => void poll(), 5000);

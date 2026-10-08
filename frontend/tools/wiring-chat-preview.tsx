@@ -136,12 +136,14 @@ function Preview() {
   const model = { id: 'offline-fixture', name: 'Synthetic transport', efforts: ['low'], default_effort: 'low', excluded_efforts: [] };
   const legacy = { ai: { logged_in: true }, busy: false, aiOptions: { options: { models: [model] }, selectedModel: model, selectionValid: true } } as never;
   Object.assign(qa, { state, conversation: controller.record, review: session.record?.wiring_review, busy: controller.busy });
-  return <main className="app tinkro-theme" style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 300px) minmax(0, 620px)', justifyContent: 'center', gap: 20, padding: 20, height: '100vh' }}>
+  return <main className="app tinkro-theme wiring-chat-preview" style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 300px) minmax(0, 620px)', justifyContent: 'center', gap: 20, padding: 20, height: '100vh' }}>
+    <style>{'@media(max-width:700px){.wiring-chat-preview{grid-template-columns:minmax(0,1fr)!important;padding:8px!important;gap:8px!important}.wiring-chat-preview>aside{display:none}}'}</style>
     <aside><h2>聊天接線核對 QA</h2><p>真實桌面／手機聊天元件；隔離 API 與合成照片。</p><p>没有執行 AI、相機或 Pi。</p>
       <button type="button" onClick={() => void simulateFailure()}>模擬測試失敗，請 AI 幫忙</button><p><a href="/phone" target="_blank">手機預覽</a></p></aside>
     <UnifiedAssistant state={state} setState={setState} controller={controller} legacy={legacy} debugTools={tools} onNewProject={async () => false}
       testHelpFocus={visible?.id} testHelpText={visible?.text} testHelpMessageId={visible?.messageId} onTestHelpActionTargetChange={setTarget}
-      wiringReview={session.record?.wiring_review} onWiringFlowAction={onFlow} onWiringReceiptRetry={() => recoverDecision(true)} />
+      wiringReview={session.record?.wiring_review} onWiringFlowAction={onFlow} onWiringReceiptRetry={() => recoverDecision(true)}
+      onStartWiringReview={async componentId => { const result = await controller.startWiringReview(componentId); return Boolean(result && session.adoptReview(result.debug_session)); }} />
   </main>;
 }
 if (location.pathname === '/phone') localStorage.setItem('tinkro.browser.pairing.v1', JSON.stringify({ token: 'synthetic-wiring-chat-token',

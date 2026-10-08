@@ -380,6 +380,7 @@ class CountedVideoTrack(MediaStreamTrack):
         self.latest = None
         self.retain_latest = True
         self.pending = None
+        self.metrics_task = None
 
     async def recv(self):
         if not self.retain_latest:
@@ -419,18 +420,25 @@ class CountedVideoTrack(MediaStreamTrack):
         elif now-self.started >= 1.:
             elapsed, count = now-self.started, self.total-self.window_count
             self.started, self.window_count = now, self.total
-            if self.callback is not None:
-                try:
-                    await self.callback(dict(video_fps=round(count/elapsed, 2),
-                        received_frames=self.total, video_size=[frame.width, frame.height],
-                        video_color={field: getattr(frame, field, None) for field in VIDEO_COLOR_FIELDS}))
-                except Exception:
-                    # MediaRelay catches only MediaStreamError. Diagnostics
-                    # failure must not kill its reader and strand every viewer.
-                    logger.exception("Mobile video metrics failed; retaining video transport")
+            if self.callback is not None and (self.metrics_task is None or self.metrics_task.done()):
+                # Status/AI consumers must never backpressure MediaRelay. Keep
+                # only one optional report in flight; skip intervening reports
+                # instead of building a queue of obsolete FPS/session snapshots.
+                self.metrics_task = asyncio.create_task(self._report_metrics(dict(
+                    video_fps=round(count/elapsed, 2), received_frames=self.total,
+                    video_size=[frame.width, frame.height],
+                    video_color={field: getattr(frame, field, None) for field in VIDEO_COLOR_FIELDS})))
         if not self.retain_latest:
             raise MediaStreamError
         return frame
+
+    async def _report_metrics(self, values):
+        try:
+            if self.retain_latest:
+                await self.callback(values)
+        except Exception:
+            # Reporting failure cannot kill native reception or its viewers.
+            logger.exception("Mobile video metrics failed; retaining video transport")
 
     def received_at(self, frame):
         # An unbuffered relay can retain its final frame after input stops.
@@ -443,6 +451,8 @@ class CountedVideoTrack(MediaStreamTrack):
         self.latest = None
         if self.pending is not None:
             self.pending.cancel()
+        if self.metrics_task is not None:
+            self.metrics_task.cancel()
 
     def stop(self):
         self.clear_latest()
@@ -478,6 +488,29 @@ class MobileRTC:
         self.streams: dict[str, Stream] = {}
         self.generations: dict[str, int] = {}
         self.lifecycle_locks: dict[str, asyncio.Lock] = {}
+        self.loop_monitor = None
+        self.loop_health = dict(available=False, latest_lag_ms=None, max_lag_ms=0., stalls=0, sampled_at=None)
+        self._last_loop_warning = float('-inf')
+
+    def _record_loop_lag(self, delay):
+        lag = round(max(0., delay) * 1000, 2)
+        self.loop_health.update(available=True, latest_lag_ms=lag,
+            max_lag_ms=max(lag, self.loop_health['max_lag_ms']), sampled_at=self.wall())
+        if lag >= 100:
+            self.loop_health['stalls'] += 1
+            if self.clock() - self._last_loop_warning >= 5:
+                self._last_loop_warning = self.clock()
+                logger.warning('Mobile RTC event loop delayed %.1f ms; media and API scheduling share this loop', lag)
+
+    async def _watch_loop(self):
+        # Timing only, no images, model calls, bandwidth overrides or buffers.
+        # Measure local scheduling separately from actual RTP jitter / loss so
+        # a future slowdown can be attributed without assuming a network fault.
+        loop = asyncio.get_running_loop()
+        while self.streams:
+            expected = loop.time() + .1
+            await asyncio.sleep(.1)
+            self._record_loop_lag(loop.time() - expected)
 
     @property
     def available(self):
@@ -493,6 +526,9 @@ class MobileRTC:
             generation = self.generations.get(sid, 0) + 1
             self.generations[sid] = generation
             self.streams[sid] = Stream(generation, relay=MediaRelay(), bitrate_kbps=bitrate_kbps)
+            if self.loop_monitor is None or self.loop_monitor.done():
+                self.loop_health = dict(available=False, latest_lag_ms=None, max_lag_ms=0., stalls=0, sampled_at=None)
+                self.loop_monitor = asyncio.create_task(self._watch_loop())
             return generation
 
     def current(self, sid, generation):
@@ -554,7 +590,8 @@ class MobileRTC:
                 age_ms=age, fresh=age is not None and 0 <= age <= max_age*1000,
                 video_size=[latest[0].width, latest[0].height] if latest is not None else None),
             remb_estimator=_receiver_remb_diagnostics(pc), receiver_buffers=_receiver_buffer_diagnostics(pc),
-            publisher_buffer_policy=dict(stream.publisher_buffer_policy))
+            publisher_buffer_policy=dict(stream.publisher_buffer_policy),
+            event_loop=dict(self.loop_health))
 
     def capture_frame(self, sid, generation, max_age=1.5):
         """Freeze actual incoming pixels on the same loop as relay conversions.
@@ -760,6 +797,9 @@ class MobileRTC:
         stream.closing = True
         if stream.track is not None:
             stream.track.clear_latest()
+            reporting = stream.track.metrics_task
+            if reporting is not None:
+                await asyncio.gather(reporting, return_exceptions=True)
         if stream.sampler is not None:
             stream.sampler.cancel()
             await asyncio.gather(stream.sampler, return_exceptions=True)
@@ -776,6 +816,10 @@ class MobileRTC:
         if stream.track is not None:
             stream.track.stop()
         self.streams.pop(sid, None)
+        if not self.streams and self.loop_monitor is not None:
+            self.loop_monitor.cancel()
+            await asyncio.gather(self.loop_monitor, return_exceptions=True)
+            self.loop_monitor = None
         await self.on_state(sid, stream.generation, "stopped")
 
     async def _close_viewer(self, stream, pc):

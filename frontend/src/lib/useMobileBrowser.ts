@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { acceptMobileCapture, mobileVideoAgeMs, mobileVideoFresh } from './mobile';
 import { mobileMeasurementFresh, mobileReconnectEligible, mobileReconnectWaitMs, restartMobileStream } from './mobileViewerStats';
-import { MobileBrowserApi, browserAttachment, browserLease, browserMediaReference, browserUuid, closeBrowserSession, emptyBrowserDraft, expiredBrowserSession, loadBrowserDraft, loadBrowserPairing, mergeBrowserConversation, mergeBrowserSession, mobileBrowserDraftKey, pairMobileBrowser, sameBrowserPairing, saveBrowserDraft, saveBrowserPairing, validateBrowserAttachments, type AssistantConversation, type BrowserAttachment, type BrowserCaptureJob, type BrowserDraft, type BrowserOutbox, type BrowserPairing, type BrowserSession, type CaptureTicket, type MobileCapture, } from './mobileBrowser';
+import { MobileBrowserApi, browserAttachment, browserLease, browserMediaReference, browserUuid, closeBrowserSession, emptyBrowserDraft, expiredBrowserSession, loadBrowserDraft, loadBrowserPairing, mergeBrowserConversation, mergeBrowserSession, mobileBrowserDraftKey, pairMobileBrowser, sameBrowserPairing, sameBrowserWorkspace, saveBrowserDraft, saveBrowserPairing, validateBrowserAttachments, type AssistantConversation, type BrowserAttachment, type BrowserCaptureJob, type BrowserDraft, type BrowserOutbox, type BrowserPairing, type BrowserSession, type CaptureTicket, type MobileCapture, } from './mobileBrowser';
 import { BrowserPublisher, browserCaptureHandoff, idleBrowserRtc, type BrowserStreamOptions } from './mobileBrowserRtc';
 import { usePhoneCameraTune } from './usePhoneCameraTune';
 import { boundWiringAction, type WiringPhotoRole, type WiringReviewAction, type WiringReviewState } from './wiringReview';
@@ -10,7 +10,7 @@ import { assistantModelRunning, assistantWiringAnalysis } from './assistantAnaly
 const EXPIRED_SESSION_MESSAGE = '手機連線已失效，請重新輸入電腦顯示的新配對碼。草稿與附件已保留。';
 const errorText = (cause: unknown) => expiredBrowserSession(cause) ? EXPIRED_SESSION_MESSAGE
     : cause && typeof cause === 'object' && 'detail' in cause && cause.detail === 'wiring_photo_collection_in_progress'
-      ? '目前正在收集 Pi 兩側與零件接頭三張照片。請用對話中的「拍這張照片」依序送出，收齊後再按「開始分析」。文字與附件已保留，尚未進行分析。'
+      ? '目前正在收集這輪要求的三張接線照片。請用對話中的「拍這張照片」依序送出，收齊後再按「開始分析」。文字與附件已保留，尚未進行分析。'
     : cause && typeof cause === 'object' && 'detail' in cause && cause.detail === 'wiring_analysis_in_progress'
       ? '接線照片正在分析，完成後才能送出訊息。文字與附件已保留。'
       : cause instanceof Error ? cause.message : String(cause);
@@ -36,7 +36,7 @@ export function mobileTestHelpOffer(message: AssistantMessage, session: BrowserS
         || workspace?.context?.debug_context?.test_keys?.[offer.component_id] !== offer.guide_key) return null;
     return offer;
 }
-interface PendingWiringPhoto { attachment: BrowserAttachment; role: WiringPhotoRole; review: WiringReviewState; contextId: string; dialogue?: MobileWiringPhotoRequest }
+interface PendingWiringPhoto { attachment: BrowserAttachment; role: WiringPhotoRole; review: WiringReviewState; contextId: string; dialogue?: MobileWiringPhotoRequest; onSubmitted?: () => void }
 /** Only the current server question can bind a photo; visible chat text is never a role. */
 export function mobileWiringPhotoFlow(message: AssistantMessage, session: BrowserSession | null, conversation: AssistantConversation | null,
     review: WiringReviewState | null, canAct: boolean) {
@@ -47,7 +47,22 @@ export function mobileWiringPhotoFlow(message: AssistantMessage, session: Browse
         || !flow.role || !['pi_side_a', 'pi_side_b', 'component_header'].includes(flow.role)
         || conversation.id !== session.conversation_id || message.epoch !== conversation.context_epoch || message.archived
         || message.round !== session.context.round || session.available_context && session.available_context.context_id !== session.context_id
-        || flow.review_id !== review.id || flow.revision !== review.revision || flow.round !== review.round
+        || flow.review_id !== review.id || flow.revision !== review.revision || flow.round !== review.round || (flow.capture_plan ?? null) !== (review.capture_plan ?? null)
+        || flow.component_id !== review.component_id || ['stale', 'analysing'].includes(review.status)) return null;
+    return flow;
+}
+/** Analysis belongs to the current shared message and the same saved photo round. */
+export function mobileWiringAnalysisFlow(message: AssistantMessage, session: BrowserSession | null, conversation: AssistantConversation | null,
+    review: WiringReviewState | null, canAct: boolean, includeDisabled = false) {
+    const flow = message.wiring_flow;
+    if (!session || !conversation || !review || !flow || !flow.current || !flow.flow_id
+        || !includeDisabled && (!canAct || !flow.can_act)
+        || !Number.isInteger(flow.revision) || flow.revision < 0 || !Number.isInteger(flow.round) || flow.round < 0
+        || message.role !== 'assistant' || !['analysis_request', 'error'].includes(flow.kind)
+        || !includeDisabled && (!Array.isArray(flow.actions) || !flow.actions.includes('analyse'))
+        || conversation.id !== session.conversation_id || message.epoch !== conversation.context_epoch || message.archived
+        || message.round !== session.context.round || session.available_context && session.available_context.context_id !== session.context_id
+        || flow.review_id !== review.id || flow.revision !== review.revision || flow.round !== review.round || (flow.capture_plan ?? null) !== (review.capture_plan ?? null)
         || flow.component_id !== review.component_id || ['stale', 'analysing'].includes(review.status)) return null;
     return flow;
 }
@@ -59,14 +74,14 @@ const wiringErrorText = (cause: unknown) => {
         stale_wiring_dialogue: '拍照問題已更新，請使用目前那則訊息的拍照按鈕。',
         wiring_dialogue_reference_required: '請取得最新對話，再用目前那則訊息的按鈕提交照片。',
         wiring_dialogue_role_mismatch: '照片視角與目前問題不一致，請從目前那則訊息重新拍攝。',
-        request_id_conflict: '這張照片的提交已變更，請取得最新對話後重新拍攝。',
-        action_result_unknown: '尚未確認這張照片是否送達，請取得最新對話後再重試。',
+        request_id_conflict: '這次操作內容已變更，請取得最新對話後再操作。',
+        action_result_unknown: '尚未確認操作結果，請取得最新對話後再重試。',
         model_call_in_progress: '照片分析正在進行，完成後才能繼續操作。',
         wiring_analysis_in_progress: '接線照片正在分析，完成後才能送出訊息。文字與附件已保留。',
         mobile_wiring_review_busy_or_source_changed: '電腦仍在處理，或鏡頭來源已變更。請等目前操作完成；切換鏡頭後請回電腦重新開啟拍照核對。',
         mobile_wiring_review_context_changed: '電腦已更新作品或接線輪次，請加入目前作品後重新拍攝。',
         mobile_context_changed: '電腦已更新工作區，請加入目前作品後重新拍攝。',
-        wiring_review_photos_incomplete: '請先完成 Pi 兩側與零件接頭的拍攝。',
+        wiring_review_photos_incomplete: '請先完成這輪要求的三張接線照片。',
         wiring_review_photos_not_accepted: '請先逐張查看並選擇使用照片，再開始分析。',
         human_review_required: '這些照片仍不足以判斷，請回到電腦查看下一步並親自沿線核對。',
         test_help_stale: '這個拍照邀請已更新，請查看目前的助手回覆後再操作。',
@@ -233,15 +248,30 @@ export function useMobileBrowser() {
             return;
         const previous = sessionRef.current, merged = mergeBrowserSession(previous, next);
         if (previous && previous.context_id !== merged.context_id) {
+            const liveUpdate = sameBrowserWorkspace(previous, merged);
             cancelTestHelp();
             wiringPhotoPreparing.current = null;
-            cancelStreamIntent();
             attachmentFlight.current = null;
             setBusy(false);
-            void publisher.current?.stop();
-            setCapture(null);
+            if (!liveUpdate) {
+                cancelStreamIntent();
+                void publisher.current?.stop();
+                setCapture(null);
+            } else {
+                // Keep the native camera and WebRTC peer; only the analyzed
+                // snapshot changes. Old tickets and in-flight replies still
+                // require their exact context_id and cannot renew a new lock.
+                const started = startedStream.current;
+                if (started?.session === merged.session_id) started.context = merged.context_id;
+                const restart = sourceRestart.current;
+                if (restart?.session === merged.session_id) restart.context = merged.context_id;
+            }
             setTicket(null);
             lease.current = { key: '', deadline: 0 };
+            if (draftRef.current.captureJob) {
+                void commit(d => ({ ...d, captureJob: d.captureJob ? { ...d.captureJob,
+                    error: '接線步驟已更新，這張照片的定位請求已失效。可保留為對話附件，或重新拍攝 GPIO 照片。' } : null })).catch(() => undefined);
+            }
             wiringRefreshCounter.current++; wiringFlight.current = null;
             wiringSnapshotRef.current = { review: null, can_act: false };
             setWiringSnapshot({ review: null, can_act: false }); setWiringReviewBusy(false); setPendingWiringPhoto(null);
@@ -299,6 +329,7 @@ export function useMobileBrowser() {
                 if (slot && asset?.id && slot.provenance?.asset_id === asset.id
                     && slot.sha256 === (asset.sha256 ?? slot.provenance.sha256)) {
                     pendingWiringPhotoRef.current = null; setPendingWiringPhoto(null); setWiringReviewError('');
+                    pending.onSubmitted?.();
                 }
             }
             const recovery = wiringRecovery.current;
@@ -377,7 +408,7 @@ export function useMobileBrowser() {
                 startedStream.current = { owner: serial, session: context.session_id, context: context.context_id,
                     generation: state.generation!, startedAt: Date.now() };
             }
-            if (!state.publishing) { lease.current = { ...lease.current, deadline: 0 }; setClock(performance.now()); }
+            if (!state.publishing || state.frame?.ready === false) { lease.current = { ...lease.current, deadline: 0 }; setClock(performance.now()); }
             if (state.sourceChanged && streamWanted.current && sessionRef.current) {
                 sourceRestart.current = { owner: serial, intent: streamIntent.current,
                     session: sessionRef.current.session_id, context: sessionRef.current.context_id };
@@ -648,8 +679,8 @@ export function useMobileBrowser() {
             if (wiringFlight.current === flight) { wiringFlight.current = null; setWiringReviewBusy(false); setTestHelpPendingMessageId(null); }
         }
     };
-    const wiringReviewAction = async (action: WiringReviewAction) => {
-        const review = wiringSnapshotRef.current.review, context = sessionRef.current;
+    const wiringReviewAction = async (action: WiringReviewAction, dialogue?: { message_id: string; flow_id: string; request_id: string }) => {
+        const review = wiringSnapshotRef.current.review, context = sessionRef.current, chat = conversationRef.current;
         if (!api || !review || !context || wiringFlight.current) return null;
         // A paired phone may collect photographs and observe results; physical
         // confirmations, wiring changes and tests remain explicit desktop actions.
@@ -662,11 +693,26 @@ export function useMobileBrowser() {
         const serial = owner.current, flight = {}, abort = new AbortController();
         wiringFlight.current = flight; wiringRefreshCounter.current++; operations.current.add(abort);
         setWiringReviewBusy(true); setWiringReviewError('');
-        const current = () => serial === owner.current && context.context_id === sessionRef.current?.context_id && wiringFlight.current === flight;
+        const current = () => serial === owner.current && context.context_id === sessionRef.current?.context_id && wiringFlight.current === flight
+            && (!dialogue || chat?.context_epoch === conversationRef.current?.context_epoch);
         try {
-            const next = await api.request<MobileWiringSnapshot>('wiring-review', { method: 'POST', body: { action }, signal: abort.signal, timeoutMs: 90000 });
+            const next = await api.request<MobileWiringSnapshot>('wiring-review', { method: 'POST', body: { action, ...(dialogue ? { dialogue } : {}) }, signal: abort.signal, timeoutMs: 90000 });
             if (!current()) return null;
+            if (dialogue && (!next.conversation || next.conversation.id !== chat?.id || next.conversation.context_epoch !== chat.context_epoch
+                || next.review?.id !== review.id || next.review.round !== review.round || next.review.component_id !== review.component_id
+                || next.review.revision < review.revision)) throw Error('分析回覆與目前照片輪次不一致，請重新取得對話後再試。');
+            if (dialogue && next.review) {
+                const latestReview = wiringSnapshotRef.current.review;
+                const newerMessage = conversationRef.current?.messages.some(message => message.epoch === chat?.context_epoch
+                    && message.wiring_flow?.review_id === review.id && message.wiring_flow.round === review.round
+                    && message.wiring_flow.revision > next.review!.revision);
+                if (newerMessage || latestReview?.id === review.id && latestReview.round === review.round && latestReview.revision > next.review.revision) {
+                    wiringRecovery.current = null;
+                    return latestReview; // Polling may already have delivered the completed analysis.
+                }
+            }
             wiringRefreshCounter.current++; wiringSnapshotRef.current = next; setWiringSnapshot(next);
+            if (next.conversation) { refreshCounter.current++; acceptConversation(next.conversation); }
             wiringRecovery.current = null;
             return next.review;
         } catch (cause) {
@@ -676,6 +722,19 @@ export function useMobileBrowser() {
             operations.current.delete(abort);
             if (wiringFlight.current === flight) { wiringFlight.current = null; setWiringReviewBusy(false); }
         }
+    };
+    const analyseWiringChat = async (message: AssistantMessage) => {
+        const context = sessionRef.current, chat = conversationRef.current, review = wiringSnapshotRef.current.review;
+        const entry = chat?.messages.find(item => item.id === message.id);
+        const flow = entry ? mobileWiringAnalysisFlow(entry, context, chat, review, wiringSnapshotRef.current.can_act) : null;
+        if (!ready || !connected || busy || !review || !flow || wiringFlight.current || wiringPhotoPreparing.current
+            || assistantModelRunning(chat) || message.wiring_flow?.flow_id !== flow.flow_id
+            || message.wiring_flow.revision !== flow.revision) return false;
+        try {
+            return Boolean(await wiringReviewAction(boundWiringAction(review, { op: 'analyse' }), {
+                message_id: message.id, flow_id: flow.flow_id, request_id: browserUuid(),
+            }));
+        } catch { return false; } // The existing action handler exposes the retryable error in this message.
     };
     const runWiringPhoto = async (pending: PendingWiringPhoto) => {
         if (!api || wiringFlight.current) return false;
@@ -716,6 +775,7 @@ export function useMobileBrowser() {
             wiringRefreshCounter.current++; refreshCounter.current++; wiringSnapshotRef.current = next; setWiringSnapshot(next);
             if (next.conversation) acceptConversation(next.conversation);
             pendingWiringPhotoRef.current = null; setPendingWiringPhoto(null);
+            pending.onSubmitted?.();
             return true;
         } catch (cause) {
             if (current()) setWiringReviewError(wiringErrorText(cause));
@@ -725,7 +785,7 @@ export function useMobileBrowser() {
             if (wiringFlight.current === flight) { wiringFlight.current = null; setWiringReviewBusy(false); }
         }
     };
-    const uploadWiringPhoto = async (file: File, role: WiringPhotoRole, review: WiringReviewState, dialogue?: MobileWiringPhotoRequest) => {
+    const uploadWiringPhoto = async (file: File, role: WiringPhotoRole, review: WiringReviewState, dialogue?: MobileWiringPhotoRequest, onSubmitted?: () => void) => {
         const contextId = sessionRef.current?.context_id;
         if (dialogue && (dialogue.contextId !== contextId || dialogue.conversationId !== conversationRef.current?.id
             || dialogue.epoch !== conversationRef.current?.context_epoch)) return false;
@@ -738,14 +798,14 @@ export function useMobileBrowser() {
             const attachment = await browserAttachment(file);
             if (serial !== owner.current || !wiringCurrent(review, contextId) || dialogue && !wiringChatCurrent(dialogue)) return false;
             if (attachment.type !== 'image') throw Error('接線視角需要照片，請重新拍攝。');
-            const pending = { attachment, role, review, contextId, ...(dialogue ? { dialogue } : {}) };
+            const pending = { attachment, role, review, contextId, ...(dialogue ? { dialogue } : {}), onSubmitted };
             pendingWiringPhotoRef.current = pending;
             setPendingWiringPhoto(pending);
             return await runWiringPhoto(pending);
         } catch (cause) { if (serial === owner.current && contextId === sessionRef.current?.context_id) setWiringReviewError(wiringErrorText(cause)); return false; }
         finally { if (wiringPhotoPreparing.current === preparation) wiringPhotoPreparing.current = null; }
     };
-    const uploadWiringChatPhoto = (file: File, request: MobileWiringPhotoRequest) => uploadWiringPhoto(file, request.role, request.review, request);
+    const uploadWiringChatPhoto = (file: File, request: MobileWiringPhotoRequest, onSubmitted?: () => void) => uploadWiringPhoto(file, request.role, request.review, request, onSubmitted);
     const retryWiringPhoto = async () => pendingWiringPhoto ? runWiringPhoto(pendingWiringPhoto) : false;
     const discardWiringPhoto = () => { if (!wiringFlight.current) { pendingWiringPhotoRef.current = null; setPendingWiringPhoto(null); setWiringReviewError(''); } };
     const removeOutbox = (id: string) => { if (!sending.current.has(id))
@@ -758,14 +818,17 @@ export function useMobileBrowser() {
     const deliver = async (item: BrowserOutbox) => {
         if (!api || sending.current.has(item.id) || chatModelBusy() || wiringFlight.current)
             return;
-        if (item.payload.context_id !== sessionRef.current?.context_id) {
+        const sameScope = () => item.payload.context_id === sessionRef.current?.context_id
+            || Boolean(item.workspace_id && item.workspace_id === sessionRef.current?.workspace_id);
+        if (!sameScope()) {
+            await updateOutbox(item.id, o => ({ ...o, status: 'failed', error: '這則訊息屬於原作品版本，文字與附件已保留。' })).catch(() => undefined);
             setError('這則待送訊息屬於另一個專案版本；請回到原專案後重試。');
             return;
         }
         const serial = owner.current, key = workspaceKey.current, abort = new AbortController();
         operations.current.add(abort);
         sending.current.add(item.id);
-        const current = () => serial === owner.current && key === workspaceKey.current && item.payload.context_id === sessionRef.current?.context_id;
+        const current = () => serial === owner.current && key === workspaceKey.current && sameScope();
         try {
             await updateOutbox(item.id, o => ({ ...o, status: 'pending', error: undefined }));
             const assets: string[] = [];
@@ -830,7 +893,7 @@ export function useMobileBrowser() {
         }
         const reference = browserMediaReference(conversationRef.current, context.context.round, attachments.length, options.capture_id, draftRef.current.removedMediaReference);
         const id = browserUuid();
-        const item: BrowserOutbox = { id, status: 'pending', attachments: [...attachments], payload: { request_id: id, text: text.trim(), asset_ids: reference.asset_ids, inherit_media: false, context_id: context.context_id, ...(partsCheck ? { purpose: 'parts_check' as const } : {}), ...(attachments.length ? {} : options.capture_id ? { capture_id: options.capture_id } : reference.capture_id ? { capture_id: reference.capture_id } : {}), ...(options.check_scope ? { check_scope: options.check_scope } : {}), ...(options.wire_id ? { wire_id: options.wire_id } : {}) } };
+        const item: BrowserOutbox = { id, workspace_id: context.workspace_id, status: 'pending', attachments: [...attachments], payload: { request_id: id, text: text.trim(), asset_ids: reference.asset_ids, inherit_media: false, context_id: context.context_id, ...(partsCheck ? { purpose: 'parts_check' as const } : {}), ...(attachments.length ? {} : options.capture_id ? { capture_id: options.capture_id } : reference.capture_id ? { capture_id: reference.capture_id } : {}), ...(options.check_scope ? { check_scope: options.check_scope } : {}), ...(options.wire_id ? { wire_id: options.wire_id } : {}) } };
         try {
             await commit(d => ({ ...d, text: options.text === undefined ? '' : d.text, attachments: options.capture_id ? d.attachments : [], outbox: [...d.outbox, item] }));
             await deliver(item);
@@ -853,7 +916,8 @@ export function useMobileBrowser() {
     if (!automatic) reconnectAttempted.current = false;
     setStreamBusy(true); setError(''); streamOptions.current = { resolution: '1080p', bitrateKbps: 12000, ...options }; setTicket(null);
     const current = () => serial === owner.current && intent === streamIntent.current && streamWanted.current
-        && context.session_id === sessionRef.current?.session_id && context.context_id === sessionRef.current?.context_id;
+        && context.session_id === sessionRef.current?.session_id
+        && (context.context_id === sessionRef.current?.context_id || Boolean(sessionRef.current && sameBrowserWorkspace(context, sessionRef.current)));
     try {
         const resumed = await restartMobileStream(() => pub.stop(), () => pub.start(streamOptions.current),
             () => current() && browserForeground() && (!automatic || (!ticketRef.current && !draftRef.current.captureJob)));
@@ -894,7 +958,7 @@ export function useMobileBrowser() {
         void startStream(streamOptions.current, true);
     }, [clock, session?.session_id, session?.context_id, session?.stream.generation, busy, streamBusy, rtc.publishing]);
     const beginCapture = async (options: { keepStreaming?: boolean } = {}): Promise<CaptureTicket | null> => {
-        if (!api || !publisher.current || !rtc.publishing || busy || captureFlight.current || cameraTune.isRunning?.() || streamFlight.current !== null || !sessionRef.current?.stream.can_capture || lease.current.deadline <= performance.now()) {
+        if (!api || !publisher.current || !rtc.publishing || rtc.frame?.ready === false || busy || captureFlight.current || cameraTune.isRunning?.() || streamFlight.current !== null || !sessionRef.current?.stream.can_capture || lease.current.deadline <= performance.now()) {
             setError('請等畫面穩定並顯示可拍照，再拍攝正式照片。');
             return null;
         }
@@ -1003,7 +1067,16 @@ export function useMobileBrowser() {
         await startStream(streamOptions.current); };
     const retryCapture = async () => { if (draftRef.current.captureJob)
         await runCapture(draftRef.current.captureJob); };
-    const discardCapture = () => { setTicket(null); void commit(d => ({ ...d, captureJob: null })).catch(() => undefined); };
+    const discardCapture = (keepPhoto = false) => {
+        const job = draftRef.current.captureJob;
+        const attachments = keepPhoto && job && !draftRef.current.attachments.some(a => a.id === job.attachment.id)
+            ? [...draftRef.current.attachments, job.attachment] : draftRef.current.attachments;
+        const issue = keepPhoto ? validateBrowserAttachments(attachments) : null;
+        if (issue) { setError(issue); return false; }
+        setTicket(null);
+        void commit(d => ({ ...d, captureJob: null, attachments })).catch(() => undefined);
+        return true;
+    };
     const updateView = async (captureId: string | null, wireId: string | null) => {
         if (!api)
             return;
@@ -1038,14 +1111,14 @@ export function useMobileBrowser() {
         adjustBitrate: (stream, value, signal) => publisher.current?.adjustLiveBitrate(stream, value, signal) ?? Promise.reject(Error('phone_tune_source_changed')) });
     return { pairing, api, session, conversation, capture, captureImageUrl: image.url, imageError: captureError || image.error,
         wiringReview: wiringSnapshot.review, wiringComponentLabel: wiringSnapshot.component_label, wiringCanAct: wiringSnapshot.can_act,
-        wiringReviewBusy, wiringReviewError, pendingWiringPhoto, wiringReviewAction, uploadWiringPhoto, retryWiringPhoto, discardWiringPhoto, refreshWiringReview,
+        wiringReviewBusy, wiringReviewError, pendingWiringPhoto, wiringReviewAction, analyseWiringChat, uploadWiringPhoto, retryWiringPhoto, discardWiringPhoto, refreshWiringReview,
         prepareWiringChatPhoto, uploadWiringChatPhoto,
         testHelpAction, testHelpPendingMessageId, testHelpError,
         draft: workspace.text, setDraft, attachments: workspace.attachments, outbox: workspace.outbox, captureTicket, captureJob: workspace.captureJob,
         busy: busy || streamBusy || cameraTune.busy, chatSendBlocked: chatSendBlocked || cameraTune.busy,
         cameraTune, wiringAnalysis: assistantWiringAnalysis(conversation), error, connected, ready, secureContext, rtc: currentRtc,
         previewFresh: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && lease.current.deadline > clock,
-        canCapture: connected && receiveFresh && !!rtc.publishing && !!rtc.stream && !!session?.stream.can_capture && lease.current.deadline > clock && !busy && !streamBusy && !cameraTune.busy, inheritedMediaLabel,
+        canCapture: connected && receiveFresh && !!rtc.publishing && rtc.frame?.ready !== false && !!rtc.stream && !!session?.stream.can_capture && lease.current.deadline > clock && !busy && !streamBusy && !cameraTune.busy, inheritedMediaLabel,
         pair, disconnect, join, send, retry, removeMediaReference, removeOutbox, removeAttachment, addFiles, startStream, stopStream, beginCapture, finishCapture, cancelCapture, retryCapture, discardCapture, openCapture, selectWire, older, refresh,
         retryCaptureImage: () => { setCaptureAttempt(n => n + 1); image.retry(); } };
 }

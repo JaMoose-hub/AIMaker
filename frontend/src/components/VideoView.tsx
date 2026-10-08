@@ -143,6 +143,8 @@ interface VideoViewProps {
   config: AppConfig | null;
   sourceChanging?: boolean;
   sourceUnavailable?: boolean;
+  /** Missing control-plane metadata is not evidence that fresh media stopped. */
+  sourceStatusUnknown?: boolean;
   onRetrySource?: () => void;
   pinsById: ReadonlyMap<string, Pin>;
   highlightIds: ReadonlySet<string> | null;
@@ -183,6 +185,7 @@ export function VideoView({
   config,
   sourceChanging = false,
   sourceUnavailable = false,
+  sourceStatusUnknown = false,
   onRetrySource,
   pinsById,
   highlightIds,
@@ -213,7 +216,6 @@ export function VideoView({
     ? requestedGuideTarget : null;
   const original = useDetections();
   const sourceKey = config?.camera_identity ?? config?.camera_source ?? 'device';
-  const sourceBlocked = sourceChanging || sourceUnavailable;
   const glassesMode = displayMode === "smart-glasses-demo";
   const glassesReady = glassesVideoReady(glassesStatus);
   // Exit changes the UI before DELETE finishes. Wait for the original source
@@ -223,6 +225,12 @@ export function VideoView({
   const [realtimeEnabled, setRealtimeEnabled] = useState(true);
   const realtimeActive = glassesMode || (realtimeEnabled && Boolean(config?.realtime_tracking) && config?.board_id === "raspberry-pi-5" && !calibrateOpen
     && !isOpticalHudMode(displayMode));
+  // A slow status poll must not cancel the healthy media request loop. Only
+  // same-source/revision, decoded frames may display, with the unchanged 600ms
+  // pixel + pose lease. Explicit loss/switches and non-tracked views still block.
+  const statusPending = config?.camera_source === 'phone' && !glassesMode && realtimeActive && sourceStatusUnknown;
+  const sourceBlocked = sourceChanging || (sourceUnavailable && !statusPending);
+  const confirmedUnavailable = sourceUnavailable && !statusPending;
   const realtime = useRealtimeTracking(realtimeActive && !sourceBlocked && !glassesLeaving && (!glassesMode || glassesReady),
     config?.board_id ?? null,
     glassesMode ? glassesStatus?.runtime_revision ?? -1 : Math.max(original.runtime?.runtime_revision ?? original.hello?.runtime_revision ?? 1, config?.runtime_revision ?? 1),
@@ -573,6 +581,7 @@ export function VideoView({
         image={sourceBlocked || glassesLeaving || imageState.hidden ? undefined : realtimeActive ? realtime.frame?.image : imageState.src}
         unavailable={!config || backendDown || sourceBlocked || glassesLeaving || imageState.hidden || (realtimeActive && !realtime.frame)}
         phone={config?.camera_source === 'phone'} controls={livePreviewControls}
+        waitingForFrame={imageState.phoneWaiting && !sourceBlocked && !glassesLeaving && !backendDown}
         onLoad={handleVideoLoad} onError={handleVideoError} onRetry={onRetrySource} />, livePreviewHost) : null}
       {!displayOnlyMode && <div className="video-control-toolbar">
         {typeof viewControl === "function" ? viewControl(cameraControls) : <>{viewControl}{cameraControls}</>}
@@ -592,9 +601,10 @@ export function VideoView({
         onError={handleVideoError}
         onLoad={handleVideoLoad}
       />
-      {!displayOnlyMode ? <LiveCameraOverlay navigation={viewNavigation} controls={sourceControl} changing={sourceChanging}
-        unavailable={sourceUnavailable || imageState.phoneWaiting} offline={!glassesMode && (backendDown || (!sourceBlocked && offline))} phone={config?.camera_source === 'phone'}
-        error={sourceError} onRetry={imageState.phoneWaiting && !sourceUnavailable ? undefined : onRetrySource} /> : null}
+      {!displayOnlyMode ? <LiveCameraOverlay key={`${sourceKey}:${config?.runtime_revision}`} navigation={viewNavigation} controls={sourceControl} changing={sourceChanging}
+        unavailable={confirmedUnavailable || imageState.phoneWaiting} offline={!glassesMode && (backendDown || (!sourceBlocked && offline))} phone={config?.camera_source === 'phone'}
+        waitingForFrame={imageState.phoneWaiting && !confirmedUnavailable}
+        error={sourceError} onRetry={imageState.phoneWaiting && !confirmedUnavailable ? undefined : onRetrySource} /> : null}
       {displayOnlyMode && imageState.phoneWaiting ? <div className="video-hint" role="status"><span className="hint-pill">{t("camera.realtimeWaiting")}</span></div> : null}
       {debugCaptureBox ? <div className="debug-capture-overlay" style={debugCaptureBox} aria-hidden="true">
         <span>{debugCaptureTask?.target === "tft_screen" ? "TFT" : debugCaptureTask?.target === "hc_target" ? "HC-SR04+" : t("app.title")}</span>

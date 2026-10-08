@@ -68,8 +68,8 @@ export function componentTestHelpInvitation(design: ProjectDesign, evidence: Com
     : (english ? 'needs another check' : '測試結果需要再檢查');
   const header = evidence.componentId === 'hc-sr04' ? (english ? 'sensor' : '感測器') : (english ? 'display' : '螢幕');
   const text = mode === 'setup' ? (setup?.[english ? 1 : 0] ?? (english ? 'Reconnect the Pi and check the test environment, then retry.' : '先重新連線 Pi 並核對測試環境，再重新測試。'))
-    : english ? `This time ${name} ${symptom}. Would you like to photograph both Pi sides and the ${header} header so we can check the wiring together?`
-      : `這次 ${name} ${symptom}，要拍 Pi 兩側和${header}接頭，一起檢查接線嗎？`;
+    : english ? `This time ${name} ${symptom}. Would you like to photograph the Pi header and the ${header} header so we can check the wiring together?`
+      : `這次 ${name} ${symptom}，要拍 Pi 排針和${header}接頭，一起檢查接線嗎？`;
   return { ...binding, projectId: design.id, revision: design.revision, componentId: evidence.componentId, mode, text };
 }
 

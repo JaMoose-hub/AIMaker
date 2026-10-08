@@ -1209,47 +1209,94 @@ h3 {
   animation: none;
 }
 
+.guide-connection-contrast,
 .guide-connection-glow,
-.guide-connection-line {
+.guide-connection-line,
+.guide-connection-spark {
   fill: none;
   stroke-linecap: round;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
+}
+
+.guide-connection-contrast {
+  stroke: #101a27;
+  stroke-width: 4.6;
+  opacity: 0.24;
 }
 
 .guide-connection-glow {
   stroke: var(--guide-connection-color);
-  stroke-width: 4;
-  opacity: 0.12;
-  filter: blur(1px);
+  stroke-width: 2.4;
+  opacity: 0.6;
+  filter: drop-shadow(0 0 3px var(--guide-connection-color));
 }
 
 .guide-connection-line {
   stroke: var(--guide-connection-color);
-  stroke-width: 1.5;
-  stroke-dasharray: 10 7;
-  filter: drop-shadow(0 0 1px var(--guide-connection-color));
+  stroke-width: 2.4;
+  stroke-dasharray: 18 46;
+  filter: drop-shadow(0 0 2px var(--guide-connection-color));
+  animation: guide-connection-flow 4.8s linear infinite, guide-connection-pulse 4.2s ease-in-out infinite;
+}
+
+.guide-connection-spark {
+  stroke: #fff;
+  stroke-width: 1.1;
+  stroke-dasharray: 1 63;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 2px var(--guide-connection-color));
+  animation: guide-connection-spark-flow 4.8s linear infinite;
+}
+
+/* The route stays visible underneath the moving dashes. Only the lesson line
+   animates; camera pixels, measured endpoints and held geometry never move. */
+@keyframes guide-connection-flow {
+  to { stroke-dashoffset: -64; }
+}
+
+@keyframes guide-connection-spark-flow {
+  from { stroke-dashoffset: -17; }
+  to { stroke-dashoffset: -81; }
+}
+
+@keyframes guide-connection-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.9; }
+}
+
+.guide-connection-overlay:is(.stale, .guidance-held) :is(.guide-connection-line, .guide-connection-spark) {
+  animation: none;
+}
+
+.guide-connection-overlay:is(.stale, .guidance-held) .guide-connection-spark { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-connection-line, .guide-connection-spark { animation: none; }
+  .guide-connection-spark { opacity: 0; }
 }
 
 .guide-connection-arrowhead {
   fill: none;
   stroke: var(--guide-connection-color);
-  stroke-width: 1.4;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 0 1px #101a27);
 }
 
 .guide-connection-origin,
 .guide-connection-target {
   fill: none;
   stroke: var(--guide-connection-color);
-  stroke-width: 1.2;
+  stroke-width: 1.6;
   vector-effect: non-scaling-stroke;
-  filter: none;
+  filter: drop-shadow(0 0 1px #101a27);
 }
 
 .guide-connection-target {
   fill: none;
-  stroke-dasharray: 3 3;
+  opacity: 0.75;
 }
 
 /* Generic YOLO11-Seg component masks for board inspection. */

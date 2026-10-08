@@ -2,13 +2,13 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSP
 import board from "../../../profiles/boards/raspberry-pi-5/board.json";
 import { useI18n } from "../lib/i18n";
 import type { ProjectDesign } from "../lib/maker";
-import { componentHeaderGuideText, componentHeaderLocation } from "../lib/componentHeaderGuide";
+import { componentHeaderAtTop, componentHeaderGuideText, componentHeaderLocation } from "../lib/componentHeaderGuide";
 import { piHeaderGuideText } from "../lib/piHeaderGuide";
 import { headerCountDirection } from "../lib/headerCountDirection";
 import { pointBounds, placeWiringLabelPair } from "../lib/wiringLabelLayout";
 import { anchoredCircuitScroll } from "../lib/circuitZoom";
 import { pinColorVar } from "../lib/capabilities";
-import { componentPinColor, guideConnectionColor } from "../lib/recognitionStyle";
+import { componentPinColor, guideConnectionColor, guideConnectionPath } from "../lib/recognitionStyle";
 import type { Pin } from "../lib/types";
 import { acceptPhotoCapture, acceptPhotoCheck, acceptPhotoImageSize, acceptPhotoPlan, locatedPhotoPin,
   mergePhotoResults, openPhotoSession, photoFitScale, photoFocusBox, photoFocusView, photoLocalizationFor, photoModelConfidence,
@@ -119,11 +119,12 @@ export function PhotoPins({ capture, wire, mode = "corrected", labels = false, e
       obstacles: objects.map(object => bounds(object.objectId)).filter((box): box is NonNullable<typeof box> => box !== null) });
   const radius = Math.min(4.6 / scale, Math.max(3, 1.65 / scale));
   const textSize = Math.max(13, 12 / scale);
-  // Leave the exact contacts unobstructed, just like the live guide line.
-  const dx = boardTarget && moduleTarget ? moduleTarget.x - boardTarget.x : 0;
-  const dy = boardTarget && moduleTarget ? moduleTarget.y - boardTarget.y : 0;
-  const distance = Math.hypot(dx, dy);
-  const inset = Math.min(8 / scale, distance / 3) / (distance || 1);
+  // Same display-only route as live guidance, with clearance in display pixels.
+  const targetOutline = objects.find(object => object.objectId === wire?.component_id)?.outline;
+  const headerAtTop = wire ? componentHeaderAtTop(wire.component_id) : null;
+  const connectionPath = boardTarget && moduleTarget
+    ? guideConnectionPath(boardTarget, moduleTarget, 8 / scale,
+      headerAtTop !== null && targetOutline ? { headerAtTop, outline: targetOutline.map(([x, y]) => ({ x, y })) } : undefined) : "";
   return <svg className="photo-poc-pin-overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet"
     style={{ "--guide-connection-color": guideConnectionColor(wire?.component_pin ?? "") } as CSSProperties}
     role="img" aria-label={tr("固定照片 GPIO 與零件腳位；高亮目前接線的兩端", "GPIO and module pins on the frozen photo; the current wire endpoints are highlighted")}>
@@ -153,11 +154,10 @@ export function PhotoPins({ capture, wire, mode = "corrected", labels = false, e
         markerWidth={9 / scale} markerHeight={9 / scale} orient="auto">
         <path className="guide-connection-arrowhead" d="M 1 1 L 9 5 L 1 9" />
       </marker></defs>
-      <line className="guide-connection-glow" x1={boardTarget.x + dx * inset} y1={boardTarget.y + dy * inset}
-        x2={moduleTarget.x - dx * inset} y2={moduleTarget.y - dy * inset} />
-      <line className="photo-poc-target-link guide-connection-line" markerEnd={`url(#${arrowId})`}
-        x1={boardTarget.x + dx * inset} y1={boardTarget.y + dy * inset}
-        x2={moduleTarget.x - dx * inset} y2={moduleTarget.y - dy * inset} />
+      <path className="guide-connection-contrast" d={connectionPath} />
+      <path className="guide-connection-glow" d={connectionPath} />
+      <path className="photo-poc-target-link guide-connection-line" d={connectionPath} markerEnd={`url(#${arrowId})`} />
+      <path className="guide-connection-spark" d={connectionPath} />
     </g> : null}
     {[boardTarget ? { pin: boardTarget, label: boardPinName(wire!.board_pin), callout: callouts.board } : null,
       moduleTarget ? { pin: moduleTarget, label: `${componentName(wire!.component_id)} · ${wire!.component_pin}`, callout: callouts.component } : null]

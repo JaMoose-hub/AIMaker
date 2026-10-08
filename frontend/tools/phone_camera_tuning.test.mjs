@@ -13,7 +13,9 @@ function load(path, modules = {}) {
   new Function('require', 'exports', code)(name => { if (!(name in modules)) throw Error(`Unexpected import: ${name}`); return modules[name]; }, exports);
   return exports;
 }
-const tune = load('../src/lib/phoneCameraTuning.ts'), rtc = load('../src/lib/mobileBrowserRtc.ts');
+const tune = load('../src/lib/phoneCameraTuning.ts'), rtc = load('../src/lib/mobileBrowserRtc.ts', {
+  './mobileStreamPolicy': load('../src/lib/mobileStreamPolicy.ts'),
+});
 const normal = { level: 120, highlights: .01, shadows: .1, detail: 200, motion: 0, issues: [] };
 function fixture({ modes = false, reports, quality = normal } = {}) {
   const writes = []; let cap = 12000, undo = null, current = true;
@@ -51,9 +53,9 @@ test('transport plans require two distinct fresh counter reports, never missing 
   assert.equal(tune.phoneTransportPlan([slow(9000), slow(10000)], null, now).bitrate, null);
 });
 
-test('CPU load recommends an explicit 720p restart, while unknown or low resolution does not', () => {
+test('CPU load never recommends breaking the 1080p floor', () => {
   const reports = [9000, 10000].map(measuredAtMs => ({ measuredAtMs, sampleIntervalMs: 1000, sendFps: 15, qualityLimitationReason: 'cpu', width: 1080, height: 1920 }));
-  assert.deepEqual(tune.phoneTransportPlan(reports, 8000, 10000), { bitrate: 8000, resolution: '720p' });
+  assert.deepEqual(tune.phoneTransportPlan(reports, 8000, 10000), { bitrate: 8000, resolution: null });
   assert.equal(tune.phoneTransportPlan(reports.map(r => ({ ...r, width: 720, height: 1280 })), 8000, 10000).resolution, null);
 });
 
@@ -185,7 +187,7 @@ test('bilingual mobile panel exposes one smart action and no unsupported hardwar
   }
 });
 
-test('cancel, restore retry and explicit resolution restart call only their own handlers', () => {
+test('cancel and restore retain their handlers but legacy 720p suggestions have no restart action', () => {
   const calls = [], c = { ...idle(), start: value => calls.push(value), cancel: () => calls.push('cancel'), restore: () => calls.push('restore') };
   nodes(panel('en', c).tree).find(n => n.type === 'button').props.onClick();
   const working = panel('en', { ...c, phase: 'checking', busy: true }, true);
@@ -194,8 +196,8 @@ test('cancel, restore retry and explicit resolution restart call only their own 
   assert.match(renderToStaticMarkup(failed.tree), /Restore is unconfirmed/);
   nodes(failed.tree).filter(n => n.type === 'button')[1].props.onClick();
   const suggested = panel('en', { ...c, result: { quality: normal, camera: 'unsupported', bitrate: 12000, bitrateChanged: false, resolution: '720p' } });
-  assert.deepEqual(suggested.callbacks, []); nodes(suggested.tree).filter(n => n.type === 'button').at(-1).props.onClick();
-  assert.deepEqual(suggested.callbacks, ['720p']); assert.deepEqual(calls, ['existing-video', 'cancel', 'restore']);
+  assert.equal(nodes(suggested.tree).some(n => n.type === 'button' && /720p/.test(n.props.children)),false);
+  assert.deepEqual(suggested.callbacks, []); assert.deepEqual(calls, ['existing-video', 'cancel', 'restore']);
 });
 
 function hookScene(core = {}) {

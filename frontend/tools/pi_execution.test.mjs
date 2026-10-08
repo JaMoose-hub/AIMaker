@@ -37,6 +37,22 @@ async function render(name, status, props={}, connection={}) {
 const status={connected:true,busy:false,component_test_id:null,program:'running',logs:[],execution:{jobs:[],policy:'confirm_then_fifo'}};
 const job={id:'job',kind:'deploy',label:'作品部署',state:'queued',owner:null,error:null};
 
+test('Pi header shows checking until the first status response, not a false disconnection',async()=>{
+  const checking=await render('PiConnectionControl',null);
+  assert.match(checking,/確認連線中/);
+  assert.doesNotMatch(checking,/Pi · 未連線/);
+  assert.match(await render('PiConnectionControl',{...status,connected:false}),/Pi · 未連線/);
+  assert.match(await render('PiConnectionControl',status),/Pi · 執行中/);
+  assert.match(await render('PiConnectionControl',null,{}, {networkError:true}),/狀態未知/);
+});
+
+test('deployment initial status explains the check without claiming a disconnected Pi',async()=>{
+  const checking=await render('PiDeployPanel',null);
+  assert.match(checking,/正在確認 Pi 連線/);
+  assert.doesNotMatch(checking,/先連線 Pi，才能部署程式/);
+  assert.match(await render('PiDeployPanel',{...status,connected:false}),/先連線 Pi，才能部署程式/);
+});
+
 test('Pi connection stays in the header while the model selector moves into shared chat',async()=>{
   const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
   assert.match(app,/<WorkspaceHeader[\s\S]*?<PiConnectionControl/);

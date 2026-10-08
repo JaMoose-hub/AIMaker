@@ -37,7 +37,9 @@ export function PiDeployPanel({ project, draft, onDraftChange, onDebug, livePrev
   const failed = Boolean(error || status?.deployment === "failed" || status?.program === "failed");
   const running = connected && status?.program === "running";
   const transferring = ["preparing", "uploading", "checking", "starting"].includes(status?.deployment ?? "");
-  const deployNotice = !connected
+  const deployNotice = !status && !networkError
+    ? tr("正在確認 Pi 連線…", "Checking Pi connection…")
+    : !connected
     ? tr("先連線 Pi，才能部署程式。", "Connect Pi before deploying.")
     : !status?.execution
       ? tr("請重新啟動 Tinkro 後端，再部署程式。", "Restart the Tinkro backend before deploying.")

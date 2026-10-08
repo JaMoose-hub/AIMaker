@@ -1,9 +1,33 @@
 /* Shared message content: no separate panel, composer, or scrolling region. */
+.wiring-chat-overview { margin: 8px 0; }
+.wiring-chat-overview > .wiring-chat-headline { margin: 0 0 8px; font-weight: 650; line-height: 1.45; }
+.wiring-chat-overview > .wiring-chat-instruction, .wiring-chat-message > .wiring-chat-instruction { margin: 0 0 12px; line-height: 1.55; }
+.wiring-chat-summary-detail, .wiring-chat-manual, .wiring-chat-history { margin-top: 10px; font-size: 12px; }
+.wiring-chat-summary-detail > summary, .wiring-chat-manual > summary, .wiring-chat-history > summary { cursor: pointer; padding: 4px 0; color: var(--ink-secondary); }
+.wiring-chat-summary-detail ul { list-style: none; padding: 0; }
+.wiring-chat-summary-detail li { padding: 8px 0; border-top: 1px solid var(--line, #57716955); }
+.wiring-chat-summary-detail li > span { display: block; margin: 4px 0; }
+.wiring-chat-summary-detail li > small { display: block; line-height: 1.5; }
+.wiring-chat-manual[open] > summary { margin-bottom: 10px; }
+.wiring-chat-photo-progress { color: var(--ink-secondary); }
+.wiring-chat-delivery { margin-bottom: 12px; font-size: 12px; }
+.wiring-chat-delivery-status { margin: 6px 0; font-size: 12px; line-height: 1.5; color: var(--brand-link, #75c7ff); }
+.wiring-chat-delivery summary { cursor: pointer; color: var(--ink-secondary); padding: 4px 0; }
+.wiring-chat-delivery-entry { padding: 8px 0; }
+.wiring-chat-delivery-entry > small { display: block; margin-top: 3px; }
+.wiring-chat-history > .wiring-chat-message { padding-top: 8px; }
+.wiring-chat-summary-detail > summary:focus-visible, .wiring-chat-manual > summary:focus-visible, .wiring-chat-history > summary:focus-visible { outline: 2px solid var(--brand-link, #75c7ff); outline-offset: 3px; }
 .wiring-chat-finding { display: inline-block; padding: 4px 8px; border-radius: 6px; background: var(--bg-inset); font-size: 12px; }
 .wiring-chat-finding.is-suspected, .wiring-chat-suspected { color: var(--status-warn, #ffc078); }
 .wiring-chat-finding.is-uncertain { color: var(--ink-secondary); }
 .wiring-chat-finding.is-no_issue_seen { color: var(--brand-link); }
 .wiring-chat-suspected { font-weight: 650; }
+.wiring-chat-observation, .wiring-chat-next { margin: 10px 0; font-size: 12px; line-height: 1.6; }
+.wiring-chat-observation > strong, .wiring-chat-next > strong { font-size: 11px; color: var(--ink-secondary); }
+.wiring-chat-observation > p { margin: 4px 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.wiring-chat-next { padding: 10px 12px; border-left: 3px solid var(--brand-link, #75c7ff); border-radius: 0 6px 6px 0; background: var(--bg-inset); }
+.wiring-chat-next > p { margin: 4px 0 0; }
+.wiring-chat-next > small { display: block; margin-top: 5px; color: var(--ink-secondary); }
 .wiring-chat-position { margin: 10px 0; }
 .wiring-chat-position .wiring-chat-crop-stage { position: relative; width: 100%; }
 .wiring-chat-position .wiring-chat-crop-stage img { display: block; width: 100%; max-height: 320px; object-fit: contain; }
@@ -16,6 +40,9 @@
 .wiring-chat-framing > p { margin: 8px 0; line-height: 1.55; }
 .wiring-chat-framing-image { display: block; width: 220px; max-width: 100%; margin: 8px 0; }
 .mobile-web-app .wiring-chat-framing-image { width: 220px; height: auto; max-width: 100%; }
+.wiring-chat-row-framing { margin: 8px 0; }
+.wiring-chat-row-framing .wiring-chat-framing-image { width: 300px; height: auto; }
+.wiring-chat-row-framing > small { display: block; line-height: 1.5; font-size: 11px; }
 .wiring-chat-framing > small { display: block; line-height: 1.5; }
 
 .wiring-chat-decision.is-confirmed { --decision-fill: #145e53; --decision-hover: #1a7466; --decision-line: #65d7c2; }

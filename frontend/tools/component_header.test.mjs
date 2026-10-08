@@ -101,9 +101,10 @@ test('counting directions follow semantic endpoints across rotation, mirrors and
   assert.equal(headerCountDirection(toDisplay(lb,100,100),toDisplay(lb,200,100),800,600,t),t('headerCount.down'));
 });
 
-test('thin connection arrows leave Pin centres clear without changing projected locations', async () => {
+test('right-angle connection arrows leave Pin centres clear without changing projected locations', async () => {
   const {GuideConnectionOverlay}=await import(compile('components/GuideConnectionOverlay.tsx',{
     '../lib/recognitionStyle':compile('lib/recognitionStyle.ts'),
+    '../lib/componentHeaderGuide':componentHeaderUrl,
     '../lib/geometry':geometryUrl,
     '../lib/useSmoothedDetection':dataUrl('export const useSmoothedDetection = value => value;'),
   }));
@@ -115,22 +116,54 @@ test('thin connection arrows leave Pin centres clear without changing projected 
     const props={detection,componentPose,letterbox,width:1000,height:700,boardPinId:'6',componentPinId:'GND',boardDisplayOffsetPx:{x:0,y:0}};
     const before=structuredClone(props);
     const html=renderToStaticMarkup(createElement(GuideConnectionOverlay,props));
-    const line=html.match(/<line class="guide-connection-line"[^>]*>/)?.[0];
+    const line=html.match(/<path class="guide-connection-line"[^>]*>/)?.[0];
     const origin=html.match(/<circle class="guide-connection-origin"[^>]*>/)?.[0];
     const target=html.match(/<circle class="guide-connection-target"[^>]*>/)?.[0];
     const from=toDisplay(letterbox,100,200), to=toDisplay(letterbox,100+delta[0],200+delta[1]);
     assert.ok(line && origin && target);
     assert.deepEqual([attr(origin,'cx'),attr(origin,'cy')],[from.x,from.y]);
     assert.deepEqual([attr(target,'cx'),attr(target,'cy')],[to.x,to.y]);
-    const distance=Math.hypot(to.x-from.x,to.y-from.y);
-    const gap=Math.min(8,distance/3);
-    assert.ok(Math.abs(Math.hypot(attr(line,'x1')-from.x,attr(line,'y1')-from.y)-gap)<1e-8);
-    assert.ok(Math.abs(Math.hypot(attr(line,'x2')-to.x,attr(line,'y2')-to.y)-gap)<1e-8);
-    assert.ok(Math.abs(Math.hypot(attr(line,'x2')-attr(line,'x1'),attr(line,'y2')-attr(line,'y1'))-(distance-2*gap))<1e-8);
+    const numbers=line.match(/ d="([^"]+)"/)[1].match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi).map(Number);
+    const points=Array.from({length:numbers.length/2},(_,i)=>({x:numbers[i*2],y:numbers[i*2+1]}));
+    const gap=Math.min(8,Math.max(Math.abs(to.x-from.x),Math.abs(to.y-from.y))/3);
+    assert.ok(Math.abs(Math.hypot(points[0].x-from.x,points[0].y-from.y)-gap)<1e-8);
+    assert.ok(Math.abs(Math.hypot(points.at(-1).x-to.x,points.at(-1).y-to.y)-gap)<1e-8);
+    points.slice(1).forEach((point,i)=>assert.ok(point.x===points[i].x||point.y===points[i].y));
     assert.match(html,/markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9"/);
     assert.match(html,/class="guide-connection-arrowhead" d="M 1 1 L 9 5 L 1 9"/);
     assert.deepEqual(props,before);
     assert.equal(renderToStaticMarkup(createElement(GuideConnectionOverlay,{...props,componentPose:{...componentPose,tracking:'searching'}})),'');
+  }
+});
+
+test('live HC routes follow the projected semantic header through rotation, mirrors and HUD projection',async()=>{
+  assert.equal(header.componentHeaderAtTop('hc-sr04'),false);
+  assert.equal(header.componentHeaderAtTop('mrd-tf240-8p-cs'),true);
+  assert.equal(header.componentHeaderAtTop('unknown'),null);
+  const {GuideConnectionOverlay}=await import(compile('components/GuideConnectionOverlay.tsx',{
+    '../lib/recognitionStyle':compile('lib/recognitionStyle.ts'),'../lib/componentHeaderGuide':componentHeaderUrl,
+    '../lib/geometry':geometryUrl,'../lib/useSmoothedDetection':dataUrl('export const useSmoothedDetection = value => value;'),
+  }));
+  for(const angle of [0,30,90,180,270])for(const mirrorX of [false,true])for(const mirrorY of [false,true]) {
+    const r=angle*Math.PI/180,rotate=(x,y)=>[600+x*Math.cos(r)-y*Math.sin(r),400+x*Math.sin(r)+y*Math.cos(r)];
+    const outline=[[-100,-60],[100,-60],[100,60],[-100,60]].map(([x,y])=>rotate(x,y));
+    const [x,y]=rotate(0,60);
+    const componentPose={component_id:'hc-sr04',tracking:'locked',outline,pins:[{id:'TRIG',x,y,v:true}]};
+    const detection={tracking:'locked',pins:[{id:'GPIO17',x:150,y:100,v:true}]};
+    const lb={scale:.75,offx:10,offy:20,elementWidth:1000,elementHeight:700,mirrorX,mirrorY};
+    for(const letterbox of [lb,{...lb,sourceToDisplay:[0,-.6,800,.6,0,0,0,0,1]}]) {
+      const props={detection,componentPose,letterbox,width:1000,height:700,boardPinId:'GPIO17',componentPinId:'TRIG',boardDisplayOffsetPx:{x:0,y:0}};
+      const before=structuredClone(props),html=renderToStaticMarkup(createElement(GuideConnectionOverlay,props));
+      const d=html.match(/<path class="guide-connection-line" d="([^"]+)"/)[1];
+      const values=d.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi).map(Number);
+      const entry={x:values.at(-4),y:values.at(-3)},end={x:values.at(-2),y:values.at(-1)};
+      const to=toDisplay(letterbox,x,y),a=toDisplay(letterbox,...outline[3]),b=toDisplay(letterbox,...outline[2]);
+      const centre=toDisplay(letterbox,600,400),edge={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+      assert.ok(Math.abs((entry.x-end.x)*(b.x-a.x)+(entry.y-end.y)*(b.y-a.y))<1e-6);
+      assert.ok((entry.x-end.x)*(edge.x-centre.x)+(entry.y-end.y)*(edge.y-centre.y)>0);
+      assert.ok(Math.abs(Math.hypot(end.x-to.x,end.y-to.y)-8)<1e-7);
+      assert.deepEqual(props,before);
+    }
   }
 });
 

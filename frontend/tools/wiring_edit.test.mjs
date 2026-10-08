@@ -31,7 +31,7 @@ function fixture({before = idle(), after, stopResult = {id: 'check-old', status:
     if (failure) throw failure;
     if (body !== undefined) {
       assert.equal(path, 'debug/sessions/check-old/actions', 'only this project\'s session may be stopped');
-      assert.equal(body.action, 'stop', 'use the existing stop contract, not prepare_wiring');
+      assert.ok(['stop', 'stop_idle_wiring_review'].includes(body.action), 'only explicit stop or safe idle-photo retirement');
       assert.equal(typeof body.request_id, 'string');
       assert.ok(body.request_id.length > 0);
       assert.equal(body.context, undefined, 'restored sessions may lack an editable context');
@@ -67,6 +67,30 @@ test('whole-workflow Reset never stops an owned AI session or its queued physica
 test('whole-workflow Reset permits an idle snapshot without any hardware or AI writes',async()=>{
   const f=fixture();assert.equal(await prepareProjectWiringEdit('unassigned-project',f.request,false),true);
   assert.deepEqual(f.mutations(),[]);assert.equal(f.calls.length,4);
+});
+
+test('whole-workflow Reset retires only its idle photo review then verifies all work again',async()=>{
+  for(const status of ['awaiting_capture','paused']) {
+    const before=idle();before['debug/sessions'].active=session({purpose:'wiring_review',status,phase:'wiring_review'});
+    const f=fixture({before,after:idle()});
+    assert.equal(await prepareProjectWiringEdit('project',f.request,false),true);
+    assert.equal(f.mutations().length,1);assert.equal(f.mutations()[0].body.action,'stop_idle_wiring_review');
+    assert.equal(f.calls.length,9);
+  }
+});
+
+test('Reset cannot retire a busy photo review, a foreign check or a hardware reservation',async()=>{
+  for(const [change,code] of [
+    [before=>{before['debug/sessions'].active.model_busy=true;},'other_debug_active'],
+    [before=>{before['debug/sessions'].active.wiring_review={status:'analysing'};},'other_debug_active'],
+    [before=>{before['debug/sessions'].active.binding.project_id='other-project';},'other_debug_active'],
+    [before=>{before['pi/component-tests'].results=[{reserved:true}];},'hardware_work_active'],
+    [before=>{before['pi/status'].program='running';},'hardware_work_active'],
+  ]) {
+    const before=idle();before['debug/sessions'].active=session({purpose:'wiring_review',status:'awaiting_capture',phase:'wiring_review'});change(before);
+    const f=fixture({before});await rejects(()=>prepareProjectWiringEdit('project',f.request,false),code);
+    assert.deepEqual(f.mutations(),[]);
+  }
 });
 
 test('all four current snapshots start together before any one completes', async () => {

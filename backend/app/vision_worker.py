@@ -214,6 +214,7 @@ class VisionWorker:
 
     def _run(self) -> None:
         last_seq = -1
+        geometry_epoch = None
         last_push = float("-inf")
         while not self._stop.is_set():
             slot = self._bus.get_latest(timeout=0.2, newer_than=last_seq)
@@ -233,6 +234,11 @@ class VisionWorker:
                     detector = self._detector
                     board_id = self._board_id
                     runtime_revision = self._runtime_revision
+                    if geometry_epoch is not None and geometry_epoch != slot.geometry_epoch:
+                        reset = getattr(detector, 'reset_stream_geometry', None)
+                        if reset is not None:
+                            reset()
+                    geometry_epoch = slot.geometry_epoch
                     result = detector.detect(slot.frame, slot.frame_id, slot.ts_ms)
                 if result is None:  # contract violation by detector - stay alive
                     raise ValueError("detector returned None (contract: always DetectionResult)")
@@ -249,6 +255,9 @@ class VisionWorker:
                     confidence=0.0,
                     pins=[],
                 )
+            latest = self._bus.get_latest(timeout=0)
+            if latest is None or latest.geometry_epoch != slot.geometry_epoch:
+                continue  # A late old-size result must not seed the new geometry.
             self._state.set(result, slot)
             now = time.monotonic()
             if self._publish is not None and (now - last_push) >= self._min_push_interval:

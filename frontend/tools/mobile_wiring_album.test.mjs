@@ -41,7 +41,7 @@ test('three queued photos follow three fresh sequential questions, not one batch
   for (let i = 0; i < 3; i++) {
     f.update({ review: { ...f.context().review, revision: i + 1 } });
     const request = f.request(roles[i]), album = f.render();
-    assert.equal(album.fileFor(request), f.files[i]); album.submitted(request);
+    assert.equal(album.fileFor(request), f.files[i]); album.submitted(request, f.files[i]);
     assert.equal(f.render().fileFor(request), null, 'a successful view cannot send twice');
     assert.equal(f.render().selection.photos.filter(photo => photo.sent).length, i + 1);
   }
@@ -63,7 +63,7 @@ test('role reassignment swaps views without losing files and resets confirmation
 });
 
 test('already submitted views cannot be reassigned or selected again', () => {
-  const f = fixture(); f.render().stage(f.files, f.request()); f.render().confirm(true); f.render().submitted(f.request());
+  const f = fixture(); f.render().stage(f.files, f.request()); f.render().confirm(true); f.render().submitted(f.request(), f.files[0]);
   f.render().assign(1, 'pi_side_a'); f.render().assign(0, 'component_header');
   assert.deepEqual(f.render().selection.photos.map(photo => photo.role), roles);
   assert.equal(f.render().fileFor(f.request()), null);
@@ -96,6 +96,15 @@ test('clear removes local photographs without creating an upload or changing the
   assert.equal(f.render().selection, null); assert.deepEqual(f.context(), before);
 });
 
+test('late delivery receipts only mark the exact selected file, never a replacement or another camera photo',()=>{
+  const f=fixture(),request=f.request();f.render().stage(f.files,request);const old=f.render();
+  old.submitted(request,{name:'other-camera-photo.jpg',type:'image/jpeg'});
+  assert.equal(f.render().selection.photos[0].sent,false);
+  f.render().clear();const replacements=f.files.map(file=>({...file}));f.render().stage(replacements,request);f.render();
+  old.submitted(request,f.files[0]);assert.equal(f.render().selection.photos.some(photo=>photo.sent),false);
+  f.render().submitted(request,replacements[0]);assert.equal(f.render().selection.photos[0].sent,true);
+});
+
 test('album panel labels all three views, requires confirmation and disables sent or busy controls', () => {
   const { MobileWiringAlbumPanel } = load('../src/components/MobileWiringAlbumPanel.tsx', {
     react: { ...React, useState: value => [value, () => {}], useEffect() {} }, 'react/jsx-runtime': jsx, '../lib/wiringReview': domain,
@@ -109,7 +118,7 @@ test('album panel labels all three views, requires confirmation and disables sen
   tree.find(node => node.type === 'input').props.onChange({ target: { checked: true } });
   tree = render(false); const send = tree.find(node => node.props.className === 'mw-button mw-primary');
   assert.equal(send.props.disabled, false); send.props.onClick(); assert.equal(used, 1);
-  f.render().submitted(f.request()); tree = render(false);
+  f.render().submitted(f.request(), f.files[0]); tree = render(false);
   assert.equal(tree.find(node => node.type === 'select').props.disabled, true);
   assert.equal(tree.find(node => node.props.className === 'mw-button mw-primary').props.disabled, true);
   assert.ok(render(true).filter(node => ['select', 'button', 'input'].includes(node.type)).every(node => node.props.disabled));

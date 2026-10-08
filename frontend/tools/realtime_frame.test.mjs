@@ -351,6 +351,7 @@ function trackingHookHarness(t, sourceKey, responses) {
   globalThis.fetch = async () => {
     requests++;
     const next = responses.shift();
+    if (next instanceof Error) throw next;
     return next ? { status: 200, ok: true, json: async () => next } : { status: 204, ok: true };
   };
   const compiled = ts.transpileModule(readFileSync(new URL("../src/lib/useRealtimeTracking.ts", import.meta.url), "utf8"), {
@@ -409,6 +410,52 @@ test("actual phone tracking loop retries a hung decode and publishes only the re
   await turn();
   assert.deepEqual(harness.updates.filter(Boolean).map(frame => frame.seq), [3]);
   harness.dispose();
+  assert.equal(harness.timerCount, 0);
+});
+
+test("a transient phone tracking request failure preserves the still-fresh synchronized frame", { timeout: 2000 }, async (t) => {
+  const pending = deferred();
+  fakeDecoder(t, [Promise.resolve(), pending.promise]);
+  const next = { ...packet(), seq: 3, image: "data:image/jpeg;base64,next" };
+  const harness = trackingHookHarness(t, "phone:own-session", [packet(), new Error("temporary network failure"), next]);
+  try {
+    const shown = await harness.delivered;
+    for (let i = 0; i < 100 && harness.requests < 3; i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(harness.requests, 3);
+    assert.equal(harness.updates.at(-1), shown, "one failed poll must not blank valid pixels and synchronized poses");
+    assert.equal(harness.stateWrites.filter(value => value === null).length, 1, "only the initial source reset may clear the fresh frame");
+  } finally {
+    harness.dispose();
+    pending.resolve();
+    await turn();
+  }
+  assert.equal(harness.timerCount, 0);
+});
+
+test("persistent phone tracking failures still expire pixels and overlays within the freshness bound", { timeout: 2500 }, async (t) => {
+  fakeDecoder(t, [Promise.resolve()]);
+  const failures = Array.from({ length: 20 }, () => new Error("network remains unavailable"));
+  const harness = trackingHookHarness(t, "phone:own-session", [packet(), ...failures]);
+  const shown = await harness.delivered;
+  try {
+    await new Promise(resolve => setTimeout(resolve, 850));
+    assert.equal(harness.updates.at(-1), null);
+    assert.ok(harness.stateWrites.filter(value => value && typeof value === "object").every(value => value === shown), "failed polls must never replace or refresh the frame timestamp");
+  } finally { harness.dispose(); await turn(); }
+  assert.equal(harness.timerCount, 0);
+});
+
+test("a transient phone decoder failure does not erase the previously decoded fresh pair", { timeout: 2000 }, async (t) => {
+  const pending = deferred();
+  const images = fakeDecoder(t, [Promise.resolve(), () => Promise.reject(new Error("temporary decode failure")), pending.promise]);
+  const harness = trackingHookHarness(t, "phone:own-session", [packet(), { ...packet(), seq: 3 }, { ...packet(), seq: 4 }]);
+  try {
+    const shown = await harness.delivered;
+    for (let i = 0; i < 100 && harness.requests < 3; i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(harness.requests, 3);
+    assert.equal(images[1].cleared, 1);
+    assert.equal(harness.updates.at(-1), shown);
+  } finally { harness.dispose(); pending.resolve(); await turn(); }
   assert.equal(harness.timerCount, 0);
 });
 

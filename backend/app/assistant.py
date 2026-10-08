@@ -271,11 +271,14 @@ class AssistantService:
                 self._save(record)
             end = min(before if before is not None else len(record["messages"]), len(record["messages"]))
             start = max(0, end - max(1, min(limit, 100)))
-            result = deepcopy(record)
+            # _load already returned a private copy; do not copy every archived
+            # message/job again before throwing most of it away for pagination.
+            result = dict(record)
             result.update(messages=record["messages"][start:end], before=start if start else None,
                           total=len(record["messages"]), jobs=[{k: v for k, v in job.items() if k not in {"request", "wiring_chat_context"}} for job in record["jobs"]],
                           wiring_analysis=self._wiring_analysis(record))
             result.pop("imports", None)
+            result.pop("wiring_review_starts", None)
             for message in result["messages"]:
                 if message.get("test_help_offer"):
                     message["test_help_offer"] = self.test_help_projection(record, message, mutate=False)
@@ -318,7 +321,9 @@ class AssistantService:
         owner = getattr(self.state, "debug_sessions", None)
         if owner is None:
             return False
-        before = deepcopy(record["messages"])
+        # _merge_import only appends. Comparing a deep copy of the entire chat
+        # made every unchanged desktop/mobile poll pay for all old snapshots.
+        before = len(record["messages"])
         cleared = set(record.get("cleared_debug_sessions", []))
         with owner.lock:
             for session in owner.sessions.values():
@@ -332,7 +337,19 @@ class AssistantService:
                             for message in flow["events"]]
                 self._merge_import(record, "wiring-dialogue:" + flow["id"], messages,
                                    "legacy-debug", trusted_wiring=True)
-        return before != record["messages"]
+        return before != len(record["messages"])
+
+    def debug_session_links(self, cid):
+        """Small ownership projection; no messages, images or drafts leave here."""
+        with self.lock:
+            if cid not in self.records:
+                self._load(cid)
+            record = self.records[cid]
+            epoch = record.get("context_epoch", 0)
+            linked = {m.get("session_id") for m in record.get("messages", [])
+                      if m.get("epoch", 0) == epoch and not m.get("archived")}
+            linked.update(j.get("debug_session_id") for j in record.get("jobs", []) if j.get("epoch", 0) == epoch)
+            return linked - set(record.get("cleared_debug_sessions", []))
 
     def _project_wiring_message(self, record, message):
         owner = getattr(self.state, "debug_sessions", None)
@@ -403,6 +420,109 @@ class AssistantService:
             with owner.lock:
                 receipt = deepcopy(owner.sessions[sid]["wiring_dialogue"]["receipts"][body["request_id"]].get("guide_receipt"))
             return dict(request_id=body["request_id"], guide_receipt=receipt,
+                        conversation=self.read(cid), debug_session_id=sid, debug_session=owner.get(sid))
+
+    def start_wiring_review(self, cid, body):
+        """Explicitly start or recover photo guidance in the existing project chat.
+
+        Collection submits no photograph, model call or Pi work. Unlike the
+        general session creator, this entry never supersedes another case.
+        """
+        from app.debug_sessions import _binding, LIVE
+        from app.debug_support import validate_project
+        context = deepcopy(body["context"])
+        project = context.get("project") or {}
+        validate_project(project)
+        component = body["component_id"]
+        wires = [wire for wire in project["wiring"] if wire["componentId"] == component]
+        if component not in project["component_ids"] or not wires:
+            raise HTTPException(409, "unsupported_component")
+        context["wiring_target"] = dict(component_id=component, wire_id=wires[0]["id"])
+        payload_key = fingerprint(body)
+        create_request = "chat-wiring:" + fingerprint([cid, body["context_epoch"], body["request_id"]])
+        owner, mobile = self.state.debug_sessions, self.state.mobile_service
+        # Match publish_context's lock order, but never reserve the media lock
+        # while waiting for debug state, storage, or conversation projection.
+        # The workflow guard pins the workspace across this commit; native RTC
+        # receipts only need mobile.lock and remain independent of slow AI work.
+        with mobile.context_publish_lock, self.lock, owner.lock:
+            record = self._load(cid)
+            if record["kind"] != "project" or record.get("project_id") not in {None, project["id"]}:
+                raise HTTPException(409, "wiring_review_context_changed")
+            if record["context_epoch"] != body["context_epoch"]:
+                raise HTTPException(409, "wiring_review_context_changed")
+            with mobile.lock:
+                workspace = deepcopy(mobile.current_context(cid))
+            current_project = (workspace or {}).get("design", {}).get("current") or {}
+            current_debug = (workspace or {}).get("context", {}).get("debug_context", {})
+            if (not workspace or workspace.get("context_epoch", 0) != record["context_epoch"]
+                    or any(current_project.get(key) != project.get(key) for key in
+                           ("id", "revision", "component_ids", "catalog_version", "profile_versions", "wiring"))
+                    or workspace.get("round", 0) != context.get("guide_run", 0)
+                    or any(current_debug.get(key, {} if key != "code" else "") != context.get(key, {} if key != "code" else "")
+                           for key in ("code", "test_keys", "guide_confirmations"))):
+                raise HTTPException(409, "wiring_review_context_changed")
+            receipts = record.setdefault("wiring_review_starts", [])
+            receipt = next((item for item in receipts if item["request_id"] == body["request_id"]), None)
+            if receipt and receipt["fingerprint"] != payload_key:
+                raise HTTPException(409, "request_id_conflict")
+            binding, camera = _binding(context, self.state.component_tests.target), owner._camera()
+            cleared = set(record.get("cleared_debug_sessions", []))
+            existing = None
+            for session in owner.sessions.values():
+                if (session.get("status") not in LIVE | {"paused"}
+                        or session.get("binding", {}).get("target_id") != binding["target_id"]):
+                    continue
+                flow, review = session.get("wiring_dialogue"), session.get("wiring_review")
+                same_flow = bool(flow and flow.get("conversation_id") == cid
+                                 and flow.get("epoch") == record["context_epoch"])
+                own_creation = session.get("request_id") == create_request
+                saved = session.get("context") or {}
+                matches = (session.get("purpose") == "wiring_review"
+                    and session["id"] not in cleared and (same_flow or own_creation)
+                    and not owner.conversations.get(session.get("conversation_id"), {}).get("archived")
+                    and session.get("phase") not in {"backend_restarted", "context_changed", "camera_changed", "waiting_for_stop"}
+                    and session.get("binding") == binding and session.get("camera") == camera
+                    and saved.get("project", {}).get("revision") == project.get("revision")
+                    and saved.get("guide_run", 0) == context.get("guide_run", 0)
+                    and (not own_creation or saved.get("wiring_target") == context["wiring_target"])
+                    and (not review and own_creation or review and review.get("component_id") == component
+                         and review.get("status") != "stale"))
+                if not matches:
+                    raise HTTPException(409, "wiring_review_session_active")
+                if existing is not None:
+                    raise HTTPException(409, "wiring_review_session_active")
+                existing = session
+            if receipt and (not existing or existing["id"] != receipt["debug_session_id"]):
+                raise HTTPException(409, "wiring_review_start_expired")
+            if any(job["status"] == "running" for job in record["jobs"]):
+                raise HTTPException(409, "wiring_review_chat_busy")
+            if not owner._wiring_edit_ready(None):
+                raise HTTPException(409, "pi_busy_for_wiring")
+            resumed = existing is not None and bool(existing.get("wiring_review"))
+            if existing is None:
+                names = MODULES[component].get("name", {})
+                name = names.get(context.get("locale", "zh-TW"), component)
+                symptom = f"Photograph {name} wiring for review." if context.get("locale") == "en" else f"拍照檢查 {name} 接線。"
+                created = owner.create(context, symptom, body.get("model"), body.get("effort"),
+                    request_id=create_request, response_mode=body.get("response_mode", "fast"),
+                    purpose="wiring_review", initial_action="collect")
+                existing = owner.sessions[created["id"]]
+            sid = existing["id"]
+            if not existing.get("wiring_review"):
+                owner.action(sid, "wiring_review", create_request + ":start", context=context,
+                    wiring_review=dict(op="start", component_id=component))
+            owner.guided_wiring_review.enable_dialogue(sid, cid, record["context_epoch"], context.get("guide_run", 0))
+            if not receipt:
+                receipt = dict(request_id=body["request_id"], fingerprint=payload_key,
+                               debug_session_id=sid, resumed=resumed)
+                receipts.append(receipt)
+                record["wiring_review_starts"] = receipts[-64:]
+            record["round"] = context.get("guide_run", 0)
+            record["project_id"] = project["id"]
+            self._sync_wiring_dialogues(record)
+            self._save(record)
+            return dict(request_id=body["request_id"], resumed=receipt["resumed"],
                         conversation=self.read(cid), debug_session_id=sid, debug_session=owner.get(sid))
 
     def wiring_flow_receipt(self, cid, request_id):
@@ -483,6 +603,9 @@ class AssistantService:
                 if m.get("epoch", 0) == record["context_epoch"] and not m.get("archived") and m.get("source") != "demo"][-20:]
 
     def _wiring_chat_context(self, record, body):
+        from app.guided_wiring_review import photo_accepted
+        from app.wiring_photo_pipeline import ROLES, analysis_input_key, source_target_row
+
         owner = getattr(self.state, "debug_sessions", None)
         if owner is None or body.stage == "design" or body.target == "design":
             return None
@@ -499,9 +622,41 @@ class AssistantService:
                         or context.get("guide_run", 0) != body.round):
                     continue
                 review = session.get("wiring_review") or {}
-                return dict(component_id=review.get("component_id"), status=review.get("status"),
-                    collecting_photos=review.get("status") == "collecting",
-                    observations=deepcopy(review.get("observations", [])), results=deepcopy(review.get("results", [])),
+                photos = {}
+                for role in ROLES:
+                    slot = review.get("slots", {}).get(role)
+                    photos[role] = dict(present=bool(slot), available=bool(slot and slot.get("available")),
+                        accepted=bool(slot and photo_accepted(review, role)),
+                        crop_saved=bool(slot and slot.get("crop") is not None),
+                        target_row=source_target_row(review, role))
+                photos_ready = all(photo["available"] and photo["accepted"] for photo in photos.values())
+                has_completed_analysis = False
+                if (photos_ready and review.get("status") in {"ready", "needs_human"}
+                        and isinstance(review.get("analysis_revision"), int)
+                        and 0 < review["analysis_revision"] <= review.get("revision", 0)
+                        and review.get("results")):
+                    try:
+                        # This existing key binds the component/round, captures,
+                        # hashes, crops and wiring/model policy. A saved crop
+                        # alone is never evidence that the new input was seen.
+                        has_completed_analysis = review.get("last_input_key") == analysis_input_key(review, session)
+                    except (KeyError, TypeError, ValueError):
+                        pass  # Incomplete legacy state is not a current result.
+                needs_analysis = photos_ready and not has_completed_analysis and review.get("status") != "analysing"
+                return dict(component_id=review.get("component_id"), status=review.get("status"), capture_plan=review.get("capture_plan"),
+                    collecting_photos=not photos_ready, photos=photos, photos_ready=photos_ready,
+                    needs_analysis=needs_analysis, has_completed_analysis=has_completed_analysis,
+                    image_access="none_in_this_text_reply",
+                    photo_guidance="Use the saved photo states, not older chat requests, to identify missing views. "
+                        "When photos_ready is true, do not ask for all three photos again. Saving a crop does not "
+                        "send it to AI. If needs_analysis is true, ask the user to press Start analysis (開始分析). "
+                        "This text reply receives no images or new crops; refer only to current completed analysis "
+                        "observations when supplied. With capture_plan pi_rows_v1, call the selected Pi photos inner row "
+                        "(toward the board centre) and outer row (toward the board edge) according to target_row. "
+                        "That is a photographing target, not proof of which row is visible. "
+                        "Never claim a new visual inspection or start/retry analysis automatically.",
+                    observations=deepcopy(review.get("observations", [])) if has_completed_analysis else [],
+                    results=deepcopy(review.get("results", [])) if has_completed_analysis else [],
                     human_decisions=deepcopy(review.get("reviews", {})))
         return None
 
@@ -538,7 +693,7 @@ class AssistantService:
             # Generic chat media must not bypass the three role-bound photos.
             # Leave history, active media and model jobs untouched so the caller
             # can retain its attachment and submit it through the current step.
-            if wiring_chat is not None and wiring_chat["collecting_photos"] and (body.asset_ids or body.capture_id):
+            if wiring_chat is not None and (wiring_chat["collecting_photos"] or wiring_chat["needs_analysis"]) and (body.asset_ids or body.capture_id):
                 raise HTTPException(409, "wiring_photo_collection_in_progress")
             if wiring_chat is not None and not body.asset_ids and not body.capture_id:
                 media_ids, capture_id = [], None

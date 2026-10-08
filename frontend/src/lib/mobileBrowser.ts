@@ -64,6 +64,7 @@ export interface BrowserMessagePayload {
     purpose?: 'parts_check';
 }
 export interface BrowserOutbox {
+    workspace_id?: string;
     id: string;
     payload: BrowserMessagePayload;
     attachments: BrowserAttachment[];
@@ -196,11 +197,23 @@ export function mergeBrowserConversation(previous: AssistantConversation | null,
 export function mergeBrowserSession(previous: BrowserSession | null, next: BrowserSession): BrowserSession {
     if (!previous || previous.session_id !== next.session_id)
         return next;
+    if (Number.isInteger(previous.context_revision) && Number.isInteger(next.context_revision)) {
+        if (next.context_revision! < previous.context_revision!) return previous;
+        if (next.context_revision! > previous.context_revision!)
+            return next.view.revision < previous.view.revision ? { ...next, view: previous.view } : next;
+    }
     if (next.view.revision < previous.view.revision)
-        return { ...next, context_id: previous.context_id, conversation_id: previous.conversation_id, context: previous.context, title: previous.title, view: previous.view, stream: previous.stream };
+        return { ...next, context_id: previous.context_id, workspace_id: previous.workspace_id, context_revision: previous.context_revision,
+            conversation_id: previous.conversation_id, context: previous.context, title: previous.title, view: previous.view, stream: previous.stream };
     if (next.context_id === previous.context_id && (next.stream.generation < previous.stream.generation || (next.stream.generation === previous.stream.generation && (next.stream.preview_seq ?? 0) < (previous.stream.preview_seq ?? 0))))
         return { ...next, stream: previous.stream };
     return next;
+}
+/** A new live snapshot of the same project does not transfer camera ownership. */
+export function sameBrowserWorkspace(previous: BrowserSession, next: BrowserSession): boolean {
+    return previous.session_id === next.session_id && previous.conversation_id === next.conversation_id
+        && typeof previous.workspace_id === 'string' && previous.workspace_id.length > 0
+        && previous.workspace_id === next.workspace_id;
 }
 export function browserLease(session: BrowserSession | null, now: number, previous: {
     key: string;

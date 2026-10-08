@@ -25,8 +25,8 @@
 .photo-poc-image-stage>img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
 .photo-poc-pin-overlay { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
 .photo-poc-pin-overlay :is(polygon,circle) { vector-effect:non-scaling-stroke; }
-/* Reuse live board-outline, pin-dot and guide-connection-* styles. Frozen
-   evidence stays still: rings indicate the selected lesson, not live tracking. */
+/* Reuse live board-outline, pin-dot and guide-connection-* styles. Frozen image
+   and pin positions stay still; only the lesson line flows, not live tracking. */
 .photo-poc-pin-overlay .photo-poc-active-pin :is(.guidance-halo,.pin-dot) { animation:none; }
 .photo-poc-pin-overlay text { fill:#eaf5ff; stroke:#081729; stroke-width:4; paint-order:stroke; font-family:var(--font); font-weight:600; }
 .photo-poc-pin-overlay .photo-poc-active-pin text { fill:#ffe08a; font-weight:600; }

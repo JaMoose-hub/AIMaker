@@ -1,11 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { useMakerText } from "../lib/useMaker";
-import { boundWiringAction, cropFromPoints, imagePointFromClient, validWiringCrop, wiringPhotoRoles, prioritiseWiringResults, wiringFindingStatus,
-  type WiringCrop, type WiringEndpoint, type WiringHumanDecision, type WiringPhotoRole, type WiringPhotoSlot,
+import { boundWiringAction, cropFromPoints, imagePointFromClient, validWiringCrop, wiringPhotoRoles, prioritiseWiringResults, wiringFindingStatus, wiringFindingLabel, wiringHasConnectionClue, wiringPhotoRoleLabel, wiringPhotoInstruction, wiringSuspectedConnectionText, wiringPinSeatText,
+  type WiringCapturePlan, type WiringCrop, type WiringEndpoint, type WiringHumanDecision, type WiringPhotoRole, type WiringPhotoSlot,
   type WiringReviewAction, type WiringReviewState } from "../lib/wiringReview";
 import "./wiringReview.css";
 import { WiringPhotoSequence } from './WiringPhotoSequence';
+import { WiringFramingGuide } from './WiringFramingGuide';
+import { WiringExpectedLocation } from './WiringExpectedLocation';
+import { expectedWiringLocation, wiringTargetLabel } from '../lib/wiringExpectedLocation';
 
 export interface WiringReviewCardProps {
   review?: WiringReviewState | null;
@@ -24,8 +27,7 @@ export interface WiringReviewCardProps {
 
 type Translate = (zh: string, en: string) => string;
 type PhotoMarker = { box: WiringCrop; label: string; kind: 'observed' | 'expected' };
-const roleLabel = (role: WiringPhotoRole, tr: Translate) => role === "pi_side_a" ? tr("Pi 第一側", "Pi first side")
-  : role === "pi_side_b" ? tr("Pi 另一側", "Pi other side") : tr("零件接頭", "Module header");
+const roleLabel = wiringPhotoRoleLabel;
 const colorLabel = (color: string | null, tr: Translate) => {
   const names: Record<string, [string, string]> = { red: ["紅色", "red"], orange: ["橘色", "orange"], yellow: ["黃色", "yellow"],
     green: ["綠色", "green"], blue: ["藍色", "blue"], purple: ["紫色", "purple"], black: ["黑色", "black"], white: ["白色", "white"],
@@ -34,24 +36,12 @@ const colorLabel = (color: string | null, tr: Translate) => {
   return color && names[color] ? tr(...names[color]) : color || tr("線色不明", "unknown color");
 };
 
-export function FramingGuide({ role }: { role: WiringPhotoRole }) {
-  const tr = useMakerText();
-  return <svg className="wr-framing" viewBox="0 0 220 106" role="img" aria-label={tr("取景示意：排針、接頭及露出的線一起入鏡，不代表實際腳號", "Framing example: include header, connectors and wire exits; this is not a pin map")}>
-    <rect x="18" y="71" width="184" height="19" rx="4" fill="#527b68" />
-    <rect x="43" y="61" width="132" height="12" fill="#35424b" />
-    {[0, 1, 2, 3, 4, 5, 6, 7].map(n => <g key={n}>
-      <path d={`M${51 + n * 16} 62v-12`} stroke="#8c9aa2" strokeWidth="3" />
-      {n < 5 ? <><rect x={47 + n * 16} y="32" width="10" height="25" rx="2" fill="#263444" />
-        <path d={`M${52 + n * 16} 32v-18`} stroke={["#d56b62", "#dcb64c", "#739ab6", "#82976c", "#9b7ea6"][n]} strokeWidth="5" /></> : null}
-    </g>)}
-    <rect x="35" y="8" width="147" height="74" rx="8" fill="none" stroke="#407a9c" strokeWidth="2" strokeDasharray="5 4" />
-    {role === "component_header" ? <text x="110" y="101" textAnchor="middle" fontSize="10" fill="currentColor">{tr("保留 pin 文字", "Keep pin labels visible")}</text>
-      : <text x="110" y="101" textAnchor="middle" fontSize="10" fill="currentColor">{tr("保留板緣與插接底部", "Keep board edge and insertion points")}</text>}
-  </svg>;
+export function FramingGuide({ role, capturePlan }: { role: WiringPhotoRole; capturePlan?: WiringCapturePlan }) {
+  return <WiringFramingGuide role={role} capturePlan={capturePlan} className="wr-framing" />;
 }
 
-function CropDialog({ slot, initialCrop, markers, disabled, onClose, onSave }: {
-  slot: WiringPhotoSlot; initialCrop?: WiringCrop | null; disabled: boolean;
+function CropDialog({ slot, capturePlan, initialCrop, markers, disabled, onClose, onSave }: {
+  slot: WiringPhotoSlot; capturePlan?: WiringCapturePlan; initialCrop?: WiringCrop | null; disabled: boolean;
   markers?: PhotoMarker[];
   onClose: () => void; onSave: (crop: WiringCrop | null) => Promise<void>;
 }) {
@@ -99,7 +89,7 @@ function CropDialog({ slot, initialCrop, markers, disabled, onClose, onSave }: {
   }
   // The SVG uses the same aspect ratio and contain behavior as the original image.
   return <dialog ref={dialog} className="wr-dialog" aria-labelledby={headingId} onCancel={event => { event.preventDefault(); if (!saving) onClose(); }}>
-    <div className="wr-dialog-heading"><h3 id={headingId}>{roleLabel(slot.role, tr)} · {markers ? tr("照片位置", "Photo positions") : tr("查看原圖與框選", "Original photo and crop")}</h3>
+    <div className="wr-dialog-heading"><h3 id={headingId}>{roleLabel(slot.role, tr, capturePlan)} · {markers ? tr("照片位置", "Photo positions") : tr("查看原圖與框選", "Original photo and crop")}</h3>
       <button type="button" autoFocus disabled={saving} onClick={onClose}>{tr("關閉", "Close")}</button></div>
     <p>{markers ? tr('橘框：照片位置；藍框：應接腳位的可見接頭。未定位的位置不畫框。', 'Orange: observed position. Blue: visible connector at the expected pin. Unlocated positions are not marked.')
       : tr("框入排針、插接底部、完整接頭與露出的線色。框選只指定分析區域，不代表腳號已確認。", "Include the header, insertion points, connectors and visible wire colors. A crop selects an area; it does not confirm pin identity.")}</p>
@@ -135,17 +125,22 @@ function CropDialog({ slot, initialCrop, markers, disabled, onClose, onSave }: {
   </dialog>;
 }
 
-function EndpointList({ candidates, slots, onPhoto }: { candidates: WiringEndpoint[]; slots: WiringReviewState["slots"]; onPhoto: (slot: WiringPhotoSlot, box?: WiringCrop | null) => void }) {
+function EndpointList({ candidates, slots, capturePlan, onPhoto }: { candidates: WiringEndpoint[]; capturePlan?: WiringCapturePlan; slots: WiringReviewState["slots"]; onPhoto: (slot: WiringPhotoSlot, box?: WiringCrop | null) => void }) {
   const tr = useMakerText();
   if (!candidates.length) return <p className="wr-muted">{tr("尚無可用觀察，不能視為未接線。", "No usable observation; this does not mean unplugged.")}</p>;
   return <ul className="wr-candidates">{candidates.map((candidate, index) => {
     const slot = Object.values(slots).find(item => item?.capture_id === candidate.capture_id);
+    const modulePin = candidate.role === 'component_header' ? candidate.module_pin_id : null;
+    const seatText = wiringPinSeatText(candidate, tr);
     return <li key={`${candidate.capture_id}:${candidate.id}:${index}`}><strong>{candidate.physical_pin !== null ? `${tr("實體 Pin", "Physical pin")} ${candidate.physical_pin}`
-      : candidate.pin_label || `${tr("接頭", "Connector")} ${candidate.id}`}</strong> · {colorLabel(candidate.color, tr)}
-      {candidate.physical_pin === null && !candidate.pin_label ? <small>{tr("腳號待確認", "Pin identity unconfirmed")}</small> : null}
+      : modulePin || candidate.pin_label || `${tr("接頭", "Connector")} ${candidate.id}`}</strong> · {colorLabel(candidate.color, tr)}
+      {modulePin && !candidate.pin_id ? <small>{tr("標字位置已辨識；插接待確認", "Label position identified; plug contact unconfirmed")}</small>
+        : candidate.physical_pin === null && !candidate.pin_label && !modulePin ? <small>{tr("腳號待確認", "Pin identity unconfirmed")}</small> : null}
       {candidate.color_visibility && candidate.color_visibility !== "clear" ? <small>{tr("線色部分遮擋或不可見", "Wire color partially hidden or not visible")}</small> : null}
+      {modulePin && candidate.module_pin_evidence && candidate.module_pin_evidence !== candidate.evidence ? <small>{candidate.module_pin_evidence}</small> : null}
       <p>{candidate.evidence}</p>
-      {slot ? <button type="button" className="wr-photo-link" onClick={() => onPhoto(slot, candidate.box)}>{roleLabel(slot.role, tr)} · {tr("查看照片依據", "View photo evidence")}</button>
+      {seatText ? <><small>{seatText}</small><small>{candidate.pin_seat?.orientation_anchor} {candidate.pin_seat?.count_evidence}</small></> : null}
+      {slot ? <button type="button" className="wr-photo-link" onClick={() => onPhoto(slot, candidate.box)}>{roleLabel(slot.role, tr, capturePlan)} · {tr("查看照片依據", "View photo evidence")}</button>
         : <small>{tr("此觀察的照片已不在本輪，請重新核對。", "This observation's photo is no longer in this round. Review it again.")}</small>}
     </li>;
   })}</ul>;
@@ -188,7 +183,7 @@ export function WiringReviewCard({ review, components, componentId, busy = false
     ?? orderedRows.find(row => usable?.reviews[row.wire_id]?.decision !== 'confirmed' || usable.reviews[row.wire_id]?.evidence_stale)
     ?? orderedRows[0];
   const rowIndex = orderedRows.findIndex(row => row.wire_id === currentRow?.wire_id);
-  const suspectedCount = orderedRows.filter(row => wiringFindingStatus(row) === 'suspected').length;
+  const priorityCount = orderedRows.filter(wiringHasConnectionClue).length;
   const unclearCount = orderedRows.filter(row => wiringFindingStatus(row) === 'uncertain').length;
   const collectingPhotos = Boolean(usable && (!usable.results.length || ['collecting', 'analysing', 'error'].includes(usable.status)));
   const statusLabel = review?.status === "analysing" ? tr("正在分析照片", "Analysing photos")
@@ -212,20 +207,18 @@ export function WiringReviewCard({ review, components, componentId, busy = false
           captureReady={captureReady} humanOnly={humanOnly} failedCaptures={failedCaptures}
           onAccept={(usable.photo_flow_version ?? 1) >= 2 ? (role, slot) => act({ op: 'accept_photo', role, capture_id: slot.capture_id, sha256: slot.sha256 }) : undefined}
           onCapture={role => void act({ op: 'capture', role })} onAnalyse={() => void act({ op: 'analyse' })} onPhoto={slot => photo(slot)}
-          onImageError={id => setFailedCaptures(previous => previous.includes(id) ? previous : [...previous, id])} framing={role => <FramingGuide role={role} />} />
+          onImageError={id => setFailedCaptures(previous => previous.includes(id) ? previous : [...previous, id])} framing={role => <FramingGuide role={role} capturePlan={usable.capture_plan} />} />
        : <details className="wr-photo-archive"><summary>{tr("查看三張照片／補拍", "View three photos / retake")}</summary>
       <div className="wr-photo-slots">{wiringPhotoRoles.map(role => {
         const slot = usable.slots[role];
         const unavailable = slot?.available === false || Boolean(slot && failedCaptures.includes(slot.capture_id));
-        return <article className="wr-slot" key={role}><h4>{roleLabel(role, tr)}</h4>
-          {slot && !unavailable ? <button className="wr-thumbnail" type="button" onClick={() => photo(slot)} aria-label={tr(`查看${roleLabel(role, tr)}原圖與框選`, `View ${roleLabel(role, tr)} original and crop`)}>
-            <img src={slot.image_url} alt={roleLabel(role, tr)} loading="lazy" onError={() => setFailedCaptures(previous => [...previous, slot.capture_id])} />
+        return <article className="wr-slot" key={role}><h4>{roleLabel(role, tr, usable.capture_plan)}</h4>
+          {slot && !unavailable ? <button className="wr-thumbnail" type="button" onClick={() => photo(slot)} aria-label={tr(`查看${roleLabel(role, tr, usable.capture_plan)}原圖與框選`, `View ${roleLabel(role, tr, usable.capture_plan)} original and crop`)}>
+            <img src={slot.image_url} alt={roleLabel(role, tr, usable.capture_plan)} loading="lazy" onError={() => setFailedCaptures(previous => [...previous, slot.capture_id])} />
             {slot.crop ? <svg viewBox={`0 0 ${slot.size[0]} ${slot.size[1]}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true"><rect x={slot.crop[0] * slot.size[0]} y={slot.crop[1] * slot.size[1]}
               width={(slot.crop[2] - slot.crop[0]) * slot.size[0]} height={(slot.crop[3] - slot.crop[1]) * slot.size[1]} fill="#2cb5dc22" stroke="#00d2ff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg> : null}
-          </button> : <FramingGuide role={role} />}
-          <p>{role === "component_header" ? tr("pin 文字、接頭與線色一起入鏡。", "Include pin labels, connectors and wire colors.")
-            : role === "pi_side_b" ? tr("從另一側露出被遮住的插接底部。", "Reveal hidden insertion points from the other side.")
-            : tr("保留板子方向、排針與接頭底部。", "Include board orientation, header and connector bases.")}</p>
+          </button> : <FramingGuide role={role} capturePlan={usable.capture_plan} />}
+          <p>{wiringPhotoInstruction(role, tr, usable.capture_plan)}</p>
           {unavailable ? <small role="alert">{tr("照片無法取得，請重拍。", "Photo unavailable. Please retake it.")}</small> : null}
           {slot ? <small>{slot.crop ? tr("已選局部範圍，原圖仍保留", "Crop selected; original retained") : tr("使用全景，可手動框選接線區", "Full view; optionally select the wiring area")}</small> : null}
           <div className="wr-actions"><button type="button" disabled={disabled || humanOnly || !captureReady} onClick={() => void act({ op: "capture", role })}>{slot ? tr("重拍此視角", "Retake this view") : tr("拍攝此視角", "Capture this view")}</button>
@@ -239,10 +232,11 @@ export function WiringReviewCard({ review, components, componentId, busy = false
         <button type="button" disabled={disabled} onClick={() => void act({ op: "changed" })}>{tr("改動範圍不確定，全部重新核對", "Change scope unclear — review all wiring")}</button></div></details>
       {usable.no_progress_count >= 2 || usable.status === "needs_human" ? <p className="wr-note">{tr("補查仍沒有足夠的新證據。請沿著同一條線親自核對兩端，必要時貼上相同編號。", "Follow the same wire and inspect both ends yourself. Further photo checks have not added enough evidence; matching labels can help.")}</p> : null}
       {!collectingPhotos && usable.results.length ? <div className="wr-results">
-        <div className="wr-result-summary" role="status"><strong>{suspectedCount ? tr(`${suspectedCount} 條優先檢查`, `${suspectedCount} to check first`)
+        <div className="wr-result-summary" role="status"><strong>{priorityCount ? tr(`${priorityCount} 條優先核對`, `${priorityCount} to check first`)
           : unclearCount ? tr(`${unclearCount} 條需確認`, `${unclearCount} need a closer check`) : tr('未見明顯錯接', 'No obvious mismatch seen')}</strong>
           <small>{tr('照片判讀，非功能驗證', 'Photo clues, not a functional pass')}</small></div>
-        <div className="wr-step-heading"><strong>{allConfirmed ? tr('本零件接線已由你核對', 'You reviewed this module’s wiring') : tr('先看這條線', 'Check this wire first')}</strong>
+        <div className="wr-step-heading"><strong>{allConfirmed ? tr('本零件接線已由你核對', 'You reviewed this module’s wiring')
+          : currentRow && wiringHasConnectionClue(currentRow) ? tr('先核對這條線', 'Check this wire first') : tr('逐線核對（選用）', 'Check each wire (optional)')}</strong>
           <small>{rowIndex + 1} / {usable.results.length}</small></div>
         <div className="wr-wire-progress" role="group" aria-label={tr('選擇核對的線路', 'Choose a wire to review')}>{orderedRows.map(row =>
           <button type="button" key={row.wire_id} disabled={waiting} aria-current={row === currentRow ? 'step' : undefined}
@@ -256,19 +250,30 @@ export function WiringReviewCard({ review, components, componentId, busy = false
           : row.comparison === "ambiguous" ? tr("多個候選", "Multiple candidates") : tr("資訊不足", "Insufficient evidence");
         const status = wiringFindingStatus(row);
         const finding = row.diagnosis;
-        const moduleWrong = status === 'suspected' && finding?.observed_component_pin !== row.expected.component_pin;
-        const observedCandidate = usable.observations.find(c => c.id === (moduleWrong ? finding?.component_connector_id : finding?.board_connector_id));
+        const swapAdvisory = finding?.kind === 'reciprocal_endpoint_swap';
+        const unconnectedTerminal = finding?.kind === 'unconnected_terminal';
+        const rowPositionCheck = finding?.kind === 'row_position_check';
+        const moduleWrong = status === 'suspected' && !swapAdvisory && !unconnectedTerminal && finding?.observed_component_pin != null && finding.observed_component_pin !== row.expected.component_pin;
+        const observedCandidate = swapAdvisory || unconnectedTerminal || rowPositionCheck ? undefined : usable.observations.find(c => c.id === (moduleWrong ? finding?.component_connector_id : finding?.board_connector_id));
         const observedSlot = Object.values(usable.slots).find(slot => slot?.capture_id === observedCandidate?.capture_id);
         const expectedCandidate = usable.observations.find(c => c.capture_id === observedCandidate?.capture_id
           && c.pin_id === (moduleWrong ? row.expected.component_pin : row.expected.board_pin));
         const retakeRole = finding?.retake_roles[0];
+        const hasLocation = Boolean(expectedWiringLocation(row));
+        const showLocation = wiringHasConnectionClue(row) || wireChoice?.key === resultKey && wireChoice.id === row.wire_id;
         return <article className="wr-wire wr-finding" data-finding={status} key={row.wire_id}><header><h4>{row.expected.component_pin}</h4>
-          <span className={`wr-comparison wr-finding-${status}`}>{status === 'suspected' ? tr('疑似接錯', 'Possible wrong pin')
-            : status === 'no_issue_seen' ? tr('未見明顯錯接', 'No obvious mismatch') : tr('需確認', 'Needs a closer check')}</span></header>
-          <div className="wr-expected"><strong>{tr("應接", "Connect to")}</strong><p>{row.expected.component_pin} <span aria-hidden="true">→</span> {row.expected.physical_pin !== null ? `Pi Pin ${row.expected.physical_pin}` : row.expected.board_pin || tr("Pi 腳位待確認", "Pi pin unconfirmed")}</p></div>
-          {status === 'suspected' ? <p className="wr-suspected-position">{tr('照片疑似：', 'Photo suggests: ')}{finding?.observed_component_pin} → Pi Pin {finding?.observed_physical_pin}</p>
-            : status === 'uncertain' ? <p className="wr-muted">{tr('腳位或線路看不清，先核對這條。', 'Pin or route unclear. Check this wire first.')}</p> : null}
-          {status === 'suspected' ? <small className="wr-power-off">{tr('先斷電，再沿線核對或調整。', 'Power off before tracing or changing wires.')}</small> : null}
+          <span className={`wr-comparison wr-finding-${status}`}>{wiringFindingLabel(row, tr)}</span></header>
+          {showLocation ? hasLocation ? <WiringExpectedLocation rows={[row]} /> : <div className="wr-expected"><strong>{tr("應接", "Connect to")}</strong><p>{row.expected.component_pin} <span aria-hidden="true">→</span> {row.expected.physical_pin !== null ? `Pi Pin ${row.expected.physical_pin}` : row.expected.board_pin || tr("Pi 腳位待確認", "Pi pin unconfirmed")}</p></div> : null}
+          {unconnectedTerminal && status === 'suspected' ? <p className="wr-suspected-position">{wiringSuspectedConnectionText(row, tr)}</p>
+            : rowPositionCheck ? <><p className="wr-muted">{finding?.evidence}</p><p className="wr-next">{row.next_step}</p></>
+            : !wiringHasConnectionClue(row) && status === 'uncertain' ? <p className="wr-muted">{tr('照片尚未找出這條線的明確疑點，可自行沿線核對。', 'The photos have not identified a clear concern with this wire. You can trace it to check.')}</p>
+            : hasLocation && status !== 'no_issue_seen' ? <p className="wr-muted">{row.comparison === 'different'
+            ? tr(`${wiringTargetLabel(row, tr)}兩端線色不同，沿線核對圖中標示位置。`, `${wiringTargetLabel(row, tr)} has different endpoint colours. Trace it to the highlighted position.`)
+            : tr('沿這條線，核對圖中標示位置。', 'Trace this wire and compare it with the highlighted position.')}</p>
+            : status === 'suspected' ? <p className="wr-suspected-position">{wiringSuspectedConnectionText(row, tr)}</p>
+              : null}
+          {status === 'suspected' ? <small className="wr-power-off">{unconnectedTerminal ? tr('先斷電，再核對或調整接線。', 'Power off before checking or changing the connection.')
+            : tr('先斷電，再沿線核對或調整。', 'Power off before tracing or changing wires.')}</small> : null}
           <div className="wr-actions wr-finding-actions">
             {observedSlot?.available !== false && observedSlot && validWiringCrop(observedCandidate?.box) ? <button type="button" className="wr-primary" onClick={() => {
               const markers: PhotoMarker[] = [{ box: observedCandidate!.box!, kind: 'observed', label: moduleWrong ? `${finding?.observed_component_pin}` : `Pin ${finding?.observed_physical_pin}` }];
@@ -277,12 +282,13 @@ export function WiringReviewCard({ review, components, componentId, busy = false
             }}>{tr('查看照片位置', 'View position in photo')}</button> : null}
             {onInspectWire ? <button type="button" onClick={() => onInspectWire(row.wire_id)}>{tr('看應接腳位', 'View expected pin')}</button> : null}
             {status === 'uncertain' && retakeRole ? <button type="button" disabled={disabled || humanOnly || !captureReady}
-              onClick={() => void act({ op: 'capture', role: retakeRole })}>{tr(`補拍${roleLabel(retakeRole, tr)}`, `Retake ${roleLabel(retakeRole, tr)}`)}</button> : null}
+              onClick={() => void act({ op: 'capture', role: retakeRole })}>{tr(`補拍${roleLabel(retakeRole, tr, usable.capture_plan)}`, `Retake ${roleLabel(retakeRole, tr, usable.capture_plan)}`)}</button> : null}
           </div>
           <details className="wr-finding-details"><summary>{tr('查看判斷依據', 'Evidence details')}</summary>
+          {hasLocation && status === 'suspected' ? <p>{wiringSuspectedConnectionText(row, tr)}</p> : null}
           <p>{row.expected.physical_pin !== null ? `${tr('Pi 實體 Pin', 'Pi physical pin')} ${row.expected.physical_pin}` : row.expected.board_pin}{row.expected.bcm !== null ? ` · BCM ${row.expected.bcm}` : ''} · {comparison}</p>
-          <div className="wr-observations"><div><h5>{tr("Pi 端照片觀察", "Pi photo observations")}</h5><EndpointList candidates={row.pi_candidates} slots={usable.slots} onPhoto={photo} /></div>
-            <div><h5>{tr("零件端照片觀察", "Module photo observations")}</h5><EndpointList candidates={row.component_candidates} slots={usable.slots} onPhoto={photo} /></div></div>
+          <div className="wr-observations"><div><h5>{tr("Pi 端照片觀察", "Pi photo observations")}</h5><EndpointList candidates={row.pi_candidates} slots={usable.slots} capturePlan={usable.capture_plan} onPhoto={photo} /></div>
+            <div><h5>{tr("零件端照片觀察", "Module photo observations")}</h5><EndpointList candidates={row.component_candidates} slots={usable.slots} capturePlan={usable.capture_plan} onPhoto={photo} /></div></div>
           {row.evidence ? <p>{row.evidence}</p> : null}
           {row.comparison === "similar" ? <small>{tr("線色相符只提供線索，請確認兩端是否為同一條線。", "Matching colors are a clue. Check that both ends belong to the same wire.")}</small> : null}
           {row.expected.connection_kind && row.expected.connection_kind !== "direct" ? <small>{tr("此接法含中間連接，兩端線色可能不同。", "This connection has an intermediate link; end colors may differ.")}</small> : null}
@@ -300,12 +306,12 @@ export function WiringReviewCard({ review, components, componentId, busy = false
         <button type="button" disabled={waiting || rowIndex >= orderedRows.length - 1} onClick={() => setWireChoice({ key: resultKey, id: orderedRows[rowIndex + 1].wire_id })}>{tr('下一條', 'Next wire')}</button>
       </div></div> : null}
       {usable.observations.length ? <details className="wr-inventory"><summary>{tr("查看全部接頭候選（含腳號未知）", "All connector candidates, including unknown pins")}</summary>
-        <EndpointList candidates={usable.observations} slots={usable.slots} onPhoto={photo} /></details> : null}
+        <EndpointList candidates={usable.observations} slots={usable.slots} capturePlan={usable.capture_plan} onPhoto={photo} /></details> : null}
       {allConfirmed ? <div className="wr-retest"><p>{tr("你已確認本零件的接線；功能測試結果另行記錄。", "You confirmed this module's wiring. Functional test results are recorded separately.")}</p>
         {onRetest ? <button type="button" disabled={disabled} onClick={() => onRetest(usable.component_id)}>{tr("重新測試這個零件", "Retest this module")}</button> : null}</div> : null}
     </>}
     {opened && review && opened.revision === review.revision && Object.values(review.slots).some(slot => slot?.capture_id === opened.slot.capture_id) ? <CropDialog
-      key={`${opened.slot.capture_id}:${opened.revision}`} slot={opened.slot} initialCrop={opened.crop} markers={opened.markers} disabled={disabled || humanOnly} onClose={() => setOpened(null)} onSave={async crop => {
+      key={`${opened.slot.capture_id}:${opened.revision}`} slot={opened.slot} capturePlan={review.capture_plan} initialCrop={opened.crop} markers={opened.markers} disabled={disabled || humanOnly} onClose={() => setOpened(null)} onSave={async crop => {
         const result = await onAction(boundWiringAction(review, { op: "crop", role: opened.slot.role, crop }));
         if (result === null || result === false) throw new Error(tr("框選未儲存，請關閉並查看操作訊息後重試。", "Crop was not saved. Close this view, check the action message and try again."));
         setOpened(null);

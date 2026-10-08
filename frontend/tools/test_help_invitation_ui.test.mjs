@@ -74,7 +74,19 @@ test('wiring chat shell retains only the two invitation buttons in the message p
   assert.ok(!h.nodes.some(node=>node.type==='section'||node.type==='textarea'||node.type===Entry));
   assert.deepEqual(h.calls,[]);assert.deepEqual(h.guides,[]);
   h.update({testHelpInvitation:null,session:{...h.session,record:record(review())}});
-  assert.equal(h.nodes.length,0);
+  assert.ok(h.button('停止本次檢查'));
+  assert.ok(!h.nodes.some(node=>node.type==='section'||node.type==='textarea'||node.type===Entry));
+});
+
+test('chat guidance keeps an explicit session Stop without reviving tools or hardware tests',async()=>{
+  const h=harness({initialRecord:record(review()),invitation:null});h.update({chatGuidance:true});
+  const stop=h.button('停止本次檢查');assert.ok(stop);assert.equal(stop.props.disabled,false);
+  stop.props.onClick();await h.settle();
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].args[0],'stop');
+  h.update({session:{...h.session,pending:true}});assert.equal(h.button('停止本次檢查').props.disabled,true);
+  h.update({phonePreview:true});assert.equal(h.button('停止本次檢查'),undefined);
+  h.update({phonePreview:false,session:{...h.session,record:{...record(review()),status:'stopped'}}});assert.equal(h.nodes.length,0);
+  h.unmount();
 });
 test('wiring chat shell acknowledges start without revealing or mounting a review panel',async()=>{
   const h=harness();let starts=0;h.update({chatGuidance:true,onTestHelpAction:async()=>{starts++;return record(review());}});

@@ -20,6 +20,7 @@ from app.config import PiDeployConfig
 
 SERVICE = "boardvision-pi.service"
 LOG_BYTES = 128 * 1024
+RECONNECT_INTERVAL_S = 3.0
 
 
 class RemoteCommandError(RuntimeError):
@@ -78,6 +79,10 @@ class PiDeployer:
         self._state_lock = threading.RLock()
         self._io_lock = threading.Lock()
         self._last_poll = 0.0
+        # Status polling may restore a requested management connection, never
+        # initiate first-time access or replay deployment/test operations.
+        self._connection_requested = False
+        self._reconnect_after = 0.0
         self._worker: threading.Thread | None = None
         self._closed = False
         self._test_reserved: str | None = None
@@ -155,27 +160,37 @@ class PiDeployer:
             self._set(error=str(error), **({"deployment": "failed"} if deployment else {"program": "unknown", "pid": None}))
         else:
             self._disconnect()
+            self._reconnect_after = time.monotonic() + RECONNECT_INTERVAL_S
+            if isinstance(error, (paramiko.AuthenticationException, paramiko.BadHostKeyException)):
+                # Changed credentials/host identity require explicit attention.
+                self._connection_requested = False
             self._set(connected=False, program="unknown", pid=None, exit_code=None,
                       connection_error=str(error) or type(error).__name__,
                       **({"deployment": "failed"} if deployment else {}))
+
+    def _check_connection(self, *, clear_error=False):
+        """Read-only SSH/service reconciliation; no remote writes or restarts."""
+        self._open()
+        hostname = self._run("hostname")
+        python_version = self._run("python3 --version")
+        with self._sftp() as sftp:
+            self._home = sftp.normalize(".")
+        self._set(connected=True, hostname=hostname, python_version=python_version,
+                  connection_error=None, **({"error": None} if clear_error else {}))
+        self._refresh()
+        self._reconnect_after = 0.0
 
     def connect(self) -> dict:
         with self._state_lock:
             if self._state.busy or self._test_reserved:
                 return {"ok": False, "error": "Pi operation already in progress", "status": self.snapshot()}
             self._state.busy = True
+            self._connection_requested = True
         failure = None
         try:
             with self._io_lock:
                 try:
-                    self._open()
-                    hostname = self._run("hostname")
-                    python_version = self._run("python3 --version")
-                    with self._sftp() as sftp:
-                        self._home = sftp.normalize(".")
-                    self._set(connected=True, hostname=hostname, python_version=python_version,
-                              connection_error=None, error=None)
-                    self._refresh()
+                    self._check_connection(clear_error=True)
                 except Exception as error:
                     self._failure(error)
                     failure = str(error)
@@ -375,11 +390,25 @@ class PiDeployer:
 
     def status(self) -> dict:
         state = self.snapshot()
-        if self._closed or not state["connected"] or state["busy"] or time.monotonic() - self._last_poll < 0.8:
+        now = time.monotonic()
+        if self._closed or state["busy"]:
+            return state
+        if not state["connected"]:
+            if not self._connection_requested or now < self._reconnect_after:
+                return state
+        elif now - self._last_poll < 0.8:
             return state
         if self._io_lock.acquire(blocking=False):
             try:
-                if not self.snapshot()["busy"]:
+                # Another operation may have completed between the snapshot
+                # and this lock. Recheck ownership and cooldown under the lock.
+                current = self.snapshot()
+                if self._closed or current["busy"]:
+                    return current
+                if not current["connected"]:
+                    if self._connection_requested and time.monotonic() >= self._reconnect_after:
+                        self._check_connection()
+                elif time.monotonic() - self._last_poll >= 0.8:
                     self._open()
                     self._refresh()
             except Exception as error:

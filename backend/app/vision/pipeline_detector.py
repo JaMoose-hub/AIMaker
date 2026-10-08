@@ -132,6 +132,12 @@ class PipelineDetector:
                 horizontal_fov_deg=self._horizontal_fov_deg,
             )
 
+    def reset_stream_geometry(self) -> None:
+        """Forget old pixels without reloading models or enabling calibration."""
+        self.reset_for_camera(horizontal_fov_deg=self._horizontal_fov_deg,
+            camera_calibration_path=self._camera_calibration_path,
+            use_camera_calibration=self._use_camera_calibration)
+
     # -- helpers ------------------------------------------------------------------
 
     def _searching(self, frame_id: int, ts_ms: float) -> DetectionResult:

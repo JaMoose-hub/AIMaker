@@ -1,15 +1,20 @@
 import type { ReactNode } from 'react';
 import { useI18n } from "../lib/i18n";
+import { useStreamWaitingNotice } from "../lib/useStreamWaitingNotice";
 import "./LiveCameraOverlay.css";
 
 /** Presentation only: the existing VideoView and source controller retain ownership. */
-export function LiveCameraOverlay({ navigation, controls, changing, unavailable, offline, phone, error, onRetry }: {
+export function LiveCameraOverlay({ navigation, controls, changing, unavailable, offline, phone, error, onRetry, waitingForFrame = false }: {
   navigation?: ReactNode; controls?: ReactNode; changing: boolean; unavailable: boolean; offline: boolean;
   phone: boolean; error: string; onRetry?: () => void;
+  waitingForFrame?: boolean;
 }) {
   const { locale } = useI18n();
   const tr = (zh: string, en: string) => locale === 'zh-TW' ? zh : en;
   const blocked = changing || unavailable || offline;
+  const briefFrameGap = waitingForFrame && !changing && !offline && !error;
+  const waitingNotice = useStreamWaitingNotice(blocked && briefFrameGap);
+  const showNotice = blocked && (!briefFrameGap || waitingNotice);
   const title = offline ? tr('影像服務連線中', 'Connecting to video service')
     : changing ? tr('切換影像中', 'Switching camera')
     : phone ? tr('等待手機串流', 'Waiting for phone stream') : tr('等待鏡頭影像', 'Waiting for camera');
@@ -24,7 +29,7 @@ export function LiveCameraOverlay({ navigation, controls, changing, unavailable,
     </div> : null;
   return <div className="live-camera-overlay">
     {navigation ? <div className="live-camera-toolbar">{navigation}{dock}</div> : dock}
-    {blocked ? <div className="live-camera-message" role="status">
+    {showNotice ? <div className="live-camera-message" role="status">
       <div className="live-camera-message-card">
         <svg className="live-camera-message-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
           <rect x="3" y="5" width="14" height="14" rx="4"/><path d="m17 10 4-3v10l-4-3"/>

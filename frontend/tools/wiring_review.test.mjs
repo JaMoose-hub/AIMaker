@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {photoSequence} from './wiring_photo_flow_fixture.mjs';
+import {photoSequence, framingGuide, expectedLocationHelpers, expectedLocationComponent} from './wiring_photo_flow_fixture.mjs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const compile = (path, require) => {
@@ -17,7 +17,10 @@ const compile = (path, require) => {
 const helpers = compile('../src/lib/wiringReview.ts', () => ({}));
 function makeCard(language='zh', hooks=React) {
   return compile('../src/components/WiringReviewCard.tsx', name => name === 'react' ? hooks
+    : name.endsWith('wiringExpectedLocation') ? expectedLocationHelpers
+    : name.endsWith('WiringExpectedLocation') ? expectedLocationComponent(language)
     : name.endsWith('WiringPhotoSequence') ? {WiringPhotoSequence:photoSequence(hooks,language)}
+    : name.endsWith('WiringFramingGuide') ? {WiringFramingGuide:framingGuide(language)}
     : name.endsWith('wiringReview') ? helpers : name.endsWith('useMaker') ? {useMakerText:()=> (zh,en)=>language==='en'?en:zh} : {}).WiringReviewCard;
 }
 const roleNames = ['pi_side_a','pi_side_b','component_header'];
@@ -73,6 +76,21 @@ test('three photo roles, all repeated-color candidates and nullable Pi identity 
   assert.match(html,/接頭 blue-a/); assert.match(html,/接頭 blue-b/); assert.match(html,/腳號待確認/);
   assert.match(html,/多個候選/); assert.match(html,/尚未確認接對/);
   assert.doesNotMatch(html,/你已親自確認接對|功能通過/);
+});
+
+test('module labels survive hidden contact in review details without borrowing identity for Pi observations',()=>{
+  const labels=['VCC','TRIG','ECHO','GND'];
+  const components=labels.map(label=>({...endpoint(`module-${label}`,'component_header',null,'blue'),pin_id:null,
+    module_pin_id:label,module_pin_evidence:`Readable ${label} label beside housing.`,contact:'uncertain'}));
+  const pi={...endpoint('unknown-pi','pi_side_a',null,'blue'),module_pin_id:'MUST_NOT_IDENTIFY_PI',
+    module_pin_evidence:'MUST_NOT_EXPLAIN_PI'};
+  const state={...base,observations:[],results:[{...base.results[0],pi_candidates:[pi],component_candidates:components}]};
+  const before=structuredClone(state),html=render(state);
+  for(const label of labels) assert.match(html,new RegExp(`<strong>${label}</strong>`));
+  assert.equal((html.match(/標字位置已辨識；插接待確認/g)||[]).length,4);
+  assert.equal((html.match(/腳號待確認/g)||[]).length,1);
+  assert.doesNotMatch(html,/MUST_NOT_IDENTIFY_PI|MUST_NOT_EXPLAIN_PI|aria-pressed="true"|功能通過/);
+  assert.deepEqual(state,before);
 });
 test('similar colors never check the human decision or enable retest',()=>{
   const html=render({...base,results:[{...base.results[0],comparison:'similar'}]}, {onRetest(){throw Error('No automatic hardware call');}});
@@ -168,7 +186,7 @@ test('suspected pins are shown first without mutating the original order or huma
   assert.deepEqual(helpers.prioritiseWiringResults(rows).map(row=>row.wire_id),['wrong','unclear','ok']);
   assert.deepEqual(rows.map(row=>row.wire_id),['ok','unclear','wrong']);
   const html=render({...base,results:rows});
-  assert.match(html,/1 條優先檢查/);
+  assert.match(html,/1 條優先核對/);
   assert.match(html,/data-finding="suspected"/);
   assert.doesNotMatch(html,/aria-pressed="true"/);
 });

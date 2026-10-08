@@ -18,6 +18,13 @@ const viewerStats=load('../src/lib/mobileViewerStats.ts');
 const recognition=load('../src/lib/mobileRecognition.ts');
 const mobile=load('../src/lib/mobile.ts',{'react':React,'./photoWiring':photo,'./mobileBrowserRtc':browserRtc,'./mobileViewerStats':viewerStats,'./mobileRecognition':recognition});
 
+test('desktop keeps the selected phone source when only its live workspace snapshot changes',()=>{
+  const phone={session_id:'phone',conversation_id:'chat',context_id:'step-one',workspace_id:'same-project',stream:{generation:3}};
+  const selected=mobile.followMobileSource(null,phone,true,false).key;
+  const updated=mobile.followMobileSource(selected,{...phone,context_id:'step-two'},true,true);
+  assert.equal(updated.key,selected);assert.equal(updated.reselect,false);
+});
+
 test('viewer diagnostics use interval counters rather than lifetime rates or configured FPS',()=>{
   const previous={id:'video:1',timestamp:1000,framesDecoded:30,bytesReceived:1000000,packetsReceived:100,packetsLost:2,jitterBufferDelay:.6,jitterBufferEmittedCount:30};
   const current={...previous,timestamp:2000,framesDecoded:58,bytesReceived:2000000,packetsReceived:198,packetsLost:4,jitterBufferDelay:1.44,jitterBufferEmittedCount:58,width:1920,height:1080,codec:'video/H264'};
@@ -276,7 +283,7 @@ test('capture validates the frozen geometry and origin before showing GPIO; inac
 });
 
 function fakePeer() {
-  return {iceGatheringState:'complete',localDescription:null,remote:null,closed:false,transceivers:[],
+  return {iceGatheringState:'complete',connectionState:'connected',localDescription:null,remote:null,closed:false,transceivers:[],
     addTransceiver(kind,options){this.transceivers.push({kind,...options});return{receiver:this.receiver??{}};},
     async createOffer(){return{type:'offer',sdp:'test-offer'};},async setLocalDescription(value){this.localDescription=value;},
     async setRemoteDescription(value){this.remote=value;},close(){this.closed=true;},
@@ -299,6 +306,67 @@ test('desktop viewer applies a matching answer and delivers remote track only wh
   await viewer.ready;assert.equal(peer.remote.sdp,'answer');assert.equal(peer.receiver.jitterBufferTarget,20);
   const stream={id:'remote'};peer.ontrack({streams:[stream]});assert.deepEqual(tracks,[stream]);
   viewer.close();assert.equal(peer.ontrack,null);
+});
+
+test('desktop viewer connecting timeout closes only its receiver and offers a retry instead of waiting forever',async()=>{
+  const clock=captureFakeClock(),peer=fakePeer(),states=[],requests=[];peer.connectionState='connecting';
+  const viewer=mobile.openMobileViewer('phone',3,()=>{},state=>states.push(state),async(path)=>{requests.push(path);return{type:'answer',sdp:'answer'};},()=>peer);
+  const result=viewer.ready.catch(cause=>cause);
+  try {
+    await new Promise(resolve=>setImmediate(resolve));clock.advance(15000);
+    assert.equal((await result).message,'mobile_viewer_connection_timeout');assert.equal(peer.closed,true);
+    assert.equal(states.at(-1),'failed');assert.deepEqual(requests,['stream/offer']);assert.equal(clock.timers.size,0);
+  } finally {viewer.close();clock.restore();}
+});
+
+test('desktop viewer retains transient ICE recovery but releases a persistently disconnected receiver',async()=>{
+  const clock=captureFakeClock(),peer=fakePeer(),states=[];
+  const viewer=mobile.openMobileViewer('phone',3,()=>{},state=>states.push(state),async()=>({type:'answer',sdp:'answer'}),()=>peer);
+  try {
+    await viewer.ready;peer.connectionState='disconnected';peer.onconnectionstatechange();clock.advance(7000);
+    assert.equal(peer.closed,false);peer.connectionState='connected';peer.onconnectionstatechange();assert.equal(clock.timers.size,0);
+    const late=peer.onconnectionstatechange;peer.connectionState='disconnected';late();clock.advance(8000);
+    assert.equal(peer.closed,true);assert.equal(states.at(-1),'failed');
+    const count=states.length;peer.connectionState='connected';late();assert.equal(states.length,count);
+  } finally {viewer.close();clock.restore();}
+});
+
+test('desktop viewer cancellation drains its connecting wait and cancels timers without false errors',async()=>{
+  const clock=captureFakeClock(),peer=fakePeer(),states=[];peer.connectionState='connecting';
+  const viewer=mobile.openMobileViewer('phone',3,()=>{},state=>states.push(state),async()=>({type:'answer',sdp:'answer'}),()=>peer);
+  try {
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(clock.timers.size,1);
+    const late=peer.onconnectionstatechange;viewer.close();await viewer.ready;assert.equal(clock.timers.size,0);
+    const count=states.length;clock.advance(30000);peer.connectionState='connected';late();assert.equal(states.length,count);
+  } finally {viewer.close();clock.restore();}
+});
+
+test('desktop viewer negotiation errors release the failed peer without stopping the phone publisher',async()=>{
+  const peer=fakePeer(),requests=[];
+  const viewer=mobile.openMobileViewer('phone',3,()=>{},()=>{},async(path)=>{requests.push(path);throw Error('network offline');},()=>peer);
+  await assert.rejects(viewer.ready,/network offline/);assert.equal(peer.closed,true);assert.equal(peer.ontrack,null);
+  assert.deepEqual(requests,['stream/offer']);viewer.close();
+});
+
+test('desktop viewer bounds a silent offer request and ignores its late answer after timeout',async()=>{
+  const clock=captureFakeClock(),peer=fakePeer();let release,signal;
+  const viewer=mobile.openMobileViewer('phone',3,()=>{},()=>{},async(_path,options)=>{signal=options.signal;return new Promise(resolve=>release=resolve);},()=>peer);
+  const result=viewer.ready.catch(cause=>cause);
+  try {
+    await new Promise(resolve=>setImmediate(resolve));clock.advance(20000);
+    assert.equal((await result).message,'mobile_viewer_connection_timeout');assert.equal(signal.aborted,true);assert.equal(peer.closed,true);
+    release({type:'answer',sdp:'late'});await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(peer.remote,null);assert.equal(clock.timers.size,0);
+  } finally {viewer.close();clock.restore();}
+});
+
+test('desktop viewer closing a silent offer drains readiness without waiting for the network',async()=>{
+  const clock=captureFakeClock(),peer=fakePeer();let signal;
+  const viewer=mobile.openMobileViewer('phone',3,()=>{},()=>{},async(_path,options)=>{signal=options.signal;return new Promise(()=>{});},()=>peer);
+  try {
+    await new Promise(resolve=>setImmediate(resolve));viewer.close();await viewer.ready;
+    assert.equal(signal.aborted,true);assert.equal(peer.closed,true);assert.equal(clock.timers.size,0);
+  } finally {viewer.close();clock.restore();}
 });
 
 test('mobile request carries exact photo context and reports backend busy without losing details',async()=>{
@@ -662,7 +730,7 @@ test('connected phones show QR plus a readable pairing code in both languages',a
 function pairingHookHarness(t) {
   let cursor=0,refCursor=0,effectCursor=0,pending=[],state={session:null},resolvePairing,pollError='';
   let configuration={available:true,base_url:'https://fixture.test',web_url:'https://fixture.test/mobile'};
-  const configurationReplies=[];
+  const configurationReplies=[],pollReplies=[];
   const values=[],refs=[],effects=[],sockets=[],requests=[],timers=[];
   const invitation={code:'482913',web_url:'https://fixture.test/mobile?code=482913',base_url:'https://fixture.test',expires_at:Date.now()/1000+300,base_urls:[]};
   const hooks={...React,useCallback:callback=>callback,
@@ -680,7 +748,7 @@ function pairingHookHarness(t) {
   globalThis.fetch=async(path,options)=>{
     requests.push({path,method:options.method,cache:options.cache,body:options.body?JSON.parse(options.body):undefined});
     if(path.includes('desktop-session')&&pollError)throw Error(pollError);
-    const value=path.includes('desktop-session')?state:path.endsWith('web-config')
+    const value=path.includes('desktop-session')?(pollReplies.length?await pollReplies.shift():state):path.endsWith('web-config')
       ? configurationReplies.length?await configurationReplies.shift():configuration:path.endsWith('pairings')
       ? await new Promise(resolve=>{const origin=JSON.parse(options.body).base_url;resolvePairing=next=>resolve(next??{...invitation,base_url:origin,web_url:origin+'/mobile?code='+invitation.code});}) : {context_id:'ctx'};
     return{ok:true,status:200,json:async()=>value};
@@ -693,12 +761,92 @@ function pairingHookHarness(t) {
   const tick=async()=>{for(let i=0;i<12;i++)await Promise.resolve();return render();};
   return{render,tick,requests,resolve(next){assert.ok(resolvePairing);resolvePairing(next);},
     setConfiguration(next){configuration=next;},queueConfiguration(promise){configurationReplies.push(promise);},
-    pollState(value){state=value;},
+    pollState(value){state=value;},queuePoll(promise){pollReplies.push(promise);},
     failPoll(message){pollError=message;},
     poll(){const timer=timers.findLast(item=>item.delay===5000&&!item.cancelled);assert.ok(timer);timer.cancelled=true;timer.callback();},
+    fireDelay(delay){const timer=timers.findLast(item=>item.delay===delay&&!item.cancelled);assert.ok(timer);timer.cancelled=true;timer.callback();},
     accept(session){state={session};sockets.at(-1).onmessage({data:JSON.stringify(state)});},
     session(id='phone'){return{session_id:id,conversation_id:'chat',context_id:'ctx',stream:{active:true,generation:1},view:{capture_id:null,revision:0}};}};
 }
+
+test('stability: a delayed empty poll cannot erase a phone paired by a newer socket event',async t=>{
+  const h=pairingHookHarness(t);let resolve;
+  h.queuePoll(new Promise(done=>resolve=done));h.render();await h.tick();
+  h.accept(h.session('new-phone'));
+  resolve({session:null});await h.tick();
+  assert.equal(h.render().session.session_id,'new-phone');
+});
+
+test('stability: a delayed poll cannot replace a newer socket session or its stream generation',async t=>{
+  const h=pairingHookHarness(t);let resolve;
+  h.queuePoll(new Promise(done=>resolve=done));h.render();await h.tick();
+  const current={...h.session('new-phone'),stream:{active:true,generation:2}};
+  h.accept(current);resolve({session:h.session('old-phone')});await h.tick();
+  assert.equal(h.render().session.session_id,'new-phone');
+  assert.equal(h.render().session.stream.generation,2);
+});
+
+test('stability: a fresh poll may clear a session when no newer scoped event arrived',async t=>{
+  const h=pairingHookHarness(t);h.render();await h.tick();h.accept(h.session());
+  h.pollState({session:null});h.poll();await h.tick();
+  assert.equal(h.render().session,null);
+});
+
+test('stability: foreign socket events do not suppress a valid project poll',async t=>{
+  const h=pairingHookHarness(t);let resolve;
+  h.queuePoll(new Promise(done=>resolve=done));h.render();await h.tick();
+  h.accept({...h.session('foreign-phone'),conversation_id:'other-project'});
+  resolve({session:h.session()});await h.tick();
+  assert.equal(h.render().session.session_id,'phone');
+});
+
+test('stability: socket traffic cannot starve independent global connection status',async t=>{
+  const h=pairingHookHarness(t);let resolve;
+  h.queuePoll(new Promise(done=>resolve=done));h.render();await h.tick();
+  h.accept(h.session());
+  const connection={session_id:'phone',conversation_id:'chat',context_id:'ctx',title:'Project'};
+  resolve({session:null,connection});await h.tick();
+  assert.equal(h.render().session.session_id,'phone');
+  assert.deepEqual(h.render().connection,connection);
+});
+
+test('stability: a stalled desktop poll times out and the next poll can recover',async t=>{
+  const h=pairingHookHarness(t);let resolve;
+  h.queuePoll(new Promise(done=>resolve=done));h.render();await h.tick();
+  h.fireDelay(10000);await h.tick();
+  assert.equal(h.render().connection,null);
+  assert.equal(h.render().connectionError,'mobile_request_timeout');
+  h.pollState({session:h.session('recovered')});h.poll();await h.tick();
+  assert.equal(h.render().session.session_id,'recovered');
+  resolve({session:h.session('late')});await h.tick();
+  assert.equal(h.render().session.session_id,'recovered','A timed-out request no longer owns state');
+});
+
+test('stability: the request deadline covers a stalled JSON body and cleans up its timer',async t=>{
+  let deadline,signal,cleared=0;
+  t.mock.method(globalThis,'setTimeout',callback=>{deadline=callback;return 123;});
+  t.mock.method(globalThis,'clearTimeout',id=>{assert.equal(id,123);cleared++;});
+  t.mock.method(globalThis,'fetch',async(_path,options)=>{
+    signal=options.signal;return{ok:true,status:200,json:()=>new Promise(()=>{})};
+  });
+  const operation=mobile.mobileRequest('desktop-session',{timeoutMs:10000});
+  const rejected=assert.rejects(operation,/mobile_request_timeout/);
+  await Promise.resolve();deadline();await rejected;
+  assert.equal(signal.aborted,true);assert.equal(cleared,1);
+});
+
+test('stability: cancellation settles a noncooperative request and an already aborted owner never fetches',async t=>{
+  let calls=0,cleared=0;
+  t.mock.method(globalThis,'setTimeout',()=>123);
+  t.mock.method(globalThis,'clearTimeout',()=>cleared++);
+  t.mock.method(globalThis,'fetch',()=>{calls++;return new Promise(()=>{});});
+  const owner=new AbortController();
+  const operation=mobile.mobileRequest('desktop-session',{signal:owner.signal,timeoutMs:10000});
+  const rejected=assert.rejects(operation,/mobile_request_cancelled/);
+  owner.abort();await rejected;
+  await assert.rejects(mobile.mobileRequest('desktop-session',{signal:owner.signal,timeoutMs:10000}),/mobile_request_cancelled/);
+  assert.equal(calls,1);assert.equal(cleared,2);
+});
 
 test('an existing phone heartbeat preserves its new invitation, but a new paired session consumes it',async t=>{
   const h=pairingHookHarness(t);h.render();await h.tick();h.accept(h.session());

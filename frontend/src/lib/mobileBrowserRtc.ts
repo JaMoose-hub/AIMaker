@@ -1,4 +1,42 @@
 import type { CaptureTicket, MobileBrowserApi } from './mobileBrowser';
+import { initialStreamQuality, nextStreamQuality, rtcOperation, setBrowserStreamScale } from './mobileStreamPolicy';
+/** Bound failed connections without tearing down a recoverable ICE interruption. */
+export function watchBrowserRtcConnection(peer: RTCPeerConnection,
+    onState: (state: RTCPeerConnectionState) => void,
+    onEnded: (reason: 'failed' | 'closed' | 'disconnected' | 'connection_timeout') => void) {
+    let active = true;
+    let connectTimer: ReturnType<typeof setTimeout> | null = null;
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    const dispose = () => {
+        active = false;
+        if (connectTimer !== null) clearTimeout(connectTimer);
+        if (disconnectTimer !== null) clearTimeout(disconnectTimer);
+        connectTimer = disconnectTimer = null;
+        if (peer.onconnectionstatechange === changed) peer.onconnectionstatechange = null;
+    };
+    const finish = (reason: Parameters<typeof onEnded>[0]) => {
+        if (!active) return;
+        dispose();
+        onEnded(reason);
+    };
+    const changed = () => {
+        if (!active) return;
+        const state = peer.connectionState;
+        onState(state);
+        if (!active) return;
+        if (state === 'connected') {
+            if (connectTimer !== null) clearTimeout(connectTimer);
+            if (disconnectTimer !== null) clearTimeout(disconnectTimer);
+            connectTimer = disconnectTimer = null;
+        } else if (state === 'failed' || state === 'closed') finish(state);
+        else if (state === 'disconnected' && disconnectTimer === null)
+            disconnectTimer = setTimeout(() => finish('disconnected'), 8000);
+    };
+    peer.onconnectionstatechange = changed;
+    connectTimer = setTimeout(() => finish('connection_timeout'), 15000);
+    changed();
+    return dispose;
+}
 /** Prefer the codec used by Safari and the laptop relay without rewriting SDP. */
 export function preferBrowserH264(peer: Pick<RTCPeerConnection, 'getTransceivers'>,
     capabilities = typeof RTCRtpSender === 'undefined' || typeof RTCRtpSender.getCapabilities !== 'function'
@@ -122,9 +160,13 @@ export async function tuneBrowserVideoSender(sender: RTCRtpSender, bitrateKbps: 
         const parameters = sender.getParameters();
         if (!parameters.encodings?.length) return { parameterStatus: 'unsupported' };
         parameters.encodings[0].maxBitrate = bitrate;
-        if (full) { parameters.encodings[0].maxFramerate = 30; parameters.degradationPreference = 'maintain-resolution'; }
+        if (full) {
+            parameters.encodings[0].maxFramerate = 30;
+            parameters.encodings[0].scaleResolutionDownBy = 1;
+            parameters.degradationPreference = 'maintain-resolution';
+        }
         try {
-            await sender.setParameters(parameters);
+            await rtcOperation(sender.setParameters(parameters));
             const applied = sender.getParameters().encodings?.[0]?.maxBitrate;
             return { parameterStatus: finite(applied) && applied !== bitrate ? 'limited' : 'accepted',
                 ...(finite(applied) ? { appliedBitrateKbps: applied / 1000 } : {}) };
@@ -142,13 +184,74 @@ export interface BrowserRtcState {
     generation?: number;
     waitingForLandscape?: boolean;
     sourceChanged?: boolean;
+    resolution?: BrowserStreamResolution;
 }
+export type BrowserStreamResolution = '1080p' | '720p';
 export interface BrowserStreamOptions {
-    resolution?: '1080p' | '720p';
+    resolution?: BrowserStreamResolution;
     bitrateKbps?: number;
 }
 export const idleBrowserRtc = (): BrowserRtcState => ({ stream: null, status: '串流已停止', settings: null, stats: {}, publishing: false });
 export type BrowserPhoneOrientation = 'landscape' | 'portrait' | 'unknown';
+/** Do not equate screen axes with camera/sensor axes. Both edges must meet
+ * the selected short edge; decoded pixels are checked before publishing.
+ * Direction is a preference, never a prerequisite for opening the camera. */
+export function browserCameraConstraints(orientation: BrowserPhoneOrientation, resolution: BrowserStreamResolution = '1080p'): MediaTrackConstraints {
+    const portrait = orientation === 'portrait';
+    const [long, short] = resolution === '720p' ? [1280, 720] : [1920, 1080];
+    // Bound HD capture as well as requesting it, so selecting 720p cannot
+    // silently retain a higher-resolution sensor mode. Either axis may rotate.
+    const limit = resolution === '720p' ? { max: long } : {};
+    const constraints: MediaTrackConstraints & { resizeMode: { ideal: string } } = {
+        width: { min: short, ideal: portrait ? short : long, ...limit },
+        height: { min: short, ideal: portrait ? long : short, ...limit },
+        aspectRatio: { ideal: portrait ? 9 / 16 : 16 / 9 },
+        resizeMode: { ideal: resolution === '720p' ? 'crop-and-scale' : 'none' },
+        frameRate: { ideal: 30, max: 30 },
+    };
+    return constraints;
+}
+export function isFullHdSize(width: number, height: number): boolean {
+    return isBrowserStreamSize(width, height, '1080p');
+}
+export function isBrowserStreamSize(width: number, height: number, resolution: BrowserStreamResolution): boolean {
+    const [long, short] = resolution === '720p' ? [1280, 720] : [1920, 1080];
+    return Number.isFinite(width) && Number.isFinite(height)
+        && Math.min(width, height) >= short && Math.max(width, height) >= long;
+}
+/** Serialize on the same native track. A late portrait completion cannot win
+ * over a newer landscape intent. Even a timed-out browser call stays owned
+ * until it settles, so a second applyConstraints never races with it. */
+export function syncBrowserCameraOrientation(track: MediaStreamTrack, initial: BrowserPhoneOrientation,
+    signal: AbortSignal, changed: (pending: boolean, failed: boolean) => void, resolution: BrowserStreamResolution = '1080p') {
+    let desired = initial, applied = initial, running = false, disposed = signal.aborted;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const dispose = () => { disposed = true; clearTimeout(timer); signal.removeEventListener('abort', dispose); };
+    signal.addEventListener('abort', dispose, { once: true });
+    const run = async () => {
+        if (running || disposed || desired === applied || desired === 'unknown') return;
+        running = true;
+        changed(true, false);
+        let failed = false;
+        while (!disposed && desired !== applied) {
+            const target = desired;
+            timer = setTimeout(() => { if (!disposed) changed(true, true); }, 3000);
+            try {
+                if (typeof track.applyConstraints !== 'function') throw Error('phone_orientation_unsupported');
+                await track.applyConstraints({ ...track.getConstraints?.(), ...browserCameraConstraints(target, resolution) });
+                failed = false;
+            } catch { failed = true; }
+            finally { clearTimeout(timer); }
+            applied = target;
+        }
+        running = false;
+        if (!disposed) changed(false, failed);
+    };
+    return {
+        request(orientation: BrowserPhoneOrientation) { if (!disposed && orientation !== 'unknown') { desired = orientation; void run(); } },
+        dispose,
+    };
+}
 /** Screen orientation is separate from the dimensions of decoded camera pixels. */
 export function readBrowserPhoneOrientation(): BrowserPhoneOrientation {
     if (typeof window === 'undefined') return 'unknown';
@@ -178,6 +281,7 @@ export interface BrowserLandscapeFrame {
     rotation: 0;
     ready?: boolean;
     phoneOrientation?: BrowserPhoneOrientation;
+    issue?: 'orientation' | 'resolution' | 'constraints';
 }
 export interface BrowserLandscapeStream {
     stream: MediaStream;
@@ -195,12 +299,13 @@ interface BrowserLandscapeOptions {
     readOrientation?: () => BrowserPhoneOrientation;
     waiting?: (frame: BrowserLandscapeFrame) => void;
     invalidated?: (frame: BrowserLandscapeFrame) => void;
+    changed?: (frame: BrowserLandscapeFrame) => void;
 }
 /** Verify native camera pixels without drawing, resampling or making another track.
  * The requested resolution is a camera constraint; metadata always reports what
  * the camera actually supplied. The publisher retains ownership of its tracks.
  */
-export async function prepareBrowserLandscapeStream(input: MediaStream, _resolution: '1080p' | '720p', signal: AbortSignal, options: BrowserLandscapeOptions = {}): Promise<BrowserLandscapeStream> {
+export async function prepareBrowserLandscapeStream(input: MediaStream, resolution: BrowserStreamResolution, signal: AbortSignal, options: BrowserLandscapeOptions = {}): Promise<BrowserLandscapeStream> {
     const source = document.createElement('video');
     source.muted = true; source.autoplay = true; source.playsInline = true;
     source.setAttribute('aria-hidden', 'true');
@@ -211,6 +316,8 @@ export async function prepareBrowserLandscapeStream(input: MediaStream, _resolut
     let publishedSize: [number, number] | null = null, publishedDirection: string | null = null, direction = '', disposed = false;
     let frame: BrowserLandscapeFrame = { sourceSize: [0, 0], outputSize: [0, 0], rotation: 0, ready: false };
     let waitingReady: (() => void) | null = null, detachOrientation = () => {}, waitingKey = '';
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+    let constraintsPending = false, constraintsFailed = false;
     const inspectFraming = () => {
         const phoneOrientation = (options.readOrientation ?? readBrowserPhoneOrientation)();
         const type = typeof window === 'undefined' ? undefined : window.screen?.orientation?.type;
@@ -219,35 +326,65 @@ export async function prepareBrowserLandscapeStream(input: MediaStream, _resolut
             ? type : typeof angle === 'number' ? String(angle) : phoneOrientation;
         const width = source.videoWidth, height = source.videoHeight;
         const ready = source.readyState >= 2 && !source.paused && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
-        frame = { ...frame, sourceSize: [width, height], outputSize: [width, height], ready, phoneOrientation };
+        // A landscape-coded native frame can be valid while the phone is held
+        // upright. Screen orientation alone does not prove rotated pixels.
+        const issue = !isBrowserStreamSize(width, height, resolution) ? 'resolution' : constraintsFailed ? 'constraints' : undefined;
+        frame = { ...frame, sourceSize: [width, height], outputSize: [width, height],
+            ready: ready && settleTimer === null && !constraintsPending && issue !== 'resolution', phoneOrientation };
+        if (issue) frame.issue = issue; else delete frame.issue;
         if (!ready && !publishedSize) {
             const key = `${width}:${height}:${phoneOrientation}`;
             if (key !== waitingKey) { waitingKey = key; options.waiting?.(frame); }
         }
         return ready;
     };
+    const orientationSync = syncBrowserCameraOrientation(input.getVideoTracks()[0],
+        (options.readOrientation ?? readBrowserPhoneOrientation)(), signal, (pending, failed) => {
+            if (disposed) return;
+            constraintsPending = pending; constraintsFailed = failed;
+            inspectFraming(); options.changed?.(frame);
+        }, resolution);
     const sourceChanged = (event?: Event) => {
         if (disposed) return;
         // Keyboard/viewport layout changes are not native camera source changes.
         if (publishedSize && typeof window !== 'undefined' && event?.type === 'resize' && event.target === window
                 && source.videoWidth === publishedSize[0] && source.videoHeight === publishedSize[1]) return;
         if (publishedSize) {
+            const wasReady = frame.ready;
             const ready = inspectFraming();
             if (!ready || direction !== publishedDirection || frame.sourceSize[0] !== publishedSize[0] || frame.sourceSize[1] !== publishedSize[1]) {
+                // Rotation is a geometry change, not loss of transport ownership.
+                // Safari can report orientation before native video resize. Keep
+                // the peer/track and withhold capture hints until framing settles.
+                publishedSize = [...frame.sourceSize]; publishedDirection = direction;
                 frame = { ...frame, ready: false };
-                dispose(); options.invalidated?.(frame);
+                options.changed?.(frame);
+                if (settleTimer !== null) clearTimeout(settleTimer);
+                settleTimer = setTimeout(() => {
+                    settleTimer = null;
+                    if (disposed) return;
+                    inspectFraming(); options.changed?.(frame);
+                }, 600);
+                // Set the settling guard first: unsupported controls can fail
+                // synchronously and notify us before request() returns.
+                orientationSync.request(frame.phoneOrientation ?? 'unknown');
+            } else if (!wasReady && frame.ready) {
+                options.changed?.(frame);
             }
         } else waitingReady?.();
     };
     const dispose = () => {
         if (disposed) return;
         disposed = true;
+        if (settleTimer !== null) clearTimeout(settleTimer);
         signal.removeEventListener('abort', dispose);
-        detachOrientation(); source.removeEventListener('resize', sourceChanged);
+        detachOrientation();
+        orientationSync.dispose();
+        for (const event of ['resize', 'playing', 'loadeddata', 'canplay', 'pause', 'emptied']) source.removeEventListener(event, sourceChanged);
         source.pause(); source.srcObject = null; source.remove();
     };
     signal.addEventListener('abort', dispose, { once: true });
-    source.addEventListener('resize', sourceChanged);
+    for (const event of ['resize', 'playing', 'loadeddata', 'canplay', 'pause', 'emptied']) source.addEventListener(event, sourceChanged);
     detachOrientation = watchBrowserPhoneOrientation(sourceChanged);
     try {
         await new Promise<void>((resolve, reject) => {
@@ -300,14 +437,21 @@ export class BrowserPublisher {
     private nativeMedia: MediaStream | null = null;
     private landscape: BrowserLandscapeStream | null = null;
     private detachNativeEnd: (() => void) | null = null;
+    private detachConnection: (() => void) | null = null;
     private opening: Promise<void> | null = null;
     private stopping: Promise<boolean> | null = null;
+    // One publication owner per Start, not per paired phone or guide snapshot.
+    // An idle/old tab must never stop the publication created by another tab.
+    private remoteOwner: string | null = null;
     private cancelGather: (() => void) | null = null;
     private abort: AbortController | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
     private state = idleBrowserRtc();
+    private resolution: BrowserStreamResolution = '1080p';
     private bitrateCeiling = 8000;
     private bitrateFlight = false;
+    private quality = initialStreamQuality();
+    private scaleFlight = false;
     constructor(private api: MobileBrowserApi, private changed: (state: BrowserRtcState) => void, private deps: PublisherDependencies = { getUserMedia: c => navigator.mediaDevices.getUserMedia(c), makePeer: () => new RTCPeerConnection({ iceServers: [] }) }) { }
     async start(options: BrowserStreamOptions = {}) {
         const intent = ++this.sourceChangeIntent;
@@ -329,32 +473,29 @@ export class BrowserPublisher {
                 this.opening = null;
         }
     }
-    private emit(state: BrowserRtcState) { this.state = state; this.changed(state); }
+    private emit(state: BrowserRtcState) { this.state = { ...state, resolution: this.resolution }; this.changed(this.state); }
     private async open(options: BrowserStreamOptions) {
+        this.resolution = options.resolution === '720p' ? '720p' : '1080p';
         this.stopLocal();
         this.bitrateCeiling = browserBitrateKbps(options.bitrateKbps);
         const serial = this.serial, abort = new AbortController();
         this.abort = abort;
         this.emit({ ...idleBrowserRtc(), status: '連接後置相機…' });
         try {
-            const get = (small: boolean) => {
-                const portrait = readBrowserPhoneOrientation() === 'portrait';
-                const longEdge = small ? 1280 : 1920, shortEdge = small ? 720 : 1080;
-                return this.deps.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' },
-                    width: { ideal: portrait ? shortEdge : longEdge }, height: { ideal: portrait ? longEdge : shortEdge },
-                    aspectRatio: { ideal: portrait ? 9 / 16 : 16 / 9 }, frameRate: { ideal: 30, max: 30 } } });
-            };
-            let stream: MediaStream, resolution: '1080p' | '720p' = options.resolution ?? '1080p';
+            let stream: MediaStream;
             try {
-                stream = await get(options.resolution === '720p');
+                stream = await this.deps.getUserMedia({ audio: false, video: {
+                    // Acquire the selected native mode independently of how the
+                    // handset is held. Rotation preferences are applied later
+                    // to this same track, without another camera acquisition.
+                    facingMode: { ideal: 'environment' }, ...browserCameraConstraints('unknown', this.resolution),
+                } });
             }
             catch (cause) {
-                if (serial !== this.serial)
-                    return;
-                if (options.resolution === '720p' || (cause instanceof Error && ['NotAllowedError', 'SecurityError'].includes(cause.name)))
-                    throw cause;
-                resolution = '720p';
-                stream = await get(true);
+                if (serial !== this.serial) return;
+                if (cause instanceof Error && cause.name === 'OverconstrainedError')
+                    throw Error(`相機無法提供 ${this.resolution}；請選擇其他解析度或確認相機支援後重試`);
+                throw cause;
             }
             if (serial !== this.serial) {
                 stream.getTracks().forEach(t => t.stop());
@@ -370,12 +511,17 @@ export class BrowserPublisher {
             nativeTrack?.addEventListener?.('ended', ended);
             this.detachNativeEnd = () => nativeTrack?.removeEventListener?.('ended', ended);
             const nativeStream = stream;
-            const landscape = await (this.deps.normalizeStream ?? prepareBrowserLandscapeStream)(stream, resolution, abort.signal, {
+            const landscape = await (this.deps.normalizeStream ?? prepareBrowserLandscapeStream)(stream, this.resolution, abort.signal, {
                 waiting: frame => {
                     if (serial !== this.serial) return;
                     this.emit({ stream: nativeStream, settings: { ...nativeTrack?.getSettings(), width: frame.sourceSize[0], height: frame.sourceSize[1] },
                         status: '等待相機影像，尚未開始傳送',
                         stats: {}, frame, publishing: false, waitingForLandscape: false });
+                },
+                changed: frame => {
+                    if (serial !== this.serial) return;
+                    this.emit({ ...this.state, frame, settings: { ...nativeTrack?.getSettings(),
+                        width: frame.sourceSize[0], height: frame.sourceSize[1] } });
                 },
                 invalidated: frame => {
                     if (serial !== this.serial) return;
@@ -394,10 +540,14 @@ export class BrowserPublisher {
             });
             if (serial !== this.serial) { landscape.dispose(); return; }
             this.landscape = landscape;
+            const verifiedFrame = landscape.readFrame();
+            if (!isBrowserStreamSize(...verifiedFrame.sourceSize, this.resolution))
+                throw Error(`相機實際影像未達 ${this.resolution}，未開始低於所選解析度的串流；請確認相機支援並重試`);
             stream = landscape.stream;
             this.media = stream;
+            this.remoteOwner = crypto.randomUUID();
             const started = await this.api.request<{ generation: number }>('stream', { method: 'POST', signal: abort.signal,
-                body: { bitrate_kbps: browserBitrateKbps(options.bitrateKbps) } });
+                body: { bitrate_kbps: browserBitrateKbps(options.bitrateKbps), publisher_id: this.remoteOwner } });
             if (serial !== this.serial) return;
             const peer = this.deps.makePeer();
             this.peer = peer;
@@ -416,19 +566,11 @@ export class BrowserPublisher {
                         return;
                 }
             }
-            peer.onconnectionstatechange = () => {
-                if (serial !== this.serial)
-                    return;
-                if (['failed', 'closed', 'disconnected'].includes(peer.connectionState))
-                    this.emit({ ...this.state, status: '串流中斷，可重新開始' });
-                else if (peer.connectionState === 'connected')
-                    this.emit({ ...this.state, status: '串流中' });
-            };
             preferBrowserH264(peer);
-            const offer = await peer.createOffer();
+            const offer = await rtcOperation(peer.createOffer(), 5000);
             if (serial !== this.serial)
                 return;
-            await peer.setLocalDescription(offer);
+            await rtcOperation(peer.setLocalDescription(offer), 5000);
             if (serial !== this.serial)
                 return;
             await new Promise<void>((resolve, reject) => {
@@ -447,21 +589,32 @@ export class BrowserPublisher {
             const answer = await this.api.request<RTCSessionDescriptionInit>('stream/offer', { method: 'POST', signal: abort.signal, body: { sdp: peer.localDescription?.sdp, type: 'offer', role: 'publisher', generation: started.generation } });
             if (serial !== this.serial)
                 return;
-            await peer.setRemoteDescription(answer);
+            await rtcOperation(peer.setRemoteDescription(answer), 5000);
             if (serial !== this.serial)
                 return;
             for (const sender of videoSenders) {
                 await tune(sender);
                 if (serial !== this.serial) return;
             }
-            this.emit({ ...this.state, status: peer.connectionState === 'connected' ? '串流中' : '等待影像連線…', publishing: true, generation: started.generation });
+            this.emit({ ...this.state, status: '等待影像連線…', publishing: false, generation: started.generation });
+            this.detachConnection = watchBrowserRtcConnection(peer, state => {
+                if (serial !== this.serial) return;
+                this.emit({ ...this.state, publishing: state === 'connected',
+                    status: state === 'connected' ? '串流中' : state === 'disconnected' ? '網路暫時中斷，等待恢復…' : '等待影像連線…' });
+            }, reason => {
+                if (serial !== this.serial) return;
+                void this.stopInternal();
+                this.emit({ ...idleBrowserRtc(), status: reason === 'connection_timeout'
+                    ? '影像連線逾時，請確認網路後重新開啟串流' : '串流中斷，請重新開啟串流' });
+            });
+            if (serial !== this.serial) return;
             this.sampleStats(serial, peer, started.generation, abort.signal);
         }
         catch (cause) {
             if (serial === this.serial) {
                 this.stopLocal();
                 this.emit({ ...idleBrowserRtc(), status: cause instanceof Error ? cause.message : String(cause) });
-                await this.api.request('stream', { method: 'DELETE', timeoutMs: 5000 }).catch(() => undefined);
+                await this.releaseRemote(this.remoteOwner);
                 throw cause;
             }
         }
@@ -471,7 +624,7 @@ export class BrowserPublisher {
         let reportedAt = 0, reporting = false;
         const poll = async () => {
             try {
-                const report = await peer.getStats();
+                const report = await rtcOperation(peer.getStats());
                 if (serial !== this.serial)
                     return;
                 const measured = readBrowserPublisherStats(report, previous);
@@ -479,6 +632,7 @@ export class BrowserPublisher {
                 const stats = { ...measured.stats, ...(measured.stats.sampleIntervalMs ? { measuredAtMs: Date.now() } : {}),
                     appliedBitrateKbps: this.state.stats.appliedBitrateKbps, parameterStatus: this.state.stats.parameterStatus };
                 this.emit({ ...this.state, settings: this.media?.getVideoTracks()[0]?.getSettings() ?? null, stats, frame: this.landscape?.readFrame() });
+                void this.adaptStream(serial, stats);
                 if (!reporting && Date.now() - reportedAt >= 3000 && Object.keys(measured.stats).length) {
                     reportedAt = Date.now(); reporting = true;
                     void this.api.request('stream/metrics', { method: 'POST', signal, timeoutMs: 2500,
@@ -508,6 +662,23 @@ export class BrowserPublisher {
         const track = stream.getVideoTracks()[0];
         return track?.readyState === 'live' ? this.peer.getSenders?.().find(sender => sender.track === track) ?? null : null;
     }
+    private async adaptStream(serial: number, stats: BrowserRtcStats) {
+        const stream = this.media, sender = stream && this.liveSender(stream);
+        if (!sender || this.scaleFlight || this.bitrateFlight || this.quality.disabled) return;
+        const settings = stream!.getVideoTracks()[0].getSettings();
+        const before = this.quality;
+        const next = nextStreamQuality(before, stats, Date.now(), Math.min(settings.width ?? 0, settings.height ?? 0),
+            Math.max(settings.width ?? 0, settings.height ?? 0));
+        this.quality = next;
+        if (next.scale === before.scale) return;
+        this.scaleFlight = true;
+        try {
+            await setBrowserStreamScale(sender, next.scale);
+        } catch {
+            // Unsupported/ambiguous browser controls are not retried every second.
+            if (serial === this.serial) this.quality = { ...before, disabled: true };
+        } finally { if (serial === this.serial) this.scaleFlight = false; }
+    }
     readLiveBitrate(stream: MediaStream): number | null {
         try {
             const value = this.liveSender(stream)?.getParameters().encodings?.[0]?.maxBitrate;
@@ -518,7 +689,7 @@ export class BrowserPublisher {
     async adjustLiveBitrate(stream: MediaStream, bitrateKbps: number, signal?: AbortSignal): Promise<number> {
         const sender = this.liveSender(stream), serial = this.serial;
         if (!sender) throw Error('phone_tune_source_changed');
-        if (this.bitrateFlight || !finite(bitrateKbps) || bitrateKbps < 100 || bitrateKbps > this.bitrateCeiling) throw Error('phone_tune_unsupported');
+        if (this.bitrateFlight || this.scaleFlight || !finite(bitrateKbps) || bitrateKbps < 100 || bitrateKbps > this.bitrateCeiling) throw Error('phone_tune_unsupported');
         const before = this.readLiveBitrate(stream);
         if (before === null) throw Error('phone_tune_unsupported');
         const current = () => serial === this.serial && this.liveSender(stream) === sender;
@@ -540,11 +711,13 @@ export class BrowserPublisher {
                 } catch { throw Error('phone_tune_restore_failed'); }
             }
             throw cause;
-        } finally { this.bitrateFlight = false; }
+        } finally { if (serial === this.serial) this.bitrateFlight = false; }
     }
     stopLocal() {
         this.sourceChangeIntent++;
         this.serial++;
+        this.quality = initialStreamQuality();
+        this.scaleFlight = this.bitrateFlight = false;
         this.abort?.abort();
         this.abort = null;
         this.cancelGather?.();
@@ -553,6 +726,8 @@ export class BrowserPublisher {
         this.timer = null;
         this.detachNativeEnd?.();
         this.detachNativeEnd = null;
+        this.detachConnection?.();
+        this.detachConnection = null;
         if (this.peer) {
             this.peer.onconnectionstatechange = null;
             this.peer.close();
@@ -569,15 +744,30 @@ export class BrowserPublisher {
         this.sourceChangeIntent++;
         await this.stopInternal();
     }
+    private async releaseRemote(owner: string | null): Promise<boolean> {
+        if (!owner) return true;
+        try {
+            await this.api.request('stream', { method: 'DELETE', body: { publisher_id: owner }, timeoutMs: 5000 });
+        } catch (cause) {
+            // A newer publisher is intentionally unaffected by our cleanup.
+            if (cause && typeof cause === 'object' && 'detail' in cause && cause.detail === 'mobile_stream_publisher_changed') {
+                if (this.remoteOwner === owner) this.remoteOwner = null;
+            }
+            // Do not authorize an automatic restart that would steal it back.
+            return false;
+        }
+        if (this.remoteOwner === owner) this.remoteOwner = null;
+        return true;
+    }
     private async stopInternal() {
         if (this.stopping)
             return this.stopping;
+        const owner = this.remoteOwner;
         this.stopLocal();
         const opening = this.opening;
         const task = (async () => {
             await opening?.catch(() => undefined);
-            try { await this.api.request('stream', { method: 'DELETE', timeoutMs: 5000 }); return true; }
-            catch { return false; }
+            return this.releaseRemote(owner);
         })();
         this.stopping = task;
         try {

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMakerText } from '../lib/useMaker';
+import { useStreamWaitingNotice } from '../lib/useStreamWaitingNotice';
 import './deploymentLivePreview.css';
 
 /** A second display of VideoView's current image, never another camera owner. */
-export function DeploymentLivePreview({ image, unavailable, phone, controls, onLoad, onError, onRetry }: {
+export function DeploymentLivePreview({ image, unavailable, phone, controls, onLoad, onError, onRetry, waitingForFrame = false }: {
   image?: string; unavailable: boolean; phone: boolean; controls?: ReactNode;
   onLoad?: () => void; onError?: () => void; onRetry?: () => void;
+  waitingForFrame?: boolean;
 }) {
   const tr = useMakerText();
   const root = useRef<HTMLElement>(null);
@@ -14,6 +16,9 @@ export function DeploymentLivePreview({ image, unavailable, phone, controls, onL
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenError, setFullscreenError] = useState(false);
   const ready = Boolean(image) && !unavailable && painted && !failed;
+  const briefFrameGap = waitingForFrame && !failed;
+  const waitingNotice = useStreamWaitingNotice(!ready && briefFrameGap);
+  const showNotice = !ready && (!briefFrameGap || waitingNotice);
   useEffect(() => {
     const changed = () => setFullscreen(document.fullscreenElement === root.current);
     document.addEventListener('fullscreenchange', changed);
@@ -48,7 +53,7 @@ export function DeploymentLivePreview({ image, unavailable, phone, controls, onL
         hidden={unavailable || failed}
         onLoad={() => { setPainted(true); setFailed(false); onLoad?.(); }}
         onError={() => { setFailed(true); onError?.(); }} /> : null}
-      {!ready ? <div className="deployment-preview-waiting">
+      {showNotice ? <div className="deployment-preview-waiting">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="5" width="13" height="14" rx="3" /><path d="m16 9 5-3v12l-5-3" /></svg>
         <span>{failed ? tr('影像暫時無法顯示', 'Video is temporarily unavailable') : phone ? tr('等待手機串流', 'Waiting for phone stream') : tr('等待 Webcam 影像', 'Waiting for Webcam')}</span>
         {onRetry && (failed || unavailable) ? <button type="button" onClick={onRetry}>{tr('重新連接', 'Reconnect')}</button> : null}

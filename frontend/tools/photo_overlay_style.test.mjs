@@ -56,8 +56,8 @@ test('photos show Pi and both modules before wiring, then only the focused modul
   assert.deepEqual(props.capture,before);
 });
 
-test('live and photo imports share the unchanged connection and component palettes',()=>{
-  for(const [pin,color] of Object.entries({VCC:'#ff9a56',GND:'#b4becd',AO:'#5ee0b2',ECHO:'#66dfff',CS:'#66dfff'}))
+test('live and photo share saturated connection colors without changing the component pin palette',()=>{
+  for(const [pin,color] of Object.entries({VCC:'#ff6a00',GND:'#60728c',AO:'#00a86b',ECHO:'#007bff',CS:'#007bff'}))
     assert.equal(palette.guideConnectionColor(pin),color);
   assert.equal(palette.componentPinColor('ECHO'),'#c891ff');assert.equal(palette.componentPinColor('VCC'),'#ff7777');
   assert.equal(palette.componentPinColor('unknown'),'#61dafb');
@@ -69,7 +69,7 @@ test('trusted photos use live outline, wire, arrow and centre dots without outer
   const props=fixture(),before=structuredClone(props),html=render(props);
   assert.equal((html.match(/class="board-outline"/g)||[]).length,2);
   assert.match(html,/photo-poc-target-link guide-connection-line/);
-  assert.match(html,/--guide-connection-color:#66dfff/);assert.match(html,/guide-connection-arrowhead/);
+  assert.match(html,/--guide-connection-color:#007bff/);assert.match(html,/guide-connection-arrowhead/);
   assert.equal((html.match(/class="pin-marker guidance-target"/g)||[]).length,2);
   assert.doesNotMatch(html,/guidance-halo/);assert.match(html,/--mk:#c891ff/);
   assert.deepEqual(props,before);
@@ -77,8 +77,28 @@ test('trusted photos use live outline, wire, arrow and centre dots without outer
 
 test('ground and power wiring use live colors instead of a fixed yellow connection',()=>{
   const props=fixture();props.wire={...props.wire,board_pin:'GND_P6',component_pin:'GND'};
-  assert.match(render(props),/--guide-connection-color:#b4becd/);
-  props.wire.component_pin='VCC';assert.match(render(props),/--guide-connection-color:#ff9a56/);
+  assert.match(render(props),/--guide-connection-color:#60728c/);
+  props.wire.component_pin='VCC';assert.match(render(props),/--guide-connection-color:#ff6a00/);
+});
+
+test('photo header approach follows the corrected outline, never raw orientation, and keeps pin evidence unchanged',()=>{
+  for(const angle of [0,90,180,270]) {
+    const props=fixture(),r=angle*Math.PI/180;
+    const rotate=(x,y)=>[800+x*Math.cos(r)-y*Math.sin(r),500+x*Math.sin(r)+y*Math.cos(r)];
+    const corrected=[[-100,-60],[100,-60],[100,60],[-100,60]].map(([x,y])=>rotate(x,y));
+    props.capture.localization[1].corrected_outline_px=corrected;
+    const [x,y]=rotate(0,60);Object.assign(props.capture.components[0].pins[0],{x,y});
+    // Deliberately leave the raw pose outline unrotated and in another region.
+    const before=structuredClone(props),html=render({...props,scale:.5});
+    const d=html.match(/<path class="photo-poc-target-link guide-connection-line" d="([^"]+)"/)[1];
+    const values=d.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi).map(Number);
+    const entry={x:values.at(-4),y:values.at(-3)},end={x:values.at(-2),y:values.at(-1)};
+    const a=corrected[3],b=corrected[2],out={x:(a[0]+b[0])/2-800,y:(a[1]+b[1])/2-500};
+    assert.ok(Math.abs((entry.x-end.x)*(b[0]-a[0])+(entry.y-end.y)*(b[1]-a[1]))<1e-6);
+    assert.ok((entry.x-end.x)*out.x+(entry.y-end.y)*out.y>0);
+    assert.ok(Math.abs(Math.hypot(end.x-x,end.y-y)-16)<1e-7);
+    assert.deepEqual(props,before);
+  }
 });
 
 test('unverified, raw, absent endpoints and divider wiring never gain a decorative direct link',()=>{

@@ -35,7 +35,7 @@ def feed(manager, stop, sid='paired', generation=1, size=(96, 72)):
         manager.push(sid, generation, np.full((size[1], size[0], 3), 160, np.uint8), seq, time.monotonic())
 
 
-def test_phone_adapter_latest_only_rejects_foreign_stale_duplicate_and_rotated_frames():
+def test_phone_adapter_latest_only_rejects_foreign_stale_duplicate_but_accepts_native_rotation():
     now = [10.]
     source = PhoneFrameSource('paired', 1, (64, 48), clock=lambda: now[0])
     source.open()
@@ -53,7 +53,10 @@ def test_phone_adapter_latest_only_rejects_foreign_stale_duplicate_and_rotated_f
     now[0] = 11.
     assert source.read() is None
     source.push('paired', 1, pixels.transpose(1, 0, 2), 5, 11.)
-    assert source.read() is None and source.error == 'phone_dimensions_changed'
+    assert source.read()[0].shape == (64, 48, 3) and source.error is None
+    assert (source.width, source.height) == (48, 64) and source.pending_size is None
+    source.push('paired', 1, pixels, 6, 11.)
+    assert source.read() is not None and source.error is None and source.pending_size is None
     source.close()
     source.push('paired', 1, pixels, 6, 11.)
     assert source.read() is None
@@ -89,6 +92,31 @@ def test_missing_phone_frames_roll_back_to_verified_webcam(state):
     assert not result['ok'] and result['restored'] and result['error'] == 'camera_mode_failed'
     assert result['kind'] == 'webcam' and state.source is original
     assert manager.candidate is None and manager.webcam is None
+
+
+def test_encoded_resize_keeps_capture_and_models_running_even_during_ai_work(state):
+    manager = prepare(state)
+    previous = PhoneFrameSource('paired', 1, (96, 72))
+    stop = threading.Event()
+    thread = threading.Thread(target=feed, args=(manager, stop), daemon=True)
+    thread.start()
+    try:
+        assert manager.select('phone', phone=previous, timeout=1)['ok']
+    finally:
+        stop.set(); thread.join(1)
+    state.debug_sessions = NS(lock=threading.RLock(), sessions={'ai': {'phase': 'replying', 'capture_pending': True}})
+    capture = state.capture_service
+    old = state.frame_bus.get_latest(timeout=0)
+    for index, size in enumerate(((64, 48), (48, 64), (96, 72)), 9999):
+        manager.push('paired', 1, np.ones((size[1], size[0], 3), np.uint8), index, time.monotonic())
+        slot = state.frame_bus.get_latest(timeout=1, newer_than=old.seq)
+        assert slot is not None and slot.frame.shape == (size[1], size[0], 3)
+        assert slot.geometry_epoch > old.geometry_epoch
+        assert state.capture_service is capture and state.source is previous
+        assert state.config.runtime_revision == 2
+        assert state.component_workers[0].resets == 1
+        assert manager.snapshot()['ready'] and manager.snapshot()['error'] is None
+        old = slot
 
 
 def test_landscape_to_native_portrait_generation_clears_geometry_and_restores_original_webcam(state):
@@ -220,8 +248,8 @@ def test_source_api_is_desktop_only_and_requires_the_current_paired_generation(s
     from app.api.cameras import router
     app = FastAPI(); app.include_router(router)
     state.live_source = prepare(state)
-    state.mobile_service = NS(lock=threading.RLock(), latest={'conversation_id': 'current'},
-        require=lambda sid: dict(conversation_id='current', stream=dict(active=True, generation=2)),
+    state.mobile_service = NS(lock=threading.RLock(), current_context=lambda cid: {'context_id': 'ctx'},
+        require=lambda sid: dict(conversation_id='current', context_id='ctx', stream=dict(active=True, generation=2)),
         rtc=NS(capture_frame=Mock()))
     for name, value in vars(state).items():
         setattr(app.state, name, value)
@@ -244,8 +272,8 @@ def test_source_api_commits_only_after_fresh_phone_frames_arrive(state):
     from app.api.cameras import router
     app = FastAPI(); app.include_router(router)
     state.live_source = prepare(state)
-    state.mobile_service = NS(lock=threading.RLock(), latest={'conversation_id': 'current'},
-        require=lambda sid: dict(conversation_id='current', stream=dict(active=True, generation=1)),
+    state.mobile_service = NS(lock=threading.RLock(), current_context=lambda cid: {'context_id': 'ctx'},
+        require=lambda sid: dict(conversation_id='current', context_id='ctx', stream=dict(active=True, generation=1)),
         rtc=NS(capture_frame=lambda *a: (np.ones((72,96,3), np.uint8), {})))
     for name, value in vars(state).items():
         setattr(app.state, name, value)

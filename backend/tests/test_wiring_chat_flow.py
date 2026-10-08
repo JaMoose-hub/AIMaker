@@ -122,8 +122,8 @@ def test_analysis_then_one_wire_decisions_preserve_human_authority(chat):
     app, state, mobile, phone, published, sid, path = chat
     context = analysed(state, sid)
     assert current(state)['wiring_flow']['kind'] == 'wire_review'
-    assert '照片分析完成' in current(state)['text']
-    assert len(state.design_service.bridge.calls) == 1
+    assert current(state)['text'] == current(state)['wiring_flow']['summary']['headline']
+    assert len(state.design_service.bridge.calls) == 2
     assert not state.pi_execution.jobs
     rows = state.debug_sessions.sessions[sid]['wiring_review']['results']
     confirmations = deepcopy(context['guide_confirmations'])
@@ -142,7 +142,7 @@ def test_analysis_then_one_wire_decisions_preserve_human_authority(chat):
     decisions = [m for m in state.assistant.read('shared-conversation')['messages']
                  if m.get('wiring_flow', {}).get('kind') == 'human_decision']
     assert len(decisions) == 4 and all(m['role'] == 'user' and not m['wiring_flow']['actions'] for m in decisions)
-    assert len(state.design_service.bridge.calls) == 1 and not state.pi_execution.jobs
+    assert len(state.design_service.bridge.calls) == 2 and not state.pi_execution.jobs
 
 
 def test_retake_and_crop_only_change_selected_pixels(chat):
@@ -157,11 +157,11 @@ def test_retake_and_crop_only_change_selected_pixels(chat):
     act(state, 'crop', role='pi_side_b', crop=[.1, .1, .9, .9])
     assert slots['pi_side_b']['crop'] == [.1, .1, .9, .9]
     assert slots['pi_side_b']['photo_acceptance']['capture_id'] == slots['pi_side_b']['capture_id']
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2
     assert not state.pi_execution.jobs
 
 
-def test_phone_chat_capture_shares_history_but_not_analysis_or_decisions(chat):
+def test_phone_chat_capture_shares_history_but_not_premature_analysis_or_decisions(chat):
     app, state, mobile, phone, published, sid, path = chat
     with TestClient(app, client=('192.168.1.8', 5000)) as client:
         message = current(state)
@@ -182,7 +182,7 @@ def test_phone_chat_capture_shares_history_but_not_analysis_or_decisions(chat):
             request = body(state, op, **({'wire_id': 'anything', 'decision': 'confirmed'} if op == 'review' else {}))
             response = client.post('/api/mobile/wiring-review', headers=headers(phone), json=dict(action=request['action'],
                 dialogue={k: request[k] for k in ('message_id', 'flow_id', 'request_id')}))
-            assert response.status_code == 403
+            assert response.status_code == (409 if op == 'analyse' else 403)
         assert len(state.debug_sessions.sessions[sid]['evidence']) == 1
         assert not state.design_service.bridge.calls and not state.pi_execution.jobs
 
@@ -233,7 +233,7 @@ def test_declared_wiring_change_starts_new_round_and_preserves_readonly_photos(c
     old_photos = [m for m in record['messages'] if m.get('wiring_flow', {}).get('kind') == 'photo']
     assert len(old_photos) == 3 and all(not m['wiring_flow']['can_act'] for m in old_photos)
     assert all(not e['current'] for e in state.debug_sessions.sessions[sid]['evidence'])
-    assert len(state.design_service.bridge.calls) == 1 and not state.pi_execution.jobs
+    assert len(state.design_service.bridge.calls) == 2 and not state.pi_execution.jobs
 
 
 def test_analysis_error_is_a_message_without_unrequested_retry(chat):
@@ -297,10 +297,12 @@ def test_summary_prioritises_different_and_uncertain_wires(chat):
     state.debug_sessions.tick(sid)
     message = current(state)
     assert message['wiring_flow']['wire_id'] == wires[2]['id']
-    assert '照片分析完成' in message['text'] and '不能判定接錯' in message['text']
+    assert message['text'] == message['wiring_flow']['summary']['headline']
+    assert message['wiring_flow']['summary']['next_step']
+    assert message['wiring_flow']['result']['next_step']
     assert message['wiring_flow']['result']['diagnosis']['status'] == 'uncertain'
     assert '1 條異色' not in message['text']
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2
 
 
 def test_prepare_wiring_keeps_the_exact_chat_question_and_legacy_capture_stays_separate(chat):
@@ -314,7 +316,7 @@ def test_prepare_wiring_keeps_the_exact_chat_question_and_legacy_capture_stays_s
     state.debug_sessions.action(sid, 'wiring_review', 'legacy-capture', context=context,
         wiring_review=dict(op='capture', role='pi_side_b', review_id=review['id'], revision=review['revision']))
     assert 'photo_acceptance' not in state.debug_sessions.sessions[sid]['wiring_review']['slots']['pi_side_b']
-    assert len(state.design_service.bridge.calls) == 1 and not state.pi_execution.jobs
+    assert len(state.design_service.bridge.calls) == 2 and not state.pi_execution.jobs
 
 
 def test_desktop_flow_route_is_loopback_only_and_hidden_refs_are_bounded(chat):
@@ -363,7 +365,7 @@ def test_unsure_withdraws_only_current_wire_and_records_the_human_answer(chat):
                   if m.get('wiring_flow', {}).get('kind') == 'human_decision')
     assert answer['role'] == 'user' and answer['text'] == '仍無法確定'
     assert current(state)['wiring_flow']['wire_id'] != wire_id
-    assert not state.pi_execution.jobs and len(state.design_service.bridge.calls) == 1
+    assert not state.pi_execution.jobs and len(state.design_service.bridge.calls) == 2
 
 
 def test_lost_human_ack_is_recovered_by_exact_readonly_receipt(chat):
@@ -389,7 +391,7 @@ def test_lost_human_ack_is_recovered_by_exact_readonly_receipt(chat):
     retry = state.assistant.wiring_flow_action('shared-conversation', request)
     assert retry['request_id'] == 'lost-human-ack' and retry['guide_receipt'] == receipt
     assert len(state.debug_sessions.sessions[sid]['wiring_dialogue']['events']) == count
-    assert len(state.design_service.bridge.calls) == 1 and not state.pi_execution.jobs
+    assert len(state.design_service.bridge.calls) == 2 and not state.pi_execution.jobs
 
 
 def test_receipt_reads_never_promote_photo_or_old_foreign_scope(chat):
@@ -430,4 +432,4 @@ def test_changed_round_receipt_is_explicit_and_restart_cannot_replay_it(chat):
     state.debug_sessions = DebugSessions(state, store=owner.store, autostart=False)
     assert state.assistant.wiring_flow_receipt('shared-conversation', 'human-changed-wiring')['receipt_state'] == 'missing'
     assert not state.debug_sessions.images and not state.pi_execution.jobs
-    assert len(state.design_service.bridge.calls) == 1
+    assert len(state.design_service.bridge.calls) == 2

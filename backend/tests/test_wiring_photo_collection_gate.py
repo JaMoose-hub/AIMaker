@@ -3,6 +3,7 @@
 Synthetic images, fake hardware and fake cloud only; no running service access.
 """
 from copy import deepcopy
+import hashlib
 
 from fastapi.testclient import TestClient
 import pytest
@@ -68,8 +69,23 @@ def test_guided_photos_advance_without_model_then_explicit_analysis_uses_all_thr
     _cloud(state, _answer(context))
     act(state, 'analyse')
     state.debug_sessions.tick(sid)
-    assert len(state.design_service.bridge.calls) == 1
+    bridge = state.design_service.bridge
+    assert len(bridge.calls) == 2
+    assert 'POC EXIT INVENTORY:' in bridge.calls[0][0]
+    assert 'PIN AND ROUTE REVIEW:' in bridge.calls[1][0]
     review = state.debug_sessions.sessions[sid]['wiring_review']
     assert set(review['slots']) == set(ROLES) and not review['missing_roles']
     assert review['status'] in {'ready', 'needs_human'}
+    stages = review['model_receipt']['stages']
+    assert [stage['stage'] for stage in stages] == ['exit_inventory', 'pin_review']
+    for (_, options), images, stage in zip(bridge.calls, bridge.images, stages):
+        assert len(options['image_paths']) == len(images) == len(stage['image_inputs']) == 3
+        assert {image['role'] for image in stage['image_inputs']} == set(ROLES)
+        for received, metadata in zip(images, stage['image_inputs']):
+            slot = review['slots'][metadata['role']]
+            assert metadata['capture_id'] == slot['capture_id']
+            assert metadata['source_sha256'] == slot['sha256']
+            assert metadata['source_size'] == slot['size']
+            assert metadata['view'] == 'overview' and metadata['crop'] is None
+            assert metadata['supplied_sha256'] == hashlib.sha256(received).hexdigest()
     assert not state.pi_execution.jobs

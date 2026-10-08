@@ -23,6 +23,9 @@ class FrameSlot:
     # Exact camera JPEG when the source supplies one.  /video can pass this
     # through without spending CPU re-encoding the same 1080p frame.
     jpeg: bytes | None = None
+    # Changes on pixel-size transitions, including A -> B -> A between reads.
+    # Source replacement also advances it through clear(). No model work here.
+    geometry_epoch: int = 0
 
 
 class FrameBus:
@@ -30,11 +33,16 @@ class FrameBus:
         self._cond = threading.Condition()
         self._slot: FrameSlot | None = None
         self._seq = 0
+        self._shape = None
+        self._geometry_epoch = 0
 
     def put(self, frame: np.ndarray, frame_id: int, ts_ms: float,
             jpeg: bytes | None = None) -> None:
         """Store the newest frame. Never blocks (single slot, overwrite)."""
         with self._cond:
+            if self._shape != frame.shape:
+                self._geometry_epoch += 1
+                self._shape = frame.shape
             self._seq += 1
             self._slot = FrameSlot(
                 frame=frame,
@@ -42,6 +50,7 @@ class FrameBus:
                 ts_ms=ts_ms,
                 seq=self._seq,
                 jpeg=jpeg,
+                geometry_epoch=self._geometry_epoch,
             )
             self._cond.notify_all()
 
@@ -68,4 +77,6 @@ class FrameBus:
         """Forget the previous camera image without rewinding consumer cursors."""
         with self._cond:
             self._slot = None
+            self._shape = None
+            self._geometry_epoch += 1
             self._cond.notify_all()

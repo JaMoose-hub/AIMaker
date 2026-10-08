@@ -17,7 +17,7 @@ function fixture(cid = 'hc-sr04') {
 test('bottom keeps retest but removes review wiring and unsolicited help from saved failures', async () => {
   const f = fixture(), before = structuredClone(f);
   const html = await renderTestCard({...f, onDebug() { throw Error('Rendering must not ask AI'); }});
-  assert.match(html, /guide-secondary-test-action[^>]*aria-label="重新測試 HC-SR04\+"/);
+  assert.match(html, /guide-secondary-test-action[^>]*aria-label="重測 HC-SR04\+"/);
   assert.doesNotMatch(html, /component-test-debug-action|guide-review-wiring-action|查看接線|查看本零件接線/);
   assert.doesNotMatch(html, /test-more-actions|其他操作/);
   assert.deepEqual(f, before);
@@ -72,7 +72,7 @@ test('a current live test problem can ask for help but a foreign test cannot', a
 test('initial test remains primary and disconnected test cannot start', async () => {
   const f = fixture(); f.tests.status.results = []; f.tests.status.connected = false;
   const html = await renderTestCard(f);
-  assert.match(html, /guide-primary-action" disabled=""[^>]*aria-label="測試 HC-SR04\+"/);
+  assert.match(html, /guide-primary-action guide-action-icon-button" disabled=""[^>]*aria-label="測試 HC-SR04\+"/);
   assert.match(html, /連接 Pi 後測試/);
 });
 

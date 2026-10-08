@@ -23,7 +23,8 @@ test('phone transitions and missing tracking frames cannot reuse stale or bypass
   for(const condition of [{sourceChanging:true},{sourceUnavailable:true},{frameAvailable:false}]) {
     const result=await renderWiringVideo({livePreviewHost:{},cameraSource:'phone',...condition});
     const view=preview(result.html);
-    assert.match(view,/等待手機串流/);
+    if (condition.frameAvailable === false) assert.doesNotMatch(view,/等待手機串流/,'brief frame gaps do not immediately raise a reconnect notice');
+    else assert.match(view,/等待手機串流/);
     assert.doesNotMatch(view,/<img|\/video|\/frame\.jpg|is-live/);
     assert.equal(result.trackingCalls,1);
   }

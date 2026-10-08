@@ -134,7 +134,7 @@ export function CircuitDiagram({ design, activeId, onSelect, selectedId, onClear
               <title>{`${tx(wire.instruction)} — ${tx(wire.hint)}`}</title>
               <rect className="circuit-pin-label" x={boardPin.x - 10} y={boardPin.y - 9} width="20" height="18" rx="4" fill="transparent" />
               <path d={path} fill="none" stroke="transparent" strokeWidth="16" {...bendEvents} />
-              <path d={path} fill="none" stroke={color} strokeWidth={active ? 4 : 2.3} strokeLinejoin="round" {...bendEvents} />
+              <path className="circuit-wire-path" d={path} fill="none" stroke={color} strokeWidth={active ? 3 : 2.3} strokeLinejoin="round" {...bendEvents} />
               <circle cx={boardPin.x} cy={boardPin.y} r={active ? 3.5 : 2.5} fill={color} />
               {divided ? <>
                 <rect x="366" y={boardY - 9} width="56" height="18" rx="2" fill="#3b3220" stroke={color} />

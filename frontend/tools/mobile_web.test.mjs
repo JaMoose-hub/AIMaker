@@ -12,7 +12,8 @@ function load(file,modules={}) {
   const exports={};new Function('require','exports',js)(name=>{if(!(name in modules))throw Error(`Unexpected runtime import ${name}`);return modules[name];},exports);return exports;
 }
 const photo=load('../src/lib/photoWiring.ts');
-const browserRtc=load('../src/lib/mobileBrowserRtc.ts');
+const streamPolicy=load('../src/lib/mobileStreamPolicy.ts');
+const browserRtc=load('../src/lib/mobileBrowserRtc.ts',{'./mobileStreamPolicy':streamPolicy});
 const viewerStats=load('../src/lib/mobileViewerStats.ts');
 const recognition=load('../src/lib/mobileRecognition.ts');
 const mobile=load('../src/lib/mobile.ts',{react:React,'./photoWiring':photo,'./mobileBrowserRtc':browserRtc,'./mobileViewerStats':viewerStats,'./mobileRecognition':recognition});
@@ -20,11 +21,17 @@ const view=load('../src/lib/mobileWebView.ts',{'./photoWiring':photo});
 const history=load('../src/lib/assistantHistory.ts');
 const localCapture=load('../src/lib/mobileBrowserCapture.ts');
 const wiringReview=load('../src/lib/wiringReview.ts');
+const wiringChat=load('../src/lib/wiringChat.ts',{'./wiringReview':wiringReview});
+const WiringReviewOverview=({summary,children})=>React.createElement('section',{'data-review-overview':true},
+  React.createElement('p',null,summary.headline),React.createElement('p',null,summary.next_step),children);
 const browserTree=ts.createSourceFile('useMobileBrowser.ts',readFileSync(new URL('../src/lib/useMobileBrowser.ts',import.meta.url),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
 const flowFunction=browserTree.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='mobileWiringPhotoFlow');
 assert.ok(flowFunction,'UI fixtures must use the current shared-question eligibility guard');
 const flowCode=ts.transpileModule(flowFunction.getText(browserTree).replace(/^export\s+/,''),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const mobileWiringPhotoFlow=new Function(`${flowCode}; return mobileWiringPhotoFlow;`)();
+const analysisFunction=browserTree.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='mobileWiringAnalysisFlow');
+const analysisCode=ts.transpileModule(analysisFunction.getText(browserTree).replace(/^export\s+/,''),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+const mobileWiringAnalysisFlow=new Function(`${analysisCode}; return mobileWiringAnalysisFlow;`)();
 const WiringPhotoSequence = props => React.createElement('div', {className:'fixture-photo-sequence', ...props});
 const FramingGuide = () => React.createElement('svg');
 function capture(){
@@ -84,6 +91,40 @@ test('a stale locked preview cannot tell the user it is ready to capture',()=>{
   assert.equal(view.mobileReadiness({active:true,state:'hold_still'},false,true),'hold_still');
 });
 
+test('a retired GPIO photo exposes explicit attachment recovery and disables an invalid retry',()=>{
+  const h=hookHarness(),calls=[],{MobileWebCamera}=components('en',h.hooks);
+  const w={...workspace(),captureJob:{ticket:{context_id:'old-step'},error:'Retired capture',attachment:{name:'original.jpg'}},
+    discardCapture:keep=>{calls.push(['keep',keep]);return true;},retryCapture(){throw Error('A retired ticket cannot be retried');}};
+  h.reset();const nodes=treeNodes(MobileWebCamera({w,onCaptured(){},onDebugCaptured:()=>calls.push(['chat'])}));
+  const text=node=>React.Children.toArray(node.props.children).filter(child=>typeof child==='string').join('');
+  assert.equal(nodes.find(node=>node.type==='button'&&text(node)==='Retry this photo').props.disabled,true);
+  const keep=nodes.find(node=>node.type==='button'&&text(node)==='Keep as chat attachment');
+  assert.equal(keep.props.disabled,false);keep.props.onClick();assert.deepEqual(calls,[['keep',true],['chat']]);
+});
+
+test('the current shared analysis message exposes a phone action, pending state and retry without a second photo panel',()=>{
+  const h=hookHarness(),{MobileWiringChatActions}=components('zh-TW',h.hooks),calls=[];
+  const review={id:'review',revision:4,round:1,component_id:'hc-sr04',status:'collecting'};
+  const message={id:'ready',role:'assistant',epoch:0,round:1,wiring_flow:{flow_id:'flow',review_id:'review',revision:4,
+    round:1,component_id:'hc-sr04',kind:'analysis_request',current:true,can_act:true,actions:['analyse']}};
+  const w={...workspace(),session:{conversation_id:'chat',context_id:'ctx',context:{round:1}},
+    conversation:{id:'chat',context_epoch:0},wiringReview:review,wiringCanAct:true,wiringReviewBusy:false,
+    analyseWiringChat:entry=>calls.push(entry.id)};
+  const render=(state=w,entry=message)=>{h.reset();return treeNodes(MobileWiringChatActions({w:state,message:entry}));};
+  let nodes=render(),button=nodes.find(node=>node.type==='button');
+  assert.equal(button.props.children,'開始分析');assert.equal(button.props.disabled,false);
+  button.props.onClick();assert.deepEqual(calls,['ready']);assert.equal(nodes.filter(node=>node.type==='button').length,1);
+  for(const state of [{connected:false},{busy:true},{wiringReviewBusy:true},{chatSendBlocked:true},{wiringCanAct:false}])
+    assert.equal(render({...w,...state}).find(node=>node.type==='button').props.disabled,true);
+  assert.equal(render({...w,wiringReviewBusy:true}).find(node=>node.type==='button').props.children,'送出中…');
+  assert.equal(render(w,{...message,wiring_flow:{...message.wiring_flow,kind:'error'}}).find(node=>node.type==='button').props.children,'重新分析');
+  assert.equal(render({...w,wiringReviewError:'分析未完成，請重試'}).some(node=>node.props.role==='alert'),true);
+  assert.equal(render(w,{...message,wiring_flow:{...message.wiring_flow,can_act:false}}).find(node=>node.type==='button').props.disabled,true);
+  assert.equal(render(w,{...message,wiring_flow:{...message.wiring_flow,actions:[]}}).find(node=>node.type==='button').props.disabled,true);
+  for(const changed of [{current:false},{revision:3},{kind:'analysing'}])
+    assert.equal(render(w,{...message,wiring_flow:{...message.wiring_flow,...changed}}).length,0);
+});
+
 function workspace(){return {ready:true,pairing:{session_id:'s'},connected:true,secureContext:true,busy:false,error:'',api:null,
   session:{session_id:'s',conversation_id:'conversation-1',title:'Desk project',context:{stage:'guide'},context_id:'ctx',view:{wire_id:'wire'},stream:{active:false,state:'finding'}},
   conversation:{id:'conversation-1',context_epoch:1,round:3,messages:[],jobs:[],before:null},draft:'Preserve this draft',attachments:[],outbox:[],capture:null,captureJob:null,captureTicket:null,
@@ -93,11 +134,11 @@ function components(locale='en',reactOverrides={},captureOverrides={},assetHook=
   return load('../src/components/MobileWebApp.tsx',{
     react:{...React,useLayoutEffect(){},...reactOverrides},'react/jsx-runtime':jsx,'../lib/i18n':{useI18n:()=>({locale,setLocale})},
     '../lib/mobile':mobile,'../lib/mobileWebView':view,'../lib/assistantHistory':history,'../lib/mobileBrowserCapture':{...localCapture,...captureOverrides},'../lib/useMobileBrowser':{useMobileBrowser:workspace,useMobileAssetUrl:assetHook,
-      mobileTestHelpOffer:()=>null,mobileWiringPhotoFlow},
+      mobileTestHelpOffer:()=>null,mobileWiringPhotoFlow,mobileWiringAnalysisFlow},
     '../lib/wiringReview':wiringReview,'./WiringPhotoSequence':{WiringPhotoSequence},'./WiringReviewCard':{FramingGuide},'./wiringReview.css':{},'../mobileWeb.css':{},
     './AssistantAnalysisTime':{AssistantAnalysisTime:()=>null},
     './AssistantMarkdown':markdownFixture(locale),
-    './WiringChatMessage':{WiringCaptureFraming:()=>null},
+    './WiringChatMessage':{WiringCaptureFraming:()=>null,WiringReviewOverview,WiringPhotoDelivery:()=>null},'../lib/wiringChat':wiringChat,
     './MobileWiringAlbumPanel':{MobileWiringAlbumPanel:()=>null},
     '../lib/useMobileWiringAlbum':load('../src/lib/useMobileWiringAlbum.ts',{react:{...React,...reactOverrides},'./wiringReview':wiringReview}),
     './PhoneCameraAutoTune':{PhoneCameraAutoTune:()=>null},
@@ -112,6 +153,55 @@ function hookHarness() {
   }};
 }
 const treeNodes=element=>!React.isValidElement(element)?[]:[element,...React.Children.toArray(element.props.children).flatMap(treeNodes)];
+
+test('compact phone finding shows one shared overview and keeps the original message collapsed without granting actions',()=>{
+  const h=hookHarness(),{ChatView}=components('en',h.hooks);
+  const result={wire_id:'ground',expected:{component_pin:'GND',physical_pin:6},comparison:'unknown',next_step:'Retake the module header.',
+    diagnosis:{status:'uncertain',retake_roles:['component_header']},pi_candidates:[],component_candidates:[]};
+  const summary={schema_version:2,headline:'The module header is unclear.',next_step:'Show its labels and connector bases.',retake_role:'component_header',
+    counts:{suspected:0,uncertain:1,no_issue_seen:0},results:[result],evidence:'The label is hidden.'};
+  const message={id:'finding',role:'assistant',text:'Verbose original pin inventory retained for this exact photograph.',epoch:1,round:3,
+    wiring_flow:{kind:'wire_review',current:true,can_act:false,actions:[],flow_id:'flow',review_id:'review',revision:3,round:3,
+      component_id:'hc-sr04',wire_id:'ground',result,summary,elapsed_ms:75000}};
+  const w=workspace();w.conversation.messages=[message];
+  const before=structuredClone(w.conversation);
+  h.reset();const tree=ChatView({w,onPhoto(){throw Error('Reading a finding must not open a capture');}});
+  const nodes=treeNodes(tree),overview=nodes.find(node=>node.type===WiringReviewOverview);
+  assert.equal(overview.props.summary,summary);
+  const record=treeNodes(overview).find(node=>node.type==='details');
+  assert.equal(record.props.open,undefined);
+  assert.ok(treeNodes(record).some(node=>node.props.text===message.text));
+  const article=nodes.find(node=>node.type==='article'&&node.props['data-message-id']==='finding');
+  const html=renderToStaticMarkup(article);
+  assert.equal((html.match(/data-review-overview/g)||[]).length,1);
+  assert.match(html,/The module header is unclear/);assert.match(html,/Show its labels and connector bases/);
+  assert.match(html,/Choose Retake on your computer/);
+  assert.doesNotMatch(html,/<button/);
+  assert.deepEqual(w.conversation,before);
+});
+
+test('compact phone history folds only past routine steps and preserves user text and failures in view',()=>{
+  const h=hookHarness(),{ChatView}=components('en',h.hooks),w=workspace();
+  const flow={kind:'photo_request',role:'pi_side_a',current:false,can_act:false,actions:[]};
+  const messages=[
+    {id:'past',role:'assistant',text:'The original detailed photographic instructions remain available.',epoch:1,round:3,wiring_flow:flow},
+    {id:'user',role:'user',text:'Please keep my own wording exactly.',epoch:1,round:3,wiring_flow:flow},
+    {id:'failure',role:'assistant',text:'Analysis failed; the saved photograph is retained.',epoch:1,round:3,wiring_flow:{...flow,kind:'error',error:'The cloud request timed out after receiving the photographs.'}}];
+  w.conversation.messages=messages;
+  h.reset();const nodes=treeNodes(ChatView({w,onPhoto(){}}));
+  const article=id=>nodes.find(node=>node.type==='article'&&node.props['data-message-id']===id);
+  const folded=treeNodes(article('past')).find(node=>node.type==='details'&&node.props.className==='wiring-chat-history');
+  assert.ok(folded);assert.equal(folded.props.open,undefined);
+  assert.ok(treeNodes(folded).some(node=>node.props.text===messages[0].text));
+  for(const id of ['user','failure']) assert.ok(!treeNodes(article(id)).some(node=>node.props.className==='wiring-chat-history'));
+  assert.match(renderToStaticMarkup(article('user')),/Please keep my own wording exactly/);
+  assert.match(renderToStaticMarkup(article('failure')),/Analysis failed; the saved photograph is retained/);
+  const errorDetails=treeNodes(article('failure')).find(node=>node.type==='details');
+  assert.ok(errorDetails);assert.equal(errorDetails.props.open,undefined);
+  assert.match(renderToStaticMarkup(errorDetails),/View error details/);
+  assert.match(renderToStaticMarkup(errorDetails),/The cloud request timed out after receiving the photographs/);
+  assert.equal(messages[0].text,'The original detailed photographic instructions remain available.');
+});
 
 test('phone language switch exposes Traditional Chinese and English with the selected language announced',()=>{
   for(const locale of ['zh-TW','en']) {
@@ -182,7 +272,8 @@ test('paired phone shared question captures each requested native-camera view wi
   for(const role of ['pi_side_a','pi_side_b','component_header']) {
     const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review,role),request={message_id:message.id,flow_id:'flow-1',role,review};
     const {MobileWiringChatActions}=components('en',h.hooks);
-    const w={...photoWorkspace(review),prepareWiringChatPhoto(question){assert.equal(question,message);return request;},uploadWiringChatPhoto:async(...args)=>calls.push(['upload',...args]),
+    const w={...photoWorkspace(review),prepareWiringChatPhoto(question){assert.equal(question,message);return request;},
+      uploadWiringChatPhoto:async(file,target,onSubmitted)=>{calls.push(['upload',file,target]);onSubmitted?.();return true;},
       beginCapture(){throw Error('Side photographs must not require a GPIO pose ticket');},send(){throw Error('A photograph must not send an ordinary AI question');}};
     h.reset();const tree=MobileWiringChatActions({w,message}),input=treeNodes(tree).find(node=>node.type==='input'&&node.props.type==='file');
     input.ref.current={click:()=>calls.push(['camera'])};assert.equal(input.props.capture,'environment');assert.equal(input.props.accept,'image/*');
@@ -199,7 +290,7 @@ test('paired phone album selects each requested view through the same role-bound
     const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review,role),request={message_id:message.id,flow_id:'flow-1',role,review};
     const {MobileWiringChatActions}=components(locale,h.hooks);
     const w={...photoWorkspace(review),prepareWiringChatPhoto(question){assert.equal(question,message);return request;},
-      uploadWiringChatPhoto:async(...args)=>calls.push(['upload',...args]),
+      uploadWiringChatPhoto:async(file,target,onSubmitted)=>{calls.push(['upload',file,target]);onSubmitted?.();return true;},
       beginCapture(){throw Error('Album photos must not require a GPIO ticket');},send(){throw Error('Album photos must not become ordinary chat');}};
     h.reset();const tree=MobileWiringChatActions({w,message}),nodes=treeNodes(tree);
     const input=nodes.find(node=>node.type==='input'&&node.props.type==='file'&&!node.props.capture);
@@ -223,7 +314,8 @@ test('paired phone album selects each requested view through the same role-bound
 test('album and camera keep independent frozen question requests and refuse unavailable requests',async()=>{
   const h=hookHarness(),calls=[],review=photoRound(),message=photoQuestion(review),{MobileWiringChatActions}=components('en',h.hooks);
   let request={role:'pi_side_a',request_id:'album-request',review};
-  const w={...photoWorkspace(review),prepareWiringChatPhoto:()=>request,uploadWiringChatPhoto:async(...args)=>calls.push(args)};
+  const w={...photoWorkspace(review),prepareWiringChatPhoto:()=>request,
+    uploadWiringChatPhoto:async(file,target,onSubmitted)=>{calls.push([file,target]);onSubmitted?.();return true;}};
   h.reset();const tree=MobileWiringChatActions({w,message}),nodes=treeNodes(tree);
   const camera=nodes.find(node=>node.type==='input'&&node.props.capture==='environment');
   const album=nodes.find(node=>node.type==='input'&&node.props.type==='file'&&!node.props.capture);
@@ -246,7 +338,8 @@ test('mobile multi-select stages three photos without uploading and sends only t
   let selected=null,confirmed=false,request={message_id:message.id,role:'pi_side_a',request_id:'picker',review};
   const photoAlbum={selection:{photos:[]},stage(values,target){selected=values;calls.push(['stage',values,target]);return true;},
     fileFor(target){assert.equal(target,request);return confirmed?selected[0]:null;},submitted:target=>calls.push(['submitted',target])};
-  const w={...photoWorkspace(review),prepareWiringChatPhoto:()=>request,uploadWiringChatPhoto:async(...args)=>{calls.push(['upload',...args]);return true;}};
+  const w={...photoWorkspace(review),prepareWiringChatPhoto:()=>request,
+    uploadWiringChatPhoto:async(file,target,onSubmitted)=>{calls.push(['upload',file,target]);onSubmitted?.();return true;}};
   h.reset();let tree=MobileWiringChatActions({w,message,photoAlbum});
   const input=treeNodes(tree).find(node=>node.type==='input'&&node.props.type==='file'&&!node.props.capture);
   assert.equal(input.props.multiple,true);input.ref.current={click(){}};
@@ -376,13 +469,13 @@ test('locked phone capture is single-flight, keeps streaming, and enters photo o
 
 test('chat and photo navigation retain the active publisher and show streaming status',()=>{
   const h=hookHarness(),calls=[];const {MobileWebSurface}=components('en',h.hooks);
-  const w={...workspace(),rtc:{stream:{},stats:{},status:'on'},stopStream:()=>calls.push('stop')};
+  const w={...workspace(),capture:capture(),rtc:{stream:{},stats:{},status:'on'},stopStream:()=>calls.push('stop')};
   function render(){h.reset();return MobileWebSurface({workspace:w});}
   let tree=render();
-  for(const name of ['Stream','Photo','Chat','Stream']) {
+  for(const name of ['Stream','GPIO photo','Chat','Stream']) {
     const nav=treeNodes(tree).find(node=>node.type==='nav'&&node.props['aria-label']==='Mobile workspace');
     treeNodes(nav).find(node=>node.type==='button'&&treeNodes(node).some(child=>child.type==='span'&&child.props.children===name)).props.onClick();
-    tree=render();assert.equal(tree.props['data-tab'],name === 'Stream' ? 'camera' : name.toLowerCase());
+    tree=render();assert.equal(tree.props['data-tab'],name === 'Stream' ? 'camera' : name === 'GPIO photo' ? 'photo' : 'chat');
     assert.match(renderToStaticMarkup(tree),/Camera streaming/);
   }
   assert.deepEqual(calls,[]);
@@ -431,7 +524,7 @@ test('framing reasons show specific bilingual guidance only while their preview 
   }
 });
 
-test('camera target follows the selected resolution while measured rates remain distinct',()=>{
+test('camera resolution defaults to 1080p and offers an explicit 720p selection',()=>{
   const states=[];let cursor=0,requested;
   const {MobileWebCamera}=components('en',{
     useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return [states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},
@@ -444,14 +537,48 @@ test('camera target follows the selected resolution while measured rates remain 
   const initialHtml=renderToStaticMarkup(tree);
   assert.equal((initialHtml.match(/>Start stream<\/button>/g)??[]).length,1);
   assert.ok(initialHtml.indexOf('>Start stream</button>')<initialHtml.indexOf('class="mw-viewfinder"'));
-  nodes(tree).find(node=>node.type==='select' && node.props.value==='1080p').props.onChange({target:{value:'720p'}});
+  assert.equal(nodes(tree).find(node=>node.type==='select' && node.props.value==='1080p').props.disabled,false);
+  assert.equal(nodes(tree).some(node=>node.type==='option' && node.props.value==='720p'),true);
+  assert.match(initialHtml,/1280 × 720/);
   w.rtc.settings={width:1920,height:1080};w.rtc.stats={bitrateKbps:2200,width:1920,height:1080};
   tree=render();const html=renderToStaticMarkup(tree);
-  assert.equal(nodes(tree).find(node=>node.type==='select' && node.props.value==='720p')?.props.value,'720p');assert.match(html,/1920 × 1080/);
+  assert.equal(nodes(tree).find(node=>node.type==='select' && node.props.value==='1080p')?.props.value,'1080p');assert.match(html,/1920 × 1080/);
   assert.match(html,/Smooth \/ Standard \/ High caps are 3 \/ 8 \/ 12 Mbps/);assert.match(html,/Actual send 2.2 Mbps/);
   assert.match(html,/Phone upload/);
   nodes(tree).find(node=>node.type==='button' && node.props.children==='Start stream').props.onClick();
+  assert.deepEqual(requested,{resolution:'1080p',bitrateKbps:12000});
+  requested=undefined;
+  nodes(tree).find(node=>node.type==='select' && node.props.value==='1080p').props.onChange({target:{value:'720p'}});
+  assert.equal(requested,undefined,'Selecting a resolution must not start or interrupt the camera');
+  tree=render();nodes(tree).find(node=>node.type==='button' && node.props.children==='Start stream').props.onClick();
   assert.deepEqual(requested,{resolution:'720p',bitrateKbps:12000});
+});
+
+test('720p warning follows the running target, not the pending selection, and apply is explicit',()=>{
+  const h=hookHarness(),{MobileWebCamera}=components('en',h.hooks),calls=[];
+  const w={...workspace(),startStream:options=>calls.push(options),rtc:{stream:{},publishing:true,resolution:'720p',
+    stats:{width:1280,height:720},frame:{sourceSize:[1280,720],outputSize:[1280,720],ready:true}}};
+  const render=()=>{h.reset();return MobileWebCamera({w,onCaptured(){}});};
+  let tree=render();assert.doesNotMatch(renderToStaticMarkup(tree),/Actual video is below/);
+  treeNodes(tree).find(node=>node.type==='select'&&node.props.value==='720p').props.onChange({target:{value:'1080p'}});
+  tree=render();assert.equal(calls.length,0);assert.doesNotMatch(renderToStaticMarkup(tree),/Actual video is below/);
+  treeNodes(tree).find(node=>node.type==='button'&&node.props.children==='Apply & restart stream').props.onClick();
+  assert.deepEqual(calls,[{resolution:'1080p',bitrateKbps:12000}]);
+  w.rtc.stats={width:960,height:540};assert.match(renderToStaticMarkup(render()),/Actual video is below 720p/);
+  w.captureTicket={};assert.equal(treeNodes(render()).find(node=>node.type==='select'&&node.props.value==='1080p').props.disabled,true);
+});
+
+test('phone camera warns about actual sub-1080 upload and unresolved orientation without hiding video',()=>{
+  const {MobileWebCamera}=components('en'),w=workspace();
+  w.rtc={stream:{},publishing:true,stats:{width:1280,height:720},frame:{sourceSize:[1920,1080],outputSize:[1920,1080],ready:true}};
+  let html=renderToStaticMarkup(React.createElement(MobileWebCamera,{w,onCaptured(){}}));
+  assert.match(html,/Actual video is below 1080p/);assert.match(html,/<video/);
+  w.rtc.frame={...w.rtc.frame,ready:false,issue:'orientation'};
+  html=renderToStaticMarkup(React.createElement(MobileWebCamera,{w,onCaptured(){}}));
+  assert.match(html,/Synchronizing camera orientation/);assert.match(html,/<video/);
+  w.rtc.stats={width:1920,height:1080};w.rtc.frame={...w.rtc.frame,ready:true,issue:undefined};
+  html=renderToStaticMarkup(React.createElement(MobileWebCamera,{w,onCaptured(){}}));
+  assert.doesNotMatch(html,/Actual video is below 1080p|Synchronizing camera orientation/);
 });
 
 test('photo metadata uses the original source dimensions without changing analysis geometry',()=>{

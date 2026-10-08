@@ -29,11 +29,20 @@ function uiHarness(name, locale = 'zh-TW') {
     '../lib/componentWiringGuides': { guideFor:id=>({...maker.makerCatalog.modules.find(m=>m.id===id),safety:{en:'Check specifications','zh-TW':'核對規格'}}) },
     './CircuitDiagram':{CircuitDiagram:'MockDiagram'}, './DesignViewSwitch':{DesignViewSwitch:'MockViewSwitch'},
     './HardwarePartsCheck':{HardwarePartsCheck:'MockCheck'}, './BlueprintPage.css':{} };
+  modules['./MaterialPartArt']={MaterialPartArt:'MockPartArt'};
   modules['./AssemblyGuide']={AssemblyGuide:'MockAssembly'};
   const exports = load(name,modules);
   const component = exports.HardwarePartsCheck ?? exports.BlueprintPage;
   return { render(props) { index=0; return component(props); } };
 }
+
+test('English ECHO requirements remain visible and accessible outside a short input placeholder',()=>{
+  const tree=uiHarness('../src/components/HardwarePartsCheck.tsx','en').render({});
+  const input=find(tree,node=>node.type==='input'&&node.props.placeholder==='Model and voltage')[0];
+  assert.ok(input);const hint=find(tree,node=>node.props?.id===input.props['aria-describedby'])[0];
+  assert.ok(hint);assert.match(children(hint).join(''),/supply voltage and ECHO rating/);
+  assert.match(children(hint).join(''),/does not mean the same variant/);
+});
 
 for (const locale of ['zh-TW','en']) test(`hardware comparison ${locale} scopes exactly three canonical electronics and keeps missing evidence uncertain`,()=>{
   const input=helpers.emptyPurchasedHardware();input['hc-sr04']='HC-SR04 generic';
@@ -107,7 +116,7 @@ test('01 resource tabs precede one mounted diagram, default to overview and keep
   const design=designFor(),before=JSON.stringify(design),h=uiHarness('../src/components/BlueprintPage.tsx');
   const props={design,onGuide(){},onEdit(){},onViewChange(){},hasCandidate:false,generating:false};
   let tree=h.render(props);
-  const tabs=find(tree,n=>n.props.role==='tab');assert.equal(tabs.length,4);
+  const tabs=find(tree,n=>n.props.role==='tab');assert.equal(tabs.length,3);
   assert.equal(tabs.find(n=>n.props['aria-selected']).props['data-tab'],'overview');
   assert.equal(find(tree,n=>n.type==='MockDiagram').length,1);
   assert.equal(find(tree,n=>n.type==='details'&&n.props.className==='assistant-build-details').length,0);
@@ -115,6 +124,31 @@ test('01 resource tabs precede one mounted diagram, default to overview and keep
   assert.equal(find(tree,n=>n.props.role==='tabpanel'&&!n.props.hidden).length,1);
   assert.equal(find(tree,n=>n.props.role==='tabpanel'&&!n.props.hidden)[0].props.id,'test-materials-panel');
   assert.equal(JSON.stringify(design),before);assert.equal(find(tree,n=>n.type==='MockDiagram').length,1);
+});
+
+test('demo hides both hardware-check entries and skips the hidden feature with keyboard navigation',()=>{
+  for(const locale of ['zh-TW','en']){
+    const h=uiHarness('../src/components/BlueprintPage.tsx',locale);
+    const props={design:designFor(),onGuide(){},onEdit(){},onViewChange(){},hasCandidate:false,generating:false};
+    let tree=h.render(props);
+    assert.deepEqual(find(tree,n=>n.props.role==='tab').map(n=>n.props['data-tab']),['overview','materials','steps']);
+    assert.equal(find(tree,n=>n.props.className==='blueprint-check-shortcut'||n.type==='MockCheck').length,0);
+    find(tree,n=>n.props.role==='tab'&&n.props['data-tab']==='overview')[0].props.onKeyDown({key:'ArrowRight',preventDefault(){}});
+    tree=h.render(props);
+    assert.equal(find(tree,n=>n.props.role==='tab'&&n.props['aria-selected'])[0].props['data-tab'],'materials');
+  }
+});
+
+test('hardware check remains explicitly re-enableable and hiding an active check returns to overview',()=>{
+  const h=uiHarness('../src/components/BlueprintPage.tsx');
+  const props={design:designFor(),onGuide(){},onEdit(){},onViewChange(){},hasCandidate:false,generating:false,partsCheckEnabled:true};
+  let tree=h.render(props);
+  assert.equal(find(tree,n=>n.props.role==='tab').length,4);
+  find(tree,n=>n.props.className==='blueprint-check-shortcut')[0].props.onClick();tree=h.render(props);
+  assert.equal(find(tree,n=>n.props.role==='tabpanel'&&!n.props.hidden)[0].props.id,'test-parts-check-panel');
+  tree=h.render({...props,partsCheckEnabled:false});
+  assert.equal(find(tree,n=>n.type==='MockCheck').length,0);
+  assert.equal(find(tree,n=>n.props.role==='tabpanel'&&!n.props.hidden)[0].props.id,'test-overview-panel');
 });
 
 test('resource tabs support keyboard wrap and clicking an instruction returns to its highlighted diagram',()=>{

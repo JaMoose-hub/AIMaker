@@ -78,6 +78,49 @@ function api({saved={},active=null,conversation=null,create}={}) {
   };
 }
 
+test('real polling loop reuses exact history while status and new messages update',async()=>{
+  let version='v1',phase='waiting';
+  const request=path=>{
+    const url=new URL(path,'http://test/');
+    if(url.pathname==='/debug/sessions')return {active:null};
+    const isHistory=url.pathname==='debug/conversations' || url.pathname==='/debug/conversations';
+    const full=isHistory?{...history('current'),messages:[{id:version}],diagrams:[{id:'drawing'}],history_version:version}
+      :{...session('saved','current'),phase,messages:[{id:version}],diagrams:[{id:'drawing'}],history_version:version};
+    let value=full;
+    if(url.searchParams.get('history_version')===version){
+      value=isHistory?{id:full.id,project_id:'current',history_version:version,history_unchanged:true}
+        :{...full,messages:undefined,diagrams:undefined,history_unchanged:true};
+    }
+    return isHistory?{conversation:value}:value;
+  };
+  const h=harness(request,{'boardvision.ai-debug-session.v1:current':'saved'});
+  try {
+    await h.settle();const first=h.value.record.messages;
+    phase='finished';await h.tick();
+    assert.equal(h.value.record.phase,'finished');assert.equal(h.value.record.messages,first);
+    assert(h.calls.some(call=>call.path.includes('history_version=v1')));
+    version='v2';await h.tick();
+    assert.equal(h.value.record.messages[0].id,'v2');assert.equal(h.value.conversation.messages[0].id,'v2');
+  } finally {h.dispose();}
+});
+
+test('invalid compact response discards validators and recovers with a full read',async()=>{
+  let malformed=false;
+  const request=path=>{
+    if(path.startsWith('debug/conversations?'))return {conversation:{...history('current'),history_version:'v1'}};
+    if(path.split('?')[0]==='debug/sessions')return {active:null};
+    if(malformed && path.includes('history_version='))return {id:'foreign',history_version:'v1',history_unchanged:true};
+    return {...session('saved','current'),messages:[],history_version:'v1'};
+  };
+  const h=harness(request,{'boardvision.ai-debug-session.v1:current':'saved'});
+  try {
+    await h.settle();malformed=true;await h.tick();
+    assert.match(h.value.error,/refresh_required/);
+    await h.tick();assert.equal(h.value.record.id,'saved');assert.equal(h.value.error,'');
+    assert.equal(h.calls.filter(call=>call.path.startsWith('debug/sessions/')).at(-1).path,'debug/sessions/saved');
+  } finally {h.dispose();}
+});
+
 test('wiring restart clears own pointer and history, survives reload, and sends only an explicit reset',async()=>{
   const old=session('old','current'), foreign=session('foreign','other');
   let conversation={...history('current'),messages:[{id:'old-message',text:'old'}]};

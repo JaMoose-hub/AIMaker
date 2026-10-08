@@ -88,6 +88,20 @@ def test_diagnostics_no_publisher_or_no_retained_frame_does_not_imply_live():
     assert result["connection_state"] is None and pc.calls == 0
 
 
+def test_event_loop_delay_is_distinct_from_network_jitter_and_diagnostics_are_readonly():
+    service, stream, pc, _ = diagnostic_service()
+    assert service.loop_health['available'] is False
+    service._record_loop_lag(.004)
+    service._record_loop_lag(.24)
+    before = deepcopy(service.loop_health)
+    result = asyncio.run(service.diagnostics('phone', 3))
+    assert result['event_loop'] == before == service.loop_health
+    assert result['event_loop']['max_lag_ms'] == 240.
+    assert result['event_loop']['stalls'] == 1
+    assert result['inbound_rtp'][0]['jitter_ms'] == 10.
+    assert stream.track.total == 30 and service.generations == {}
+
+
 @pytest.mark.parametrize("replace", ["generation", "publisher", "closing"])
 def test_diagnostics_rejects_late_stats_from_retired_owner(replace):
     service, stream, pc, _ = diagnostic_service()
@@ -469,7 +483,7 @@ def test_publisher_viewer_relay_generation_and_close(fake_rtc):
             await service.offer("phone", "sdp", "offer", "viewer", 1)
         assert error.value.status_code == 409
         await service.close_all()
-        assert not service.streams and not frames
+        assert not service.streams and not frames and service.loop_monitor is None
     asyncio.run(scenario())
 
 
@@ -503,6 +517,7 @@ def test_counted_track_reports_receive_fps_not_analysis_sample_fps():
         for i in range(31):
             now[0] = i/30
             final = await track.recv()
+        await track.metrics_task
         assert metrics == [dict(video_fps=30., received_frames=31, video_size=[640, 480],
                                 video_color={field: None for field in rtc.VIDEO_COLOR_FIELDS})]
         now[0] = 5.
@@ -555,6 +570,45 @@ def test_metrics_failure_does_not_kill_actual_relay_or_receive_notifications(cap
     assert "Mobile video metrics failed; retaining video transport" in caplog.text
 
 
+def test_slow_metrics_do_not_delay_receipt_or_accumulate_reporting_tasks():
+    async def scenario():
+        now, calls = [0.], []
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        class Source(Track):
+            async def recv(self):
+                return SimpleNamespace(width=1920, height=1080)
+
+        async def slow_metrics(value):
+            calls.append(value)
+            entered.set()
+            await release.wait()
+
+        track = rtc.CountedVideoTrack(Source(), slow_metrics, lambda: now[0])
+        try:
+            await track.recv()
+            now[0] = 1.
+            # Statistics are optional; native pixels must not wait for them.
+            await asyncio.wait_for(track.recv(), .3)
+            await asyncio.wait_for(entered.wait(), .3)
+            reporting = track.metrics_task
+            for index in range(2, 12):
+                now[0] = float(index)
+                await asyncio.wait_for(track.recv(), .3)
+            assert track.total == 12 and len(calls) == 1
+            assert track.metrics_task is reporting and not reporting.done()
+            release.set()
+            await reporting
+            now[0] = 12.
+            await track.recv()
+            await track.metrics_task
+            assert len(calls) == 2 and calls[-1]["received_frames"] == 13
+        finally:
+            release.set()
+            track.stop()
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("late_frame", [False, True])
 def test_counted_close_owns_pending_recv_and_never_publishes_late_frame(late_frame):
     async def scenario():
@@ -586,10 +640,10 @@ def test_counted_close_owns_pending_recv_and_never_publishes_late_frame(late_fra
     asyncio.run(scenario())
 
 
-def test_close_while_metrics_are_pending_does_not_return_a_frame_after_close():
+def test_close_cancels_pending_metrics_and_does_not_return_a_frame_after_close():
     async def scenario():
         now = [0.]
-        entered, release = asyncio.Event(), asyncio.Event()
+        entered, release, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
         class Source(Track):
             async def recv(self):
@@ -597,18 +651,22 @@ def test_close_while_metrics_are_pending_does_not_return_a_frame_after_close():
 
         async def metrics(value):
             entered.set()
-            await release.wait()
+            try:
+                await release.wait()
+            finally:
+                cancelled.set()
 
         track = rtc.CountedVideoTrack(Source(), metrics, lambda: now[0])
         await track.recv()
         now[0] = 1.
-        pending = asyncio.create_task(track.recv())
-        await entered.wait()
+        frame = await asyncio.wait_for(track.recv(), .3)
+        await asyncio.wait_for(entered.wait(), .3)
+        assert frame.width == 32  # Delivered before close despite pending metrics.
         track.clear_latest()
-        release.set()
+        await asyncio.gather(track.metrics_task, return_exceptions=True)
         with pytest.raises(rtc.MediaStreamError):
-            await pending
-        assert track.latest is None
+            await track.recv()
+        assert cancelled.is_set() and track.latest is None
         track.stop()
     asyncio.run(scenario())
 

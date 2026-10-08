@@ -93,6 +93,11 @@ class OfferBody(BaseModel):
 
 class StreamBody(BaseModel):
     bitrate_kbps: Literal[3000, 8000, 12000] = 8000
+    publisher_id: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class StreamStopBody(BaseModel):
+    publisher_id: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class StreamMetricsBody(BaseModel):
@@ -260,7 +265,10 @@ def message(body: MessageBody, request: Request):
 
 
 @router.post("/assets")
-async def upload(request: Request, file: UploadFile = File(...), upload_id: str = Form(...)):
+def upload(request: Request, file: UploadFile = File(...), upload_id: str = Form(...)):
+    # FastAPI runs this synchronous endpoint in its worker pool. Keep the
+    # complete file lifetime there, including spooling and failure cleanup;
+    # native phone RTC must not wait for disk or image/video conversion.
     service = request.app.state.mobile_service
     sid = identity(request)
     session = service.snapshot(sid)
@@ -270,16 +278,16 @@ async def upload(request: Request, file: UploadFile = File(...), upload_id: str 
         with tempfile.NamedTemporaryFile(dir=service.root, suffix=".upload", delete=False) as pending:
             path = Path(pending.name)
             count = 0
-            while chunk := await file.read(1024*1024):
+            while chunk := file.file.read(1024*1024):
                 count += len(chunk)
                 if count > MAX_UPLOAD:
                     raise HTTPException(413, "mobile_upload_size_limit")
                 pending.write(chunk)
-        return await asyncio.to_thread(service.assets.ingest, path,
+        return service.assets.ingest(path,
             conversation_id=session["conversation_id"], session_id=sid, upload_id=upload_id,
             filename=file.filename, content_type=file.content_type)
     finally:
-        await file.close()
+        file.file.close()
         if path is not None:
             path.unlink(missing_ok=True)
 
@@ -308,7 +316,7 @@ def asset_thumbnail(aid: str, request: Request):
 @router.post("/stream")
 async def start_stream(request: Request, body: StreamBody | None = None, session_id: str | None = None):
     return await request.app.state.mobile_service.start_stream(identity(request, session_id),
-        bitrate_kbps=body.bitrate_kbps if body else 8000)
+        bitrate_kbps=body.bitrate_kbps if body else 8000, publisher_id=body.publisher_id if body else None)
 
 
 @router.post("/stream/metrics")
@@ -335,8 +343,9 @@ async def offer(body: OfferBody, request: Request):
 
 
 @router.delete("/stream")
-async def stop_stream(request: Request, session_id: str | None = None):
-    return await request.app.state.mobile_service.stop_stream(identity(request, session_id))
+async def stop_stream(request: Request, body: StreamStopBody | None = None, session_id: str | None = None):
+    return await request.app.state.mobile_service.stop_stream(identity(request, session_id),
+        publisher_id=body.publisher_id if body else None)
 
 
 class StreamCaptureBody(BaseModel):

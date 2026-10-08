@@ -49,6 +49,7 @@ export interface DebugConversation {
   id: string; project_id: string; messages: DebugMessage[]; check_ids: string[];
   archived?: boolean;
   evidence?: DebugEvidence[]; diagrams?: DiagramSnapshot[]; updated_at?: number;
+  history_version?: string; history_unchanged?: boolean;
 }
 export type DebugPurpose = "debug" | "wiring_review";
 export interface DebugSession {
@@ -64,7 +65,8 @@ export interface DebugSession {
   report?: { confirmed: string[]; uncertain: string[]; next_step: string } | null;
   budget?: { model_calls: number; max_model_calls: number; tests: Record<string, number>; max_tests_per_component: number; captures: number; max_captures: number };
   binding?: { target_id?: string; project_id?: string | null; code_hash?: string; wiring_hash?: string; test_keys?: Record<string, string> };
-  current_target?: boolean; camera_current?: boolean; camera?: { source: string; runtime_revision: number; camera_id?: string | null };
+  current_target?: boolean; camera_current?: boolean; wiring_photos_current?: boolean;
+  camera?: { source: string; runtime_revision: number; camera_id?: string | null };
   model_busy?: boolean;
   messages?: DebugMessage[]; response_mode?: DebugResponseMode;
   conversation_id?: string; purpose?: DebugPurpose; diagrams?: DiagramSnapshot[];
@@ -74,6 +76,21 @@ export interface DebugSession {
   wiring_review?: WiringReviewState | null;
   model_started_at?: number | null; model_elapsed_ms?: number | null; model_capture_ids?: string[];
   error?: string | null; updated_at: number;
+  history_version?: string; history_unchanged?: boolean;
+}
+
+/** Reuse only the exact history acknowledged by the server, never another case. */
+export function mergeDebugHistory<T extends DebugSession | DebugConversation>(previous: T | null, next: T, kind: "session" | "conversation"): T {
+  if (!next.history_unchanged) return next;
+  if (!previous?.history_version || previous.id !== next.id || previous.history_version !== next.history_version
+      || !Array.isArray(previous.messages)) throw new Error("debug_history_refresh_required");
+  return (kind === "conversation" ? { ...previous, ...next, history_unchanged: false }
+    : { ...next, messages: previous.messages, diagrams: previous.diagrams, history_unchanged: false }) as T;
+}
+
+export function debugHistoryPath(path: string, previous: { history_version?: string } | null) {
+  return previous?.history_version
+    ? `${path}${path.includes("?") ? "&" : "?"}history_version=${encodeURIComponent(previous.history_version)}` : path;
 }
 export type DebugSessionAction = "ready" | "capture" | "continue" | "message" | "stop" | "start_trial" | "analyse" | "context_changed" | "start_debug" | "prepare_wiring" | "wiring_review";
 
@@ -141,6 +158,24 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
     if (!enabled || !projectId) return;
     const controller = new AbortController();
     let timer = 0;
+    // Scoped to this effect/project. Aborted/late polls cannot seed a new owner.
+    const cachedSessions = new Map<string, DebugSession>();
+    let activeSessionId: string | null = null;
+    let cachedConversation: DebugConversation | null = null;
+    const readSession = async (id?: string) => {
+      const cacheId = id ?? activeSessionId;
+      const cache = cacheId ? cachedSessions.get(cacheId) ?? null : null;
+      const path = debugHistoryPath(id ? `debug/sessions/${encodeURIComponent(id)}` : "debug/sessions", cache);
+      const value = id ? await makerRequest<DebugSession>(path, undefined, controller.signal)
+        : (await makerRequest<{ active: DebugSession | null }>(path, undefined, controller.signal)).active;
+      if (!id) activeSessionId = value?.id ?? null;
+      // No active work must not evict the saved, stopped case's history.
+      if (!value) return null;
+      const merged = mergeDebugHistory(cache, value, "session");
+      cachedSessions.delete(merged.id); cachedSessions.set(merged.id, merged);
+      if (cachedSessions.size > 2) cachedSessions.delete(cachedSessions.keys().next().value!);
+      return merged;
+    };
     async function poll() {
       const version = epoch.current;
       const canAdopt = () => !controller.signal.aborted && mounted.current && version === epoch.current && !flight.current;
@@ -148,7 +183,7 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
         let next: DebugSession | null;
         let savedId: string | null = null;
         if (sessionId) {
-          try { next = await makerRequest<DebugSession>(`debug/sessions/${encodeURIComponent(sessionId)}`, undefined, controller.signal); }
+          try { next = await readSession(sessionId); }
           catch (cause) {
             if ((cause as {status?: number}).status !== 404 && !(cause instanceof Error && cause.message === "session_not_found")) throw cause;
             next = null;
@@ -162,7 +197,7 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
           // already have started a new one on this Pi. Always surface that
           // active session, including one for another project.
           if (!next || next.current_target === false || isTerminal(next.status)) {
-            const active = (await makerRequest<{active: DebugSession | null}>("debug/sessions", undefined, controller.signal)).active;
+            const active = await readSession();
             if (active) {
               next = active;
             } else if (next?.current_target === false) {
@@ -170,10 +205,12 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
             }
           }
         } else {
-          next = (await makerRequest<{active: DebugSession | null}>("debug/sessions", undefined, controller.signal)).active;
+          next = await readSession();
         }
         if (!canAdopt()) return;
-        const history = await makerRequest<{ conversation: DebugConversation | null }>(`debug/conversations?project_id=${encodeURIComponent(projectId!)}`, undefined, controller.signal);
+        const history = await makerRequest<{ conversation: DebugConversation | null }>(debugHistoryPath(`debug/conversations?project_id=${encodeURIComponent(projectId!)}`, cachedConversation), undefined, controller.signal);
+        history.conversation = history.conversation ? mergeDebugHistory(cachedConversation, history.conversation, "conversation") : null;
+        cachedConversation = history.conversation;
         if (canAdopt()) {
           const ownHistory = history.conversation?.project_id === projectId && !history.conversation.archived ? history.conversation : null;
           // A different tab may have restarted this project's wiring round.
@@ -192,6 +229,8 @@ export function useDebugSession(projectId: string | null, enabled: boolean) {
           setError("");
         }
       } catch (cause) {
+        // A missing cache or a failed request must recover with a full response.
+        cachedSessions.clear(); activeSessionId = null; cachedConversation = null;
         if (canAdopt())
           setError(cause instanceof Error ? cause.message : "connection_lost");
       } finally {

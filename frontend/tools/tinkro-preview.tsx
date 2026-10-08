@@ -25,6 +25,7 @@ import '../src/debug.css';
 import '../src/responsive.css';
 import '../src/guideAi.css';
 import '../src/tinkro.css';
+import '../src/deviceConnections.css';
 
 const deny = () => { throw Error('Hardware/cloud actions are disabled in this isolated preview'); };
 const noop = () => {};

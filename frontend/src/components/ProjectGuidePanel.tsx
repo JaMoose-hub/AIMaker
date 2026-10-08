@@ -128,6 +128,12 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     <ComponentTestCard design={design} session={session} tests={tests} view="actions" inlineActions={toolbar} onDebug={onDebug}
       onViewWiring={() => onChange(reviewProjectWire(design, session, cid))} />
   </div> : null;
+  const iconTestNavigation = toolbar && !active && !preparing && !session.inspection;
+  const nextModule = session.componentIndex < design.component_ids.length - 1;
+  const deferTest = complete && !passed;
+  const continueLabel = nextModule
+    ? deferTest ? tr("稍後測試，繼續", "Test later · Continue") : tr("下一模組", "Next module")
+    : deferTest ? tr("稍後測試，前往部署", "Test later · Deploy") : tr("前往部署", "Deploy");
   return <CompactGuide contextKey={`${design.id}:${design.revision}:${cid}:${session.phase}:${session.index}:${session.run ?? 0}`} phase={reviewing ? "review" : session.phase}
     headerActions={<><button type="button" className={`guide-restart-action${floating ? " guide-icon-action" : ""}`}
       aria-label={tr("重新開始接線引導", "Restart wiring guide")}
@@ -146,7 +152,7 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
       </button>)}</div>
     </>}
     targetId={active ? `${cid}:${step.componentPin}` : undefined} onClose={() => onVisibleChange(false)}
-    actions={<>{toolbar ? testControls : null}<div className="guide-navigation">{session.inspection ? <>
+    actions={<>{toolbar ? testControls : null}<div className={`guide-navigation${iconTestNavigation ? " is-icon-test-navigation" : ""}`}>{session.inspection ? <>
       <button onClick={() => session.inspectionSource === "debug" ? onDebug?.(cid) : onChange(resumeProjectGuide(session))}>{session.inspectionSource === "debug" ? tr("返回 AI 對話", "Back to AI chat") : tr("返回接線", "Resume wiring")}</button>
       <button disabled={session.index === 0} onClick={() => onChange({ ...session, index: session.index - 1 })}>{tr("上一步", "Back")}</button>
       <button disabled={session.index >= steps.length - 1} onClick={() => onChange({ ...session, index: session.index + 1 })}>{tr("下一步", "Next")}</button>
@@ -156,10 +162,14 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
         <button type="button" className="guide-back-action" title={tr("回到前一條接線指示，保留已確認紀錄", "Return to the previous wire; keep confirmations")} disabled={session.index === 0 || tests.pending} onClick={previous}>{tr("上一步", "Back")}</button>
         <button type="button" className="guide-primary-action" onClick={confirm}>{confirmed(step) ? tr("下一步 →", "Next →") : floating ? tr("接好了，下一步 →", "Connected · Next →") : tr("我已接好，下一步 →", "Connected · Next →")}</button>
       </> : <>
-        <button type="button" className="guide-back-action" title={tr("回到接線步驟，保留已確認與測試紀錄", "Return to the wiring step; keep confirmations and test records")} disabled={tests.pending} onClick={previous}>{tr("上一步", "Back")}</button>
-        {session.componentIndex < design.component_ids.length - 1
-          ? <button type="button" className={complete && !passed ? "guide-back-action" : "guide-primary-action"} onClick={() => onChange({ ...session, componentIndex: session.componentIndex + 1, index: 0, phase: "prepare", checks: [] })}>{complete && !passed ? tr("稍後測試，繼續 →", "Test later · Continue →") : tr("下一模組 →", "Next module →")}</button>
-          : <button type="button" className={complete && !passed ? "guide-back-action" : "guide-primary-action"} onClick={onDeploy}>{complete && !passed ? tr("稍後測試，前往部署 →", "Test later · Deploy →") : tr("前往部署 →", "Deploy →")}</button>}
+        <button type="button" className={`guide-back-action${iconTestNavigation ? " guide-action-icon-button" : ""}`} aria-label={iconTestNavigation ? tr("返回接線步驟", "Back to wiring") : undefined} title={tr("回到接線步驟，保留已確認與測試紀錄", "Return to the wiring step; keep confirmations and test records")} disabled={tests.pending} onClick={previous}>
+          {iconTestNavigation ? <><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="m14 6-6 6 6 6" /></svg><span>{tr("返回", "Back")}</span></> : tr("上一步", "Back")}</button>
+        <button type="button" className={`${deferTest ? "guide-back-action" : "guide-primary-action"}${iconTestNavigation ? ` guide-action-icon-button${deferTest ? " guide-defer-test-action" : ""}` : ""}`}
+          aria-label={iconTestNavigation ? continueLabel : undefined} title={iconTestNavigation ? continueLabel : undefined}
+          onClick={nextModule ? () => onChange({ ...session, componentIndex: session.componentIndex + 1, index: 0, phase: "prepare", checks: [] }) : onDeploy}>
+          {iconTestNavigation ? <><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            {deferTest ? <path d="m5 6 7 6-7 6V6Zm13 0v12" /> : nextModule ? <path d="M5 12h14m-6-6 6 6-6 6" /> : <path d="M6 18 18 6M6 6h12v12" />}
+          </svg><span>{deferTest ? tr("稍後測試", "Test later") : continueLabel}</span></> : `${continueLabel} →`}</button>
       </>}</div>
       {!toolbar ? testControls : null}</>}
     details={<>
@@ -197,9 +207,8 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
             <strong>{piGuide ? `Pin ${piGuide.physical}` : boardPhysical}</strong>
             <small>{piGuide ? `${piGuide.signal} · ${piGuide.rowLabel}` : boardSignals.join(" · ")}</small></div>
         </div>
-        {step.connectionKind === "divider" || cid === "mrd-tf240-8p-cs" ? <p className="guide-connect-hint">
-          {step.connectionKind === "divider" ? tr("保持斷電，依下方分壓接法連接；不可直連 GPIO。", "Keep power off and use the divider below; do not wire directly to GPIO.") : null}
-          {cid === "mrd-tf240-8p-cs" ? <span className="guide-pin-caution">{tr("BLK 留空，勿接 GPIO／5V。", "Leave BLK unconnected — no GPIO or 5V.")}</span> : null}</p> : null}
+        {step.connectionKind === "divider" ? <p className="guide-connect-hint">
+          {tr("保持斷電，依下方分壓接法連接；不可直連 GPIO。", "Keep power off and use the divider below; do not wire directly to GPIO.")}</p> : null}
         {!piGuide ? <p className="guide-step-instruction">{tx(step.instruction)}</p> : null}
       </section>
       {step.connectionKind === "divider" ? <div className="guide-caution"><strong>{tr("ECHO 需分壓，不可直連 GPIO", "ECHO needs a divider, not a direct GPIO wire")}</strong>
@@ -207,9 +216,8 @@ export function ProjectGuidePanel({ design, session, visible, disabled, pinsById
     </> : reviewing && !complete ? <section className="guide-module-review"><span>{tr("本模組人工紀錄", "MODULE MANUAL RECORDS")}</span>
       <strong>{moduleCount} / {steps.length}</strong>{!complete ? <p>{tr("請繼續完成剩餘接線。", "Finish the remaining wires first.")}</p> : null}</section> : null}
     {!testInfoInDetails ? testInstructions : null}
-    {!active ? guide.unresolved.map(item => <p key={item.pin} className="guide-caution">{cid === "mrd-tf240-8p-cs" && item.pin === "BLK"
-      ? tr("BLK 留空；背光不亮先查規格，勿接 GPIO／5V。", "Leave BLK unconnected. If dark, check its specs — no GPIO or 5V.")
-      : <>{item.pin} · {tx(item.reason)}</>}</p>) : null}
+    {!active ? guide.unresolved.filter(item => cid !== "mrd-tf240-8p-cs" || item.pin !== "BLK")
+      .map(item => <p key={item.pin} className="guide-caution">{item.pin} · {tx(item.reason)}</p>) : null}
     {disabled ? <p role="status">{tr("本機服務未連線；接線紀錄保留。", "Local service offline; wiring records are kept.")}</p> : null}
   </CompactGuide>;
 }

@@ -17,7 +17,7 @@ import uuid
 from app.debug_support import digest, identity, sanitize, validate_project
 from app.reply_language import reply_language_instruction, system_text
 from app.designs import MODULES, component_spec_path
-from app.guided_wiring_review import GuidedWiringReview, WiringReviewAction, invalidate_review
+from app.guided_wiring_review import GuidedWiringReview, WiringReviewAction, invalidate_review, saved_wiring_photos_current
 
 
 LIVE = {"diagnosing", "awaiting_capture", "awaiting_ready", "testing", "awaiting_visual",
@@ -99,6 +99,10 @@ class DebugSessions:
         self.lock = threading.RLock()
         self.sessions = {}
         self.conversations = {}
+        # Runtime-only validators: a restart or any persisted mutation forces a
+        # fresh history. Never use client timestamps as an authority boundary.
+        self._history_revision = uuid.uuid4().hex
+        self._history_password = None
         self.conversation_store = self.store.with_name(self.store.stem + "-conversations.json")
         self.images = {}
         self.samplers = {}
@@ -162,6 +166,7 @@ class DebugSessions:
 
     def _save(self):
         with self.lock:
+            self._history_revision = uuid.uuid4().hex
             self.store.parent.mkdir(parents=True, exist_ok=True)
             pending = self.store.with_suffix(".tmp")
             password = self.state.pi_deployer.config.password.get_secret_value()
@@ -201,20 +206,33 @@ class DebugSessions:
         conversation["messages"] = (conversation["messages"] + [deepcopy(message)])[-160:]
         conversation["updated_at"] = time.time()
 
-    def conversation(self, conversation_id):
+    def _history_version(self, identity):
+        password = self.state.pi_deployer.config.password.get_secret_value()
+        if password != self._history_password:
+            self._history_password = password
+            self._history_revision = uuid.uuid4().hex
+        return f"{self._history_revision}:{identity}"
+
+    def conversation(self, conversation_id, history_version=None):
         with self.lock:
             conversation = self.conversations.get(conversation_id)
             if conversation is None:
                 raise ValueError("conversation_not_found")
+            version = self._history_version(conversation_id)
+            if history_version == version:
+                return dict(id=conversation_id, project_id=conversation["project_id"],
+                            history_version=version, history_unchanged=True)
             result = deepcopy(conversation)
             result["evidence"] = [deepcopy(entry) for sid in conversation["check_ids"]
                                   for entry in self.sessions.get(sid, {}).get("evidence", [])][-MAX_CAPTURES * 8:]
-            return sanitize(result, self.state.pi_deployer.config.password.get_secret_value())
+            result = sanitize(result, self.state.pi_deployer.config.password.get_secret_value())
+            result["history_version"] = version
+            return result
 
-    def conversation_for_project(self, project_id):
+    def conversation_for_project(self, project_id, history_version=None):
         with self.lock:
             matches = [item for item in self.conversations.values() if item["project_id"] == project_id and not item.get("archived")]
-            return {"conversation": self.conversation(max(matches, key=lambda item: item["updated_at"])["id"]) if matches else None}
+            return {"conversation": self.conversation(max(matches, key=lambda item: item["updated_at"])["id"], history_version) if matches else None}
 
     def restart_conversation(self, project_id, request_id, expected_conversation_id=None):
         """Start a wiring round without deleting historical checks or evidence."""
@@ -304,14 +322,13 @@ class DebugSessions:
                     runtime_revision=runtime.runtime_revision,
                     camera_id=current_debug_camera(self.state))
 
-    def _public(self, session):
-        public = deepcopy(session)
-        for key in ("context", "request_id", "receipts", "near_ready", "near_sent", "far_sent",
+    def _public(self, session, history_version=None):
+        # Exclude internal data and history BEFORE copying. Previously even a
+        # status poll copied the full draft, model requests and old messages.
+        private = {"context", "request_id", "receipts", "near_ready", "near_sent", "far_sent",
                     "tft_observed", "analysis_requested", "capture_pending", "capture_override", "last_model_receipt",
-                    "chat_pending", "chat_resume"):
-            public.pop(key, None)
-        public.pop("wiring_review_components", None)
-        public.pop("wiring_dialogue", None)
+                    "chat_pending", "chat_resume", "wiring_review_components", "wiring_dialogue", "messages", "diagrams"}
+        public = deepcopy({k: v for k, v in session.items() if k not in private})
         jobs = self.state.pi_execution.snapshot()["jobs"]
         public["jobs"] = [job for job in jobs if job["id"] in session.get("job_ids", [])]
         public["model_busy"] = session.get("phase") in {"observing_photo", "observing_tft", "repair_analysing", "replying", "wiring_review_analysing"}
@@ -320,8 +337,6 @@ class DebugSessions:
                 public["wiring_review"].pop(key, None)
         conversation = self.conversations[session["conversation_id"]]
         public["conversation_current"] = not conversation.get("archived", False)
-        public["messages"] = deepcopy(conversation["messages"])
-        public["diagrams"] = deepcopy(conversation["diagrams"])
         public["wiring_edit_ready"] = self._wiring_edit_ready(session)
         index = min(session.get("target_index", 0), len(session.get("target_order", []))-1)
         current_component = session["target_order"][index] if index >= 0 else None
@@ -344,21 +359,31 @@ class DebugSessions:
             public["camera_current"] = session["camera"] == self._camera()
         except ValueError:
             public["camera_current"] = False
+        public["wiring_photos_current"] = saved_wiring_photos_current(session)
+        version = self._history_version(session["id"])
+        public["history_version"] = version
+        if history_version == version:
+            public["history_unchanged"] = True
+        else:
+            # sanitize recursively creates fresh JSON containers. No additional
+            # deep copy is needed, and the redaction contract stays unchanged.
+            public["messages"] = conversation["messages"]
+            public["diagrams"] = conversation["diagrams"]
         return sanitize(public, self.state.pi_deployer.config.password.get_secret_value())
 
-    def get(self, sid):
+    def get(self, sid, history_version=None):
         with self.lock:
             session = self.sessions.get(sid)
             if session is None:
                 raise ValueError("session_not_found")
-            return self._public(session)
+            return self._public(session, history_version)
 
-    def active(self, project_id=None):
+    def active(self, project_id=None, history_version=None):
         with self.lock:
             sessions = [s for s in self.sessions.values() if s.get("status") in LIVE | {"paused"}
                         and s["binding"]["target_id"] == self.state.component_tests.target]
             current = max(sessions, key=lambda s: s["created_at"]) if sessions else None
-            return {"active": self._public(current) if current else None,
+            return {"active": self._public(current, history_version) if current else None,
                     "same_project": current["binding"]["project_id"] == project_id if current and project_id else None}
 
     def replaceable_collection_history(self, session):
@@ -761,17 +786,16 @@ class DebugSessions:
                 raise ValueError("session_step_changed")
             if session["budget"]["model_calls"] >= MAX_MODEL_CALLS:
                 raise ValueError("model_call_limit_reached")
-            def authorised_phone_review(entry):
+            def authorised_saved_review(entry):
                 review = session.get("wiring_review") or {}
                 slot = review.get("slots", {}).get(entry.get("role")) or {}
-                return bool(trusted_paths is not None and entry.get("source") == "phone_upload"
+                return bool(trusted_paths is not None and saved_wiring_photos_current(session)
                             and entry.get("wiring_review_id") == review.get("id")
                             and entry.get("wiring_round") == review.get("round")
                             and slot.get("available") and slot.get("capture_id") == entry["id"]
-                            and slot.get("sha256") == entry.get("sha256")
-                            and entry.get("provenance", {}).get("asset_id"))
+                            and slot.get("sha256") == entry.get("sha256"))
             if any(entry.get("current") is False or
-                   (entry.get("camera_id") != session["camera"]["camera_id"] and not authorised_phone_review(entry))
+                   (entry.get("camera_id") != session["camera"]["camera_id"] and not authorised_saved_review(entry))
                    or entry.get("code_hash") != session["binding"]["code_hash"]
                    or entry.get("wiring_hash") != session["binding"]["wiring_hash"] for entry in captures):
                 raise ValueError("session_step_changed")
@@ -812,7 +836,7 @@ class DebugSessions:
                     # returned by the model or accepted from an API caller.
                     paths = list(trusted_paths)
                     cloud_sizes = [dict(view=Path(path).stem, supplied_bytes=Path(path).stat().st_size,
-                                        supplied_sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(), resized=False)
+                                        supplied_sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest())
                                    for path in paths]
                 options = {key: value for key, value in (generate_options or {}).items() if key in {"timeout_s"}}
                 answer = self.state.design_service.bridge.generate(prompt, schema, model=model, effort=effort,
@@ -1775,11 +1799,14 @@ class DebugSessions:
                 camera_current = self._camera() == session["camera"]
             except ValueError:
                 camera_current = False
-            if not camera_current:
+            if not camera_current and not saved_wiring_photos_current(session):
                 self._stop(sid)
                 with self.lock:
+                    invalidate_review(self.sessions[sid], "camera_changed")
                     self.sessions[sid].update(status="paused", phase="camera_changed",
                                               instruction="鏡頭來源已變更；請重新開始除錯。")
+                    if (self.sessions[sid].get("wiring_review") or {}).get("analysis_started_at") is not None:
+                        self.guided_wiring_review.sync_dialogue(self.sessions[sid])
                     self._save()
                 return
             if (session.get("wiring_review") or {}).get("pending"):
@@ -1855,12 +1882,13 @@ class DebugSessions:
             material = (any(binding[key] != session["binding"].get(key) for key in binding if key not in {"guide_hash", "test_keys"})
                         or not self._confirmation_progress(old_context, context))
             camera_changed = self._camera() != session["camera"]
+            camera_invalidates = camera_changed and not saved_wiring_photos_current(session)
             target_changed = target != session.get("wiring_target")
             changed = binding != session["binding"] or camera_changed or target_changed
             if not changed:
                 return
             busy = session["phase"] in {"observing_photo", "observing_tft", "repair_analysing", "replying"}
-        if material or camera_changed:
+        if material or camera_invalidates:
             self._stop(sid)
         with self.lock:
             session = self.sessions[sid]
@@ -1868,10 +1896,11 @@ class DebugSessions:
                            updated_at=time.time())
             self._adopt_tests(session)
             session["diagram_id"] = self.create_diagram(session["conversation_id"], context)["id"]
-            if material or camera_changed:
-                invalidate_review(session, "camera_changed" if camera_changed else "context_changed")
+            if material or camera_invalidates:
+                reason = "context_changed" if material else "camera_changed"
+                invalidate_review(session, reason)
                 for entry in session["evidence"]:
-                    entry.update(current=False, invalidated_reason="camera_changed" if camera_changed else "context_changed")
+                    entry.update(current=False, invalidated_reason=reason)
                 session.update(status="awaiting_capture", phase="awaiting_user", capture_pending=False, chat_pending=False,
                                capture_task=None, job_id=None, run_id=None, trial_id=None, trial_run_id=None,
                                near_ready=False, near_sent=False, far_sent=False, tft_observed=False,
@@ -1889,6 +1918,8 @@ class DebugSessions:
             if target and session.get("purpose") == "wiring_review":
                 session["target_order"] = [target["component_id"]] + [cid for cid in session["target_order"] if cid != target["component_id"]]
                 session["target_index"] = 0
+            if (session.get("wiring_review") or {}).get("analysis_started_at") is not None:
+                self.guided_wiring_review.sync_dialogue(session)
             self._save()
 
     def _prepare_wiring(self, sid):
@@ -1930,13 +1961,18 @@ class DebugSessions:
                 if old["state"] == "done":
                     return self._public(session)
                 raise ValueError("action_result_unknown")
-            if action not in {"stop", "context_changed", "prepare_wiring"}:
+            if action not in {"stop", "stop_idle_wiring_review", "context_changed", "prepare_wiring"}:
                 if action == "continue" and session["phase"] == "awaiting_user":
                     raise ValueError("user_reply_required")
                 if action in {"capture", "continue", "message", "start_debug"} and session["phase"] in {"observing_photo", "observing_tft", "repair_analysing", "replying", "wiring_review_analysing"}:
                     raise ValueError("model_call_in_progress")
-                if self._camera() != session["camera"]:
+                saved_photo_action = bool(review_action and review_action.op in {"analyse", "crop", "review", "changed", "accept_photo"}
+                                          and saved_wiring_photos_current(session))
+                if not saved_photo_action and self._camera() != session["camera"]:
                     session.update(status="paused", phase="camera_changed", instruction="鏡頭已變更，請重新開始除錯。")
+                    invalidate_review(session, "camera_changed")
+                    if (session.get("wiring_review") or {}).get("analysis_started_at") is not None:
+                        self.guided_wiring_review.sync_dialogue(session)
                     self._save()
                     raise ValueError("camera_changed")
                 new_binding = _binding(context, self.state.component_tests.target) if context else None
@@ -1971,6 +2007,8 @@ class DebugSessions:
                 self.guided_wiring_review.action(sid, review_action, context=context)
             elif action == "stop":
                 self._stop(sid)
+            elif action == "stop_idle_wiring_review":
+                self._stop_idle_wiring_review(sid, request_id)
             elif action == "context_changed":
                 if context is None:
                     raise ValueError("context_required")
@@ -2145,6 +2183,27 @@ class DebugSessions:
             self._save()
         self.state.debug_cases.analyse(case_id, context, model, effort)
         self._update(sid, phase="repair_analysing", instruction="AI 正在檢查受限程式邏輯；提案仍需由你確認套用。")
+
+    def _stop_idle_wiring_review(self, sid, request_id):
+        """Reset may retire idle photos, but must never stop/cancel Pi work."""
+        with self.lock:
+            session = self.sessions[sid]
+            review = session.get("wiring_review") or {}
+            if (session.get("purpose") != "wiring_review"
+                    or session.get("status") not in {"awaiting_capture", "paused"}
+                    or session.get("phase") in {"observing_photo", "observing_tft", "repair_analysing", "replying", "wiring_review_analysing"}
+                    or any(session.get(key) for key in ("chat_pending", "capture_pending"))
+                    or review.get("pending") or review.get("status") == "analysing"
+                    or sid in self.samplers
+                    or any(key != request_id and receipt.get("state") == "pending"
+                           for key, receipt in session["receipts"].items())):
+                raise ValueError("other_debug_active")
+            if not self._wiring_edit_ready(None):
+                raise ValueError("hardware_work_active")
+            session.update(status="stopped", phase="stopped", step_rev=session["step_rev"] + 1,
+                           updated_at=time.time(), instruction="閒置照片檢查已結束；Pi 工作與照片、對話歷史保留。")
+            invalidate_review(session, "session_stopped")
+            self._save()
 
     def _stop(self, sid, *, preserve_wiring_review=False):
         with self.lock:

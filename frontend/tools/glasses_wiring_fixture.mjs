@@ -26,7 +26,7 @@ const guidanceCallout = compile("lib/guidanceCallout.ts");
 const labelLayout = compile("lib/wiringLabelLayout.ts");
 const recognitionStyle = compile("lib/recognitionStyle.ts");
 const componentOverlay = compile("components/ComponentPinOverlay.tsx", { "../lib/recognitionStyle": recognitionStyle, "../lib/headerCountDirection": compile("lib/headerCountDirection.ts"), "../lib/componentHeaderGuide": componentHeaderUrl, "../lib/wiringLabelLayout": labelLayout, "../lib/geometry": geometry, "../lib/i18n": i18n, "../lib/guidanceCallout": guidanceCallout });
-const connectionOverlay = compile("components/GuideConnectionOverlay.tsx", { "../lib/recognitionStyle": recognitionStyle, "../lib/geometry": geometry, "../lib/useSmoothedDetection": smooth });
+const connectionOverlay = compile("components/GuideConnectionOverlay.tsx", { "../lib/recognitionStyle": recognitionStyle, "../lib/componentHeaderGuide": componentHeaderUrl, "../lib/geometry": geometry, "../lib/useSmoothedDetection": smooth });
 const recognitionOverlay = compile("components/ObjectRecognitionOverlay.tsx", { "../lib/geometry": geometry, "../lib/i18n": i18n });
 
 export async function renderWiringVideo({ displayMode = "standard", boardId = "raspberry-pi-5", realtimeEnabled = true,
@@ -35,7 +35,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
   boardPoseQuality = null, componentPoseQuality = null, backendDown = false, connected = true,
   extraComponents = [], componentId = "hc-sr04", targetComponentId = componentId,
   overlayComponentId = null, overlayOverview = false, captureTask = null, viewControl = null, alternateView = null, calibrateOpen = false,
-  sourceChanging = false, sourceUnavailable = false, cameraIdentity = cameraSource,
+  sourceChanging = false, sourceUnavailable = false, sourceStatusUnknown = false, cameraIdentity = cameraSource,
   sourceControl = null, viewNavigation = null, sourceError = '', onRetrySource = undefined,
   livePreviewHost = null, livePreviewControls = null, frameAvailable = true } = {}) {
   const detection = { type: "detection", board_id: boardId, runtime_revision: 12, frame_id: 77, ts_ms: 1000,
@@ -76,6 +76,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     "react-dom": dataUrl("export const createPortal=child=>child;"),
     "./DeploymentLivePreview": compile("components/DeploymentLivePreview.tsx", {
       "../lib/useMaker": dataUrl("export const useMakerText=()=> (zh,en)=>zh;"),
+      "../lib/useStreamWaitingNotice": compile("lib/useStreamWaitingNotice.ts"),
       "./deploymentLivePreview.css": dataUrl("export {};"),
     }),
     "../lib/systemText":systemTextUrl,
@@ -89,6 +90,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     "./ObjectRecognitionOverlay":recognitionOverlay,
     "./LiveCameraOverlay":compile("components/LiveCameraOverlay.tsx", {
       "../lib/i18n":i18n, "./LiveCameraOverlay.css":dataUrl('export {};'),
+      "../lib/useStreamWaitingNotice": compile("lib/useStreamWaitingNotice.ts"),
     }),
     "./CalibratePanel":dataUrl("export const CalibratePanel=()=>null;"),"./OpticalHudCalibration":dataUrl("export const OpticalHudCalibrationOverlay=()=>null;"),
   });
@@ -102,7 +104,7 @@ export async function renderWiringVideo({ displayMode = "standard", boardId = "r
     config:{board_id:boardId,camera_source:cameraSource,camera_identity:cameraIdentity,runtime_revision:12,video_size:[1920,1080],realtime_tracking:realtimeEnabled},pinsById:new Map(),
     highlightIds:new Set(["GPIO17"]),selectedPinId:"GPIO17",onSelectPin(){},backendDown,legend:{colorVar:"--ok",label:"Selected target",count:1},
     outlineMm:[85,56],boardName:boardId,calibrateOpen,onCloseCalibrate(){},onCalibrationSuccess(){},guideTarget:target,
-    viewControl,viewNavigation,alternateView,sourceChanging,sourceUnavailable,sourceControl,sourceError,onRetrySource,
+    viewControl,viewNavigation,alternateView,sourceChanging,sourceUnavailable,sourceStatusUnknown,sourceControl,sourceError,onRetrySource,
     livePreviewHost,livePreviewControls,
     opticalHudCalibration:null,onOpticalHudCalibrationComplete(){},
     overlayComponentId,overlayOverview,debugCaptureTask:captureTask,

@@ -3,9 +3,8 @@ import { useI18n } from "../lib/i18n";
 import type { usePhoneCameraTune } from "../lib/usePhoneCameraTune";
 import "./phoneCameraAutoTune.css";
 
-export function PhoneCameraAutoTune({ controller, video, disabled, onResolution }: {
+export function PhoneCameraAutoTune({ controller, video, disabled }: {
   controller: ReturnType<typeof usePhoneCameraTune>; video: RefObject<HTMLVideoElement>; disabled: boolean;
-  onResolution: (resolution: "720p") => void;
 }) {
   const { locale } = useI18n(), tr = (zh: string, en: string) => locale === "en" ? en : zh;
   // Standalone legacy fixtures without a camera owner remain inert.
@@ -41,7 +40,6 @@ export function PhoneCameraAutoTune({ controller, video, disabled, onResolution 
               : tr("檢查完成，未找到可確認較好的設定；保留目前設定。", "Check complete; no confirmed better setting found. Current settings kept.")}</p>
           {result.quality.issues.length ? result.quality.issues.map(issue => <p key={issue}>{tr(...hints[issue])}</p>) : <p>{tr("未發現明顯過暗／過曝或細節不足；不代表 GPIO 接線已正確。", "No obvious low light, clipping or lack of detail; this does not verify GPIO wiring.")}</p>}
           {result.camera === "unsupported" ? <p>{tr("此相機未開放曝光／對焦／白平衡控制，不顯示無效滑桿。", "This camera does not expose exposure / focus / white-balance controls; unavailable sliders are hidden.")}</p> : null}
-          {result.resolution ? <button type="button" className="mw-quiet" disabled={disabled || busy} onClick={() => onResolution(result.resolution!)}>{tr("建議 720p · 確認並重新串流", "720p recommended · confirm & restart stream")}</button> : null}
         </> : <p>{tr("放穩手機後按一次；檢查原始影像與傳輸負載，不改線材顏色、不另開鏡頭。", "Hold the phone still, then check image quality and transport load. Wire colors stay unchanged; no second camera is opened.")}</p>}
     </div>
   </section>;

@@ -45,6 +45,7 @@
 .blueprint-hardware-info > strong { font-size: 14px; overflow-wrap: anywhere; }
 .blueprint-hardware-info label { font-size: 11px; color: var(--text-dim); margin-top: 7px; }
 .app .blueprint-hardware-info input { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-inset); color: var(--text); font-size: 12px; }
+.blueprint-hardware-hint { color: var(--text-dim); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .blueprint-photo-choice { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; margin: 12px 0; }
 .blueprint-photo-choice small { display: block; color: var(--text-dim); margin-top: 4px; overflow-wrap: anywhere; }
 .blueprint-hardware-check footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
@@ -61,6 +62,11 @@
 .blueprint-upload-entry > div { flex: 1; min-width: 0; }
 .blueprint-upload-entry strong { display: block; font-size: 13px; }
 .blueprint-upload-entry small { display: block; margin-top: 5px; font-size: 11px; color: var(--text-dim); }
+@container (max-width: 520px) {
+  .blueprint-upload-entry { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: start; }
+  .blueprint-upload-entry > button { grid-column: 2; justify-self: start; }
+  .blueprint-upload-entry strong, .blueprint-upload-entry small { overflow-wrap: anywhere; line-height: 1.6; }
+}
 .app .blueprint-workspace .blueprint-hardware-check .blueprint-upload-entry > button { flex: none; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; box-shadow: none; font-size: 12px; }
 .app .blueprint-workspace .blueprint-hardware-check footer > button:not(.blueprint-chat-link) { border-style: solid; border-width: 1px; box-shadow: none; }
 .blueprint-resource-heading { margin: 12px 0 14px; }
@@ -73,9 +79,19 @@
 .blueprint-partner-note > small { font-size: 12px; }
 .blueprint-shop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; }
 .blueprint-shop-card { min-width: 0; position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); }
-.blueprint-shop-card > strong { padding-right: 38px; font-size: 14px; overflow-wrap: anywhere; }
+.blueprint-shop-card > strong { font-size: 14px; overflow-wrap: anywhere; }
 .blueprint-shop-card > small { font-size: 11px; color: var(--text-dim); }
-.blueprint-shop-quantity { position: absolute; right: 14px; top: 16px; font-size: 12px; color: var(--accent); }
+.blueprint-shop-art { position: relative; height: 164px; flex: none; overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--accent) 11%, var(--bg-panel)), color-mix(in srgb, var(--accent) 3%, var(--bg-panel))); }
+.blueprint-shop-art-inner { width: 100%; height: 100%; transition: transform .2s ease; }
+.blueprint-shop-art .material-part-art { display: block; width: 100%; height: 100%; }
+.material-part-model { filter: drop-shadow(0 4px 5px #14384b24); }
+.blueprint-shop-card:hover .blueprint-shop-art-inner { transform: translateY(-3px); }
+.blueprint-shop-art-caption { position: absolute; left: 9px; bottom: 8px; font-size: 10px; color: var(--text-dim); }
+.blueprint-shop-quantity { position: absolute; right: 26px; top: 26px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); font-size: 12px; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .blueprint-shop-art-inner { transition: none; }
+  .blueprint-shop-card:hover .blueprint-shop-art-inner { transform: none; }
+}
 .blueprint-shop-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; margin-top: auto; border-top: 1px solid var(--border); }
 .blueprint-shop-footer > span { font-size: 10px; color: var(--text-dim); }
 .app .blueprint-shop-footer a { font-size: 12px; color: var(--accent); text-decoration: none; padding: 6px 0 6px 8px; }

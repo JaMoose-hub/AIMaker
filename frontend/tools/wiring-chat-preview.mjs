@@ -10,7 +10,7 @@ export async function startPreview(port=18810) {
   const bundle=await build({entryPoints:[fileURLToPath(new URL('wiring-chat-preview.tsx',import.meta.url))],bundle:true,
     write:false,outdir:'preview',jsx:'automatic',external:['/brand/*']});
   const js=bundle.outputFiles.find(f=>f.path.endsWith('.js')).contents,css=bundle.outputFiles.find(f=>f.path.endsWith('.css')).contents;
-  const roles=['pi_side_a','pi_side_b','component_header'],labels=['Pi 第一側','Pi 另一側','HC-SR04 接頭'];
+  const roles=['pi_side_a','pi_side_b','component_header'],labels=['Pi 內排','Pi 外排','HC-SR04 接頭'];
   let requests=[],events=[],publishedContext=null,debugRecord=null,debugConversation=null,serial=0,failNext='',delayNext=0,dropAckNext=false;
   const assets=new Map(),pictures=new Map(),receipts=new Map(),imports=new Map();
   const chat={id:'wiring-chat-conversation',kind:'project',project_id:'wiring-chat-project',locale:'zh-TW',
@@ -44,7 +44,7 @@ export async function startPreview(port=18810) {
       budget:{model_calls:0,max_model_calls:6,tests:{},max_tests_per_component:2,captures:0,max_captures:20},wiring_review:null,response_mode:'fast'};
   }
   function newReview(previous=null) {
-    return{id:previous?.id??'wiring-chat-review',revision:(previous?.revision??0)+1,round:(previous?.round??0)+1,component_id:'hc-sr04',status:'collecting',photo_flow_version:2,
+    return{id:previous?.id??'wiring-chat-review',revision:(previous?.revision??0)+1,round:(previous?.round??0)+1,component_id:'hc-sr04',status:'collecting',photo_flow_version:2,capture_plan:'pi_rows_v1',
       slots:Object.fromEntries(roles.map(r=>[r,null])),observations:[],results:[],reviews:{},missing_roles:[...roles],no_progress_count:0};
   }
   function retire() {for(const m of chat.messages)if(m.wiring_flow){m.wiring_flow.current=false;m.wiring_flow.can_act=false;m.wiring_flow.actions=[];}}
@@ -54,11 +54,11 @@ export async function startPreview(port=18810) {
     chat.messages.push(message);chat.total=chat.messages.length;return message;
   }
   function metadata(kind,extra={}) {const r=debugRecord.wiring_review;return{flow_id:'wiring-chat-flow',review_id:r.id,revision:r.revision,round:r.round,
-    component_id:r.component_id,kind,current:true,can_act:true,actions:[],...extra};}
+    component_id:r.component_id,capture_plan:r.capture_plan,kind,current:true,can_act:true,actions:[],...extra};}
   function nextQuestion() {
     retire();const r=debugRecord.wiring_review,role=roles.find(role=>!r.slots[role]);
     if(role)return append('assistant',`${labels[roles.indexOf(role)]}：請拍清楚排針、插接底部及線色${role==='component_header'?'，保留 pin 文字':''}。`,metadata('photo_request',{role,actions:['capture']}));
-    if(!r.results.length)return append('assistant','三張照片已保存，尚未確認接線。準備好後按「開始核對」。',metadata('analysis_request',{actions:['analyse','capture','crop']}));
+    if(!r.results.length)return append('assistant','三張照片已保存，尚未確認接線。準備好後按「開始分析」。',metadata('analysis_request',{actions:['analyse','capture','crop']}));
     const priority={ambiguous:0,different:1,unknown:2,similar:3};
     const row=[...r.results].sort((a,b)=>(priority[a.comparison]??2)-(priority[b.comparison]??2)).find(row=>!r.reviews[row.wire_id]||r.reviews[row.wire_id].evidence_stale);
     if(row){
@@ -72,7 +72,7 @@ export async function startPreview(port=18810) {
   function capture(role,asset_id=null) {
     const r=debugRecord.wiring_review;r.revision++;const capture_id=`synthetic-${role}-${serial+1}`,picture=fakePicture(role),asset=assets.get(asset_id);
     const sha256=asset?.sha256??key(picture,capture_id);pictures.set(capture_id,picture);
-    r.slots[role]={role,capture_id,image_url:`/api/debug/sessions/wiring-chat-debug/evidence/${capture_id}`,sha256,size:[800,600],crop:null,crop_source:'none',available:true,
+    r.slots[role]={role,target_row:role==='pi_side_a'?'inner':role==='pi_side_b'?'outer':null,capture_id,image_url:`/api/debug/sessions/wiring-chat-debug/evidence/${capture_id}`,sha256,size:[800,600],crop:null,crop_source:'none',available:true,
       ...(asset_id?{provenance:{asset_id}}:{}),photo_acceptance:{capture_id,sha256,round:r.round,accepted_at:Date.now()/1000,source:'human'}};
     r.missing_roles=roles.filter(role=>!r.slots[role]);r.status='collecting';r.results=[];r.reviews={};
     retire();append('user',`${labels[roles.indexOf(role)]}照片。`,metadata('photo',{role,capture_id,image_url:r.slots[role].image_url,current:false,can_act:false}));
@@ -187,6 +187,13 @@ export async function startPreview(port=18810) {
           reusable_review:Boolean(debugRecord?.wiring_review),project_id:t.project_id,project_revision:t.project_revision,
           guide_key:t.guide_key,guide_run:t.guide_run,context_epoch:t.context_epoch,test_id:t.test_id,reason:t.reason,mode:'wiring'};}
       }}return send(readChat());}
+    if(path===`/api/assistant/conversations/${chat.id}/wiring-review/start`){
+      const resumed=Boolean(debugRecord?.wiring_review);
+      if(!debugRecord)createDebug(body.context);
+      if(!debugRecord.wiring_review){debugRecord.wiring_review=newReview();nextQuestion();}
+      events.push({op:'direct-photo-entry',real_model_calls:0,real_hardware_calls:0});
+      return send({...result(),request_id:body.request_id,resumed});
+    }
     if(path===`/api/assistant/conversations/${chat.id}/test-help`||path==='/api/mobile/wiring-review'&&body.invitation){
       const a=body.invitation??body;if(body.invitation&&a.context_id!=='wiring-chat-context')return send({detail:'context_changed'},409);
       const answer=offerAction(a.message_id,a.offer_id,a.op,Boolean(body.invitation));return send(answer,answer.detail?409:200);}

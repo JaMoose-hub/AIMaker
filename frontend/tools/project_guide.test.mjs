@@ -88,7 +88,7 @@ test('each supported module uses its profile target and divider is not a direct-
       const card = html.match(/<section class="guide-connection-card[^>]*>([\s\S]*?)<\/section>/)?.[1];
       assert.ok(!card.includes('component-row-locator'));
       assert.ok(!card.includes('接線前先斷電。'));
-      if (cid === 'mrd-tf240-8p-cs') assert.ok(card.includes('BLK 留空，勿接 GPIO／5V。'));
+      if (cid === 'mrd-tf240-8p-cs') assert.doesNotMatch(card, /guide-pin-caution|BLK 留空/);
       assert.match(html, /class="compact-guide-details" hidden=""[\s\S]*class="component-row-locator"/);
       if (wire.connectionKind === 'divider') {
         assert.ok(html.includes('ECHO 需分壓，不可直連 GPIO'));
@@ -340,8 +340,8 @@ test('a confirmed wire stays compact while idle test information and long notes 
     assert.match(visible, /guide-pin-pair/);
     assert.match(visible, /<strong>CS<\/strong>/);
     assert.match(visible, /<strong>Pin 24<\/strong>/);
-    assert.match(visible, /guide-pin-caution/);
-    assert.ok(visible.includes(locale === 'en' ? 'Leave BLK unconnected' : 'BLK 留空'));
+    assert.doesNotMatch(visible, /guide-pin-caution|Leave BLK unconnected|BLK 留空/);
+    assert.match(reference, /BLK/);
     assert.doesNotMatch(visible, /component-test-card|guide-step-note|component-row-locator/);
     assert.match(reference, /data-view="instructions"/);
     assert.match(reference, /component-row-locator|guide-step-note/);

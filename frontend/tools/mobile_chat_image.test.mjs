@@ -19,16 +19,19 @@ function load(file, modules = {}) {
   return exports;
 }
 const history = load('../src/lib/assistantHistory.ts');
+const wiringReview = load('../src/lib/wiringReview.ts');
+const wiringChat = load('../src/lib/wiringChat.ts', { './wiringReview': wiringReview });
 function components(locale = 'zh-TW', hooks = {}, media = path => ({ url: path ? `blob:${path}` : null, error: '', retry() {} })) {
   return load('../src/components/MobileWebApp.tsx', {
     react: { ...React, ...hooks }, 'react/jsx-runtime': jsx,
     '../lib/i18n': { useI18n: () => ({ locale }) }, '../lib/assistantHistory': history,
-    '../lib/useMobileBrowser': { useMobileAssetUrl: (_, path) => media(path), mobileTestHelpOffer: () => null, mobileWiringPhotoFlow: () => null },
+    '../lib/useMobileBrowser': { useMobileAssetUrl: (_, path) => media(path), mobileTestHelpOffer: () => null, mobileWiringPhotoFlow: () => null, mobileWiringAnalysisFlow: () => null },
     '../lib/mobile': {}, '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {},
     './AssistantAnalysisTime': { AssistantAnalysisTime: () => null },
     './AssistantMarkdown': markdownFixture(locale),
     './MobileWiringAlbumPanel': {}, '../lib/useMobileWiringAlbum': {},
-    './WiringChatMessage': { WiringCaptureFraming: () => null }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
+    './WiringChatMessage': { WiringCaptureFraming: () => null, WiringReviewOverview: () => null, WiringPhotoDelivery: () => null }, '../lib/wiringChat': wiringChat, '../lib/wiringReview': wiringReview,
+    './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
   });
 }
 function nodes(tree) {

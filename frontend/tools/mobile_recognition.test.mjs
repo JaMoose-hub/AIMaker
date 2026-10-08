@@ -17,6 +17,72 @@ function session() {
       detection:{...pose,board_id:'raspberry-pi-5'},components:[{...pose,component_id:'hc-sr04'}]}}};
 }
 const lease=s=>r.mobileRecognitionLease(s,100,{key:'',deadline:0});
+test('a late context revision cannot undo a soft update when stream, view and frame counters are unchanged',()=>{
+  const old={...session(),workspace_id:'same-workspace',context_revision:0,
+    available_context:{context_id:'ctx',conversation_id:'project'},
+    view:{capture_id:'saved-photo',wire_id:'selected-wire',revision:3}};
+  old.stream.video_receive_seq=20;
+  const updated={...old,context_id:'next-step',context_revision:1,
+    available_context:{context_id:'next-step',conversation_id:'project'},
+    stream:{...old.stream,recognition:null}};
+  const current=r.receivePhoneRecognition(old,updated,200);
+  assert.equal(current.context_id,'next-step');
+  assert.deepEqual(current.view,old.view,'A soft context update preserves the selected saved photograph');
+  for(const stale of [old,{...old,stream:{...old.stream,recognition:null}}]) {
+    const result=r.receivePhoneRecognition(current,stale,1000);
+    assert.equal(result,current,'Both recognition and status-only late responses retain the current snapshot');
+    assert.equal(result.context_revision,1);
+    assert.equal(result.available_context.context_id,'next-step');
+    assert.equal(result.stream.recognition,null,'The retired context cannot restore its GPIO packet');
+  }
+});
+
+test('context revision ordering preserves same-version updates, legacy snapshots and replacement phone sessions',()=>{
+  const current={...session(),context_revision:2};
+  const fresh={...session(),context_revision:2};
+  fresh.stream.preview_seq=fresh.stream.recognition.frame_seq=11;
+  assert.equal(r.receivePhoneRecognition(current,fresh,200).stream.preview_seq,11);
+  const replacement={...session(),session_id:'new-phone',context_revision:0,stream:{...session().stream,recognition:null}};
+  assert.equal(r.receivePhoneRecognition(current,replacement,200),replacement,'Revisions belong to their phone session');
+  for(const [previous,next] of [[current,session()],[session(),fresh]])
+    assert.equal(r.receivePhoneRecognition(previous,next,200).stream.preview_seq,next.stream.preview_seq,'Unversioned backends retain existing frame ordering');
+});
+
+test('stability: a late desktop snapshot cannot roll recognition back to an earlier frame or generation',()=>{
+  const current=r.receivePhoneRecognition(null,session(),100),old=session();
+  old.stream.preview_seq=old.stream.recognition.frame_seq=9;
+  assert.equal(r.receivePhoneRecognition(current,old,1000),current);
+  const retired=session();retired.stream.generation=retired.stream.recognition.generation=1;
+  retired.stream.preview_seq=retired.stream.recognition.frame_seq=999;
+  assert.equal(r.receivePhoneRecognition(current,retired,1000),current);
+});
+
+test('stability: an old photo selection or video receipt cannot replace the current desktop session',()=>{
+  const current={...session(),view:{capture_id:'current-photo',wire_id:'current-wire',revision:4}};
+  current.stream.video_receive_seq=20;
+  const oldPhoto={...session(),view:{capture_id:'old-photo',wire_id:null,revision:3}};
+  assert.equal(r.receivePhoneRecognition(current,oldPhoto,1000),current);
+  const oldVideo={...session(),view:current.view};oldVideo.stream.video_receive_seq=19;
+  assert.equal(r.receivePhoneRecognition(current,oldVideo,1000),current);
+});
+
+test('stability: clearing an expired recognition packet cannot grant its replay a new display deadline',()=>{
+  const first=r.receivePhoneRecognition(null,session(),100);
+  const expired={...first,stream:{...first.stream,recognition:null,publisher_connected:false}};
+  const replay=r.receivePhoneRecognition(expired,session(),2000);
+  assert.equal(replay.stream.recognition,null);
+  assert.equal(r.phoneRecognitionForDisplay(replay,[1920,1080],2000,r.mobileRecognitionLease(replay,2000,{key:'',deadline:0})),null);
+  const next=session();next.stream.preview_seq=next.stream.recognition.frame_seq=11;
+  assert.equal(r.receivePhoneRecognition(expired,next,2100).stream.recognition.frame_seq,11,'A new observation may recover');
+});
+
+test('stability: a stopped desktop session cannot be revived by a same-frame pre-stop response',()=>{
+  const current={...session(),stream:{...session().stream,active:false,publisher_connected:false,recognition:null}};
+  assert.equal(r.receivePhoneRecognition(current,session(),1000),current);
+  const restarted=session();restarted.stream.generation=restarted.stream.recognition.generation=3;
+  restarted.stream.preview_seq=restarted.stream.recognition.frame_seq=1;
+  assert.equal(r.receivePhoneRecognition(current,restarted,1000).stream.generation,3);
+});
 test('phone live results render even while capture is finding, with the shared unmirrored letterbox',()=>{
   const s=session();assert.equal(r.phoneRecognitionForDisplay(s,[1920,1080],101,lease(s)),s.stream.recognition);
   const box=geometry.computeLetterbox([1920,1080],1000,400);

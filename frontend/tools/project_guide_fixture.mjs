@@ -44,7 +44,7 @@ export async function renderTestCard({locale='zh-TW',...props}) {
 }
 
 export async function renderGuide({design = designFor(), session = maker.initialMaker().guide,
-  locale = 'zh-TW', check = {}, poseReady = true, cloudAI = {}, visible = true, embedded = false, floating = false, visibilityControl, tests = {}, capture = null, pinsById = new Map(board.pins.map(p => [p.id, p]))} = {}) {
+  locale = 'zh-TW', check = {}, poseReady = true, cloudAI = {}, visible = true, embedded = false, floating = false, toolbar = false, onDebug, visibilityControl, tests = {}, capture = null, pinsById = new Map(board.pins.map(p => [p.id, p]))} = {}) {
   const textUrl = dataUrl(`export const useMakerText = () => (zh, en) => ${JSON.stringify(locale)} === 'zh-TW' ? zh : en;`);
   const messages = JSON.parse(readFileSync(new URL(`../src/locales/${locale}.json`, import.meta.url), 'utf8'));
   const i18nUrl = dataUrl(`export const useI18n = () => ({locale: ${JSON.stringify(locale)},
@@ -73,7 +73,7 @@ export async function renderGuide({design = designFor(), session = maker.initial
     '../lib/useCloudWiringCheck': checkUrl,
   });
   const {ProjectGuidePanel} = await import(projectUrl);
-  const html = renderToStaticMarkup(createElement(ProjectGuidePanel, {design, session, visible, embedded, floating, visibilityControl, pinsById, disabled: false,
+  const html = renderToStaticMarkup(createElement(ProjectGuidePanel, {design, session, visible, embedded, floating, toolbar, onDebug, visibilityControl, pinsById, disabled: false,
     cloudAI: {model: 'fixture', effort: 'low', available: true, supportsImages: true, busy: false, ...cloudAI},
     onChange(){throw Error('Rendering must never change manual progress');}, onTargetChange(){}, onVisibleChange(){}, onDeploy(){},
   }));

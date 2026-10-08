@@ -98,7 +98,8 @@ async def select_live_source(body: LiveSourceRequest, request: Request):
         service = state.mobile_service
         with service.lock:
             session = service.require(body.session_id)
-            if not service.latest or session['conversation_id'] != service.latest['conversation_id']:
+            current = service.current_context(session['conversation_id'])
+            if not current or current['context_id'] != session['context_id']:
                 raise HTTPException(409, 'mobile_context_changed')
             if not session['stream']['active'] or body.generation != session['stream']['generation']:
                 raise HTTPException(409, 'mobile_stream_generation_changed')

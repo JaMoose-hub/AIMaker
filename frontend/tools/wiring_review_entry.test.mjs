@@ -5,7 +5,7 @@ import ts from 'typescript';
 import React from 'react';
 import * as ReactDOM from 'react-dom';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {photoSequence} from './wiring_photo_flow_fixture.mjs';
+import {photoSequence, framingGuide, expectedLocationHelpers, expectedLocationComponent} from './wiring_photo_flow_fixture.mjs';
 
 // Run the production entry policy and component with isolated React lifecycles.
 // This suite does not capture photographs, call a model, or operate hardware.
@@ -358,7 +358,9 @@ function retestHarness(initial) {
   h = mountEntry({review: initial, resumable: true, children: () => React.createElement(StatefulCard)}, injected => {
     hooks = injected;
     Card = compile('../src/components/WiringReviewCard.tsx', {react: hooks,
+      '../lib/wiringExpectedLocation':expectedLocationHelpers,'./WiringExpectedLocation':expectedLocationComponent('en',hooks),
       './WiringPhotoSequence': {WiringPhotoSequence:photoSequence(hooks)},
+      './WiringFramingGuide': {WiringFramingGuide:framingGuide()},
       '../lib/useMaker': {useMakerText: () => (_zh, en) => en},
       '../lib/wiringReview': compile('../src/lib/wiringReview.ts'),
     }).WiringReviewCard;

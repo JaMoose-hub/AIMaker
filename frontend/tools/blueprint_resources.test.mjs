@@ -53,6 +53,7 @@ function compactHeader({hasCandidate=false,generating=false,locale='zh-TW'}={}) 
     '../lib/blueprintResources':resources,'../lib/componentWiringGuides':{guideFor:()=>({})},
     './CircuitDiagram':{CircuitDiagram:'circuit'},'./DesignViewSwitch':{DesignViewSwitch:'view-switch'},
     './HardwarePartsCheck':{HardwarePartsCheck:'parts-check'},'./AssemblyGuide':{AssemblyGuide:'assembly'},'./BlueprintPage.css':{},
+    './MaterialPartArt':{MaterialPartArt:'part-art'},
   });
   const design={title:'桌上型三輪測距恐龍',revision:6,source:'user',bom:[],wiring:[],component_ids:[],instructions:[],unresolved:[]};
   const tree=BlueprintPage({design,hasCandidate,generating,onGuide:()=>calls.push('guide'),onEdit:()=>calls.push('edit'),onViewChange(){}});

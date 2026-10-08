@@ -131,6 +131,17 @@
 .circuit-connection:focus-visible .circuit-pin-label, .circuit-module-pin:focus-visible .circuit-pin-hit { stroke: #b6e8ff; stroke-width: 2; }
 .circuit-connection:hover, .circuit-module-pin:hover { opacity: 1; }
 .circuit-connection:hover .circuit-pin-label { fill: #2b5051; }
+.circuit-connection.active .circuit-wire-path {
+  filter: drop-shadow(0 0 1.5px #f8fbff);
+  animation: circuit-wire-pulse 2.4s ease-in-out infinite;
+}
+@keyframes circuit-wire-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .72; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .circuit-connection.active .circuit-wire-path { animation: none; }
+}
 .circuit-module-pin:hover .circuit-pin-hit { fill: #305265; }
 .circuit-legend { display: flex; flex-wrap: wrap; gap: 10px; border-top: 1px solid #2b3c50; margin: 7px 0 10px; padding-top: 12px; font-size: 11px; color: #b4c2d1; }
 .circuit-legend span { display: flex; align-items: center; gap: 5px; }

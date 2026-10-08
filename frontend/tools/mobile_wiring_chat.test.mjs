@@ -11,12 +11,24 @@ function load(file, modules = {}) {
     return exports;
 }
 const reviewDomain = load('../src/lib/wiringReview.ts');
+const wiringChatDomain = load('../src/lib/wiringChat.ts', { './wiringReview': reviewDomain });
 const analysisDomain = load('../src/lib/assistantAnalysis.ts');
 const mediaDomain = load('../src/lib/mobileBrowser.ts');
 const round = (revision = 1, number = 1) => ({ id: 'review', revision, round: number, component_id: 'hc-sr04', status: 'collecting', photo_flow_version: 2,
     slots: { pi_side_a: null, pi_side_b: null, component_header: null }, results: [], observations: [], reviews: {}, no_progress_count: 0, missing_roles: ['pi_side_a', 'pi_side_b', 'component_header'] });
 const turn = () => new Promise(done => setImmediate(done));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+
+function albumFixture(request) {
+    const states=[],refs=[];let cursor=0,refCursor=0,review=request.review;
+    const hooks={useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},
+        useRef(initial){return refs[refCursor++]??={current:initial};},useEffect(){}};
+    const {useMobileWiringAlbum}=load('../src/lib/useMobileWiringAlbum.ts',{react:hooks,'./wiringReview':reviewDomain});
+    const files=['pi-a.jpg','pi-b.jpg','header.jpg'].map(name=>({name,type:'image/jpeg'}));
+    const render=()=>{cursor=refCursor=0;return useMobileWiringAlbum({...request,review});};
+    render().stage(files,request);render().confirm(true);render();
+    return{files,render,update(next){review=next;render();}};
+}
 
 async function fixture(run, options = {}) {
     const saved = { window: globalThis.window, document: globalThis.document, WebSocket: globalThis.WebSocket, setTimeout: globalThis.setTimeout,
@@ -26,6 +38,8 @@ async function fixture(run, options = {}) {
     globalThis.WebSocket = class { static OPEN = 1; static CONNECTING = 0; readyState = 1; close() {} };
     globalThis.setTimeout = globalThis.setInterval = () => 1;
     globalThis.clearTimeout = globalThis.clearInterval = () => {};
+    const navigatorDescriptor=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+    if(options.cameraReady) Object.defineProperty(globalThis,'navigator',{configurable:true,value:{mediaDevices:{getUserMedia:async()=>({})}}});
     const states = [], refs = [], memos = [], effects = [], cleanups = [];
     let stateCursor = 0, refCursor = 0, memoCursor = 0, effectCursor = 0;
     const hooks = { useState(initial) { const i = stateCursor++; if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial;
@@ -34,19 +48,21 @@ async function fixture(run, options = {}) {
         useMemo(callback, deps) { const i = memoCursor++, previous = memos[i]; if (!previous || deps.some((value, index) => value !== previous.deps[index])) memos[i] = { deps, value: callback() }; return memos[i].value; },
         useCallback: callback => callback, useEffect(callback) { const i = effectCursor++; if (!(i in effects)) effects[i] = callback; } };
     const calls = [], file = { name: 'side.jpg', type: 'image/jpeg' };
-    let review = round(), contextId = 'context', requestOverride = null, uploadOverride = null, counter = 0;
+    let review = round(), contextId = 'context', contextRevision = 0, workspaceId = options.workspaceId,
+        publisherStops = 0, publisherStarts = 0, requestOverride = null, uploadOverride = null, counter = 0;
     const flow = (role = 'pi_side_a', extra = {}) => ({ flow_id: 'flow', review_id: review.id, revision: review.revision, round: review.round,
         component_id: review.component_id, kind: 'photo_request', role, current: true, can_act: true, actions: ['capture'], ...extra });
     let conversation = { id: 'chat', kind: 'project', messages: [{ id: 'question', role: 'assistant', source: 'legacy-debug', text: '請拍 Pi 第一側。', epoch: 0, round: 1, wiring_flow: flow() }], jobs: [], context_epoch: 0, round: 1,
         ...(options.activeMedia ? { active_media: structuredClone(options.activeMedia) } : {}) };
     const snapshot = () => ({ review: structuredClone(review), can_act: true, component_label: 'HC-SR04', conversation: structuredClone(conversation) });
-    const session = () => ({ session_id: 'phone', conversation_id: 'chat', context_id: contextId, context: { round: 1, stage: options.stage ?? 'guide',
+    const session = () => ({ session_id: 'phone', conversation_id: 'chat', context_id: contextId,
+        workspace_id: workspaceId, context_revision: contextRevision, context: { round: 1, stage: options.stage ?? 'guide',
         design: { current: { id: 'project', revision: 2, component_ids: ['hc-sr04'] } },
         context: { debug_context: { guide_run: 1, test_keys: { 'hc-sr04': 'selected-test-key' } } } },
         view: { capture_id: null, wire_id: null, revision: 1 }, stream: { active: false, generation: 0, state: 'finding', can_capture: false } });
     const empty = () => ({ text: options.text ?? '保留普通聊天草稿', attachments: options.noAttachments ? [] : [{ id: 'ordinary', name: 'normal.jpg', type: 'image',
         ...(options.purpose ? { purpose: options.purpose } : {}),
-        ...(options.uploadAttachment ? {} : { asset: { id: 'ordinary-asset' } }) }], outbox: structuredClone(options.outbox ?? []), captureJob: null });
+        ...(options.uploadAttachment ? {} : { asset: { id: 'ordinary-asset' } }) }], outbox: structuredClone(options.outbox ?? []), captureJob: options.captureJob ?? null });
     class Api {
         pairing = { token: 'synthetic', session_id: 'phone', conversation_id: 'chat' };
         cancelPending() {}
@@ -82,25 +98,74 @@ async function fixture(run, options = {}) {
     const browser = { MobileBrowserApi: Api, loadBrowserPairing: () => ({ token: 'synthetic', session_id: 'phone', conversation_id: 'chat', context_id: 'context' }),
         emptyBrowserDraft: empty, idleBrowserRtc: () => ({ stats: {}, stream: null }), mobileBrowserDraftKey: () => 'draft-key', loadBrowserDraft: async () => empty(),
         saveBrowserDraft: async (_, value) => { savedDrafts.push(structuredClone(value)); }, saveBrowserPairing() {}, browserLease: () => ({ key: '', deadline: 0 }),
-        mergeBrowserSession: (_, next) => next, mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false,
+        mergeBrowserSession: mediaDomain.mergeBrowserSession, sameBrowserWorkspace: mediaDomain.sameBrowserWorkspace,
+        validateBrowserAttachments: mediaDomain.validateBrowserAttachments,
+        mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false,
         browserMediaReference: mediaDomain.browserMediaReference, browserUuid: () => `request-${++counter}`, browserAttachment: async selected => ({ id: 'attachment', upload_id: 'upload', file: selected, name: selected.name,
             filename: selected.name, type: 'image', mime: selected.type, size: 100, width: 1080, height: 1920 }) };
-    const { useMobileBrowser, mobileWiringPhotoFlow } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },
-        './mobile': { mobileVideoFresh: () => false }, './mobileViewerStats': { mobileMeasurementFresh: () => false },
-        './mobileBrowserRtc': { idleBrowserRtc: () => ({ stats: {}, stream: null }), BrowserPublisher: class { async stop() {} stopLocal() {} } }, './wiringReview': reviewDomain,
+    const { useMobileBrowser, mobileWiringPhotoFlow, mobileWiringAnalysisFlow } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },
+        './mobile': { mobileVideoFresh: () => false }, './mobileViewerStats': load('../src/lib/mobileViewerStats.ts'),
+        './mobileBrowserRtc': { idleBrowserRtc: () => ({ stats: {}, stream: null }), BrowserPublisher: class {
+            async stop() { publisherStops++;await options.onPublisherStop?.(publisherStops); }
+            async start() { publisherStarts++; } stopLocal() {} } }, './wiringReview': reviewDomain,
         './assistantAnalysis': analysisDomain });
     const render = () => { stateCursor = refCursor = memoCursor = effectCursor = 0; return useMobileBrowser(); };
     try {
         render(); for (const effect of effects) { const cleanup = effect(); if (cleanup) cleanups.push(cleanup); }
         for (let i = 0; i < 4; i++) await turn();
-        await run({ render, file, calls, savedDrafts, snapshot, setReview(value) { review = value; }, getReview: () => review, setContext(value) { contextId = value; }, setEpoch(value) { conversation.context_epoch = value; },
-            eligibility: mobileWiringPhotoFlow, chat: () => structuredClone(conversation), setConversation(value) { conversation = value; }, setFlow(value) { conversation.messages[0].wiring_flow = { ...conversation.messages[0].wiring_flow, ...value }; },
+        await run({ render, file, calls, savedDrafts, snapshot, setReview(value) { review = value; }, getReview: () => review,
+            setContext(value) { contextId = value; contextRevision++; }, setWorkspace(value) { workspaceId = value; },
+            publisherStops: () => publisherStops,publisherStarts:()=>publisherStarts,
+            setEpoch(value) { conversation.context_epoch = value; },
+            eligibility: mobileWiringPhotoFlow, analysisEligibility: mobileWiringAnalysisFlow, chat: () => structuredClone(conversation), setConversation(value) { conversation = value; }, setFlow(value) { conversation.messages[0].wiring_flow = { ...conversation.messages[0].wiring_flow, ...value }; },
             onRequest(callback) { requestOverride = callback; }, onUpload(callback) { uploadOverride = callback; } });
     } finally {
         for (const cleanup of cleanups.reverse()) cleanup();
         Object.assign(globalThis, saved);
+        if(options.cameraReady) {if(navigatorDescriptor) Object.defineProperty(globalThis,'navigator',navigatorDescriptor);else delete globalThis.navigator;}
     }
 }
+
+test('phone background and step sync keep the camera, while a real workspace handoff releases it',async()=>fixture(async f=>{
+    const original=f.render();
+    f.setContext('next-step');await original.refresh();
+    assert.equal(f.render().session.context_id,'next-step');assert.equal(f.publisherStops(),0);
+    assert.equal(f.render().draft,original.draft);assert.deepEqual(f.render().attachments,original.attachments);
+    f.setContext('next-version');f.setWorkspace('changed-project-version');await f.render().refresh();
+    assert.equal(f.publisherStops(),1,'A changed project binding still releases the old camera');
+}, {workspaceId:'same-project-version'}));
+
+test('same workspace update during stream restart still starts one publisher; changed workspace cancels it',async()=>{
+    for(const material of [false,true]) {
+        const stop=deferred();
+        await fixture(async f=>{
+            const starting=f.render().startStream();await turn();assert.equal(f.publisherStarts(),0);
+            f.setContext('next-step');if(material)f.setWorkspace('new-version');
+            await f.render().refresh();stop.resolve();await starting;
+            assert.equal(f.publisherStarts(),material?0:1);
+        },{workspaceId:'same-project-version',cameraReady:true,onPublisherStop:n=>n===1?stop.promise:Promise.resolve()});
+    }
+});
+
+test('failed phone message retries its original request after routine sync without changing payload or uploading twice',async()=>fixture(async f=>{
+    let fail=true;f.onRequest(path=>{if(path==='messages'&&fail)throw Error('connection interrupted');});
+    await f.render().send();const queued=f.render().outbox[0],original=f.calls.find(c=>c.path==='messages').body;
+    assert.equal(queued.workspace_id,'same-project-version');assert.equal(queued.status,'failed');
+    f.setContext('next-step');await f.render().refresh();fail=false;await f.render().retry(queued.id);
+    assert.deepEqual(f.calls.filter(c=>c.path==='messages').at(-1).body,original);
+    assert.equal(f.render().outbox.length,0);
+    assert.equal(f.calls.filter(c=>c.path==='assets').length,1);
+},{workspaceId:'same-project-version',uploadAttachment:true}));
+
+test('a retired GPIO capture is marked explicitly and its original photo can become a chat attachment',async()=>fixture(async f=>{
+    const photo=f.render().captureJob.attachment;
+    f.setContext('next-step');await f.render().refresh();
+    assert.match(f.render().captureJob.error,/定位請求已失效/);assert.equal(f.render().busy,false);
+    assert.equal(f.render().discardCapture(true),true);
+    assert.equal(f.render().captureJob,null);assert.deepEqual(f.render().attachments,[photo]);
+    assert.equal(f.calls.some(c=>c.path==='captures'||c.path==='messages'||c.path==='assets'),false);
+},{workspaceId:'same-project-version',noAttachments:true,captureJob:{ticket:{context_id:'context',ticket_id:'ticket',generation:1,expires_at:9999999999},
+    request_id:'capture-original',attachment:{id:'photo',file:{name:'original.jpg'},name:'original.jpg',type:'image',size:100,mime:'image/jpeg'}}}));
 
 const inheritedPhoto = { epoch: 0, round: 1, asset_ids: ['previous-photo'], capture_id: 'previous-capture', attachments: [{ asset_id: 'previous-photo', filename: 'Pi.jpg', type: 'image' }] };
 
@@ -195,8 +260,9 @@ test('mobile shows the current framing example without capturing and keeps old q
     const { MobileWiringChatActions } = load('../src/components/MobileWebApp.tsx', {
         react: { ...hooks, useState: initial => [initial, () => {}] }, '../lib/i18n': { useI18n: () => ({ locale: 'zh-TW' }) }, '../lib/assistantHistory': {},
         './MobileWiringAlbumPanel': {}, '../lib/useMobileWiringAlbum': {},
-        './AssistantAnalysisTime': {}, './AssistantMarkdown': { AssistantMarkdown: () => null }, './WiringChatMessage': { WiringCaptureFraming: framing }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
-        '../lib/mobile': {}, '../lib/useMobileBrowser': { mobileWiringPhotoFlow: f.eligibility },
+        './AssistantAnalysisTime': {}, './AssistantMarkdown': { AssistantMarkdown: () => null }, './WiringChatMessage': { WiringCaptureFraming: framing, WiringReviewOverview: () => null, WiringPhotoDelivery: () => null },
+        '../lib/wiringChat': wiringChatDomain, '../lib/wiringReview': reviewDomain, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
+        '../lib/mobile': {}, '../lib/useMobileBrowser': { mobileWiringPhotoFlow: f.eligibility, mobileWiringAnalysisFlow: f.analysisEligibility },
         '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {} });
     const w = f.render(), message = w.conversation.messages[0];
     const nodes = tree => { const result = []; const visit = node => {
@@ -272,6 +338,46 @@ test('a failed response reconciles saved photo evidence and the shared next ques
     assert.equal(w.conversation.messages[0].wiring_flow.current, false); assert.equal(f.calls.filter(call => call.method === 'POST').length, 1);
 }));
 
+test('lost delivery response synchronizes the selected album photo once from the saved immutable receipt',async()=>fixture(async f=>{
+    let w=f.render();const request=w.prepareWiringChatPhoto(w.conversation.messages[0]),album=albumFixture(request),file=album.files[0];
+    let callbacks=0;
+    f.onRequest((path,options)=>{
+        if(path!=='wiring-review'||options.method!=='POST')return;
+        const next=round(2);next.slots.pi_side_a={role:'pi_side_a',capture_id:'saved',sha256:'asset-hash',
+            provenance:{asset_id:'asset',sha256:'asset-hash'},photo_acceptance:{source:'human',capture_id:'saved',sha256:'asset-hash',round:1}};
+        f.setReview(next);const conversation=f.chat();conversation.messages[0].wiring_flow.current=false;conversation.messages[0].wiring_flow.can_act=false;
+        conversation.messages.push({id:'next',role:'assistant',text:'Next side',epoch:0,round:1,
+            wiring_flow:{...conversation.messages[0].wiring_flow,revision:2,role:'pi_side_b',current:true,can_act:true}});f.setConversation(conversation);
+        throw Error('lost after save');
+    });
+    assert.equal(await w.uploadWiringChatPhoto(file,request,()=>{callbacks++;album.render().submitted(request,file);}),false);
+    assert.equal(album.render().selection.photos[0].sent,false);assert.equal(callbacks,0);
+    w=f.render();await w.refreshWiringReview();w=f.render();album.update(w.wiringReview);
+    assert.equal(w.pendingWiringPhoto,null);assert.equal(w.conversation.messages.at(-1).wiring_flow.role,'pi_side_b');
+    assert.equal(album.render().selection.photos[0].sent,true);assert.equal(callbacks,1);
+    album.render().assign(0,'component_header');assert.equal(album.render().selection.photos[0].role,'pi_side_a');
+    await w.refreshWiringReview();assert.equal(callbacks,1);
+    assert.equal(f.calls.filter(call=>call.path==='assets').length,1);assert.equal(f.calls.filter(call=>call.method==='POST').length,1);
+}));
+
+test('ordinary successful delivery notifies once while a mismatched recovery receipt cannot mark an album photo sent',async()=>{
+    await fixture(async f=>{
+        const w=f.render(),request=w.prepareWiringChatPhoto(w.conversation.messages[0]);let saved=0;
+        assert.equal(await w.uploadWiringChatPhoto(f.file,request,()=>saved++),true);
+        await f.render().refreshWiringReview();assert.equal(saved,1);
+    });
+    await fixture(async f=>{
+        const w=f.render(),request=w.prepareWiringChatPhoto(w.conversation.messages[0]);let saved=0;
+        f.onRequest((path,options)=>{
+            if(path!=='wiring-review'||options.method!=='POST')return;
+            const next=round(2);next.slots.pi_side_a={role:'pi_side_a',capture_id:'foreign',sha256:'wrong-hash',provenance:{asset_id:'other-asset'}};
+            f.setReview(next);throw Error('lost after save');
+        });
+        assert.equal(await w.uploadWiringChatPhoto(f.file,request,()=>saved++),false);
+        await f.render().refreshWiringReview();assert.equal(saved,0);assert.ok(f.render().pendingWiringPhoto);
+    });
+});
+
 test('an old snapshot or a mismatched conversation receipt cannot replace the current question', async () => {
   await fixture(async f => {
     let w = f.render(); const original = f.snapshot(), delayed = deferred();
@@ -320,6 +426,73 @@ test('invitation Start synchronizes the first shared photo question from its rec
     assert.equal(await w.testHelpAction(w.conversation.messages[0], 'start'), true); w = f.render();
     assert.equal(w.conversation.messages.at(-1).id, 'question'); assert.equal(w.prepareWiringChatPhoto(w.conversation.messages.at(-1)).role, 'pi_side_a');
     assert.equal(f.calls.filter(call => call.method === 'POST').length, 1); assert.equal(w.draft, '保留普通聊天草稿');
+}));
+
+test('phone analysis submits the current shared dialogue once and immediately adopts the progress receipt',async()=>fixture(async f=>{
+    f.setFlow({kind:'analysis_request',actions:['analyse']});
+    let w=f.render();await w.refresh();w=f.render();const message=w.conversation.messages[0],response=deferred();
+    f.onRequest((path,options)=>path==='wiring-review'&&options.method==='POST'?response.promise:undefined);
+    const first=w.analyseWiringChat(message);assert.equal(await w.analyseWiringChat(message),false);
+    const posts=f.calls.filter(call=>call.method==='POST');assert.equal(posts.length,1);
+    assert.deepEqual(posts[0].body,{action:{op:'analyse',review_id:'review',revision:1},
+      dialogue:{message_id:'question',flow_id:'flow',request_id:'request-1'}});
+    assert.equal(f.render().wiringReviewBusy,true);
+    const next=f.snapshot();next.review.revision=2;next.review.status='analysing';
+    next.conversation.messages[0].wiring_flow.current=false;
+    next.conversation.messages.push({...message,id:'analysing',wiring_flow:{...message.wiring_flow,
+      kind:'analysing',revision:2,can_act:false,actions:[],started_at:123}});
+    next.conversation.wiring_analysis=activeAnalysis(123);response.resolve(next);
+    assert.equal(await first,true);w=f.render();assert.equal(w.conversation.messages.at(-1).id,'analysing');
+    assert.equal(w.wiringReviewBusy,false);assert.equal(w.chatSendBlocked,true);
+    assert.equal(w.draft,'保留普通聊天草稿');assert.equal(w.attachments[0].id,'ordinary');assert.equal(f.publisherStops(),0);
+    assert.equal(await w.analyseWiringChat(message),false);assert.equal(f.calls.filter(call=>call.method==='POST').length,1);
+}));
+
+test('a delayed analysis response cannot overwrite a newer result already received by polling',async()=>fixture(async f=>{
+    f.setFlow({kind:'analysis_request',actions:['analyse']});let w=f.render();await w.refresh();w=f.render();
+    const old=f.snapshot(),response=deferred();
+    f.onRequest((path,options)=>path==='wiring-review'&&options.method==='POST'?response.promise:undefined);
+    const running=w.analyseWiringChat(w.conversation.messages[0]);
+    const done=f.chat();done.wiring_analysis=null;done.messages[0].wiring_flow={...done.messages[0].wiring_flow,kind:'wire_review',revision:3,actions:[]};
+    f.setConversation(done);await w.refresh();
+    old.review.revision=2;old.review.status='analysing';old.conversation.wiring_analysis=activeAnalysis(123);
+    response.resolve(old);assert.equal(await running,true);w=f.render();
+    assert.equal(w.conversation.wiring_analysis,null);assert.equal(w.conversation.messages[0].wiring_flow.kind,'wire_review');
+    assert.equal(w.chatSendBlocked,false);
+}));
+
+test('a phone analysis reply arriving after the conversation epoch changes is ignored',async()=>fixture(async f=>{
+    f.setFlow({kind:'analysis_request',actions:['analyse']});let w=f.render();await w.refresh();w=f.render();
+    const old=f.snapshot(),response=deferred();
+    f.onRequest((path,options)=>path==='wiring-review'&&options.method==='POST'?response.promise:undefined);
+    const running=w.analyseWiringChat(w.conversation.messages[0]);f.setEpoch(1);await w.refresh();
+    response.resolve(old);assert.equal(await running,false);w=f.render();
+    assert.equal(w.conversation.context_epoch,1);assert.equal(w.wiringReviewBusy,false);
+}));
+
+test('phone analysis rejects stale authority and never infers permission from the ready text',async()=>fixture(async f=>{
+    f.setFlow({kind:'analysis_request',actions:['analyse']});let w=f.render();await w.refresh();w=f.render();
+    const message=w.conversation.messages[0],eligible=(m=message,s=w.session,c=w.conversation,r=w.wiringReview,can=true)=>f.analysisEligibility(m,s,c,r,can);
+    assert.ok(eligible());
+    for(const changed of [{current:false},{can_act:false},{flow_id:''},{actions:[]},{kind:'photo_request'},
+      {review_id:'other'},{revision:99},{round:2},{component_id:'tft'}]) assert.equal(eligible({...message,wiring_flow:{...message.wiring_flow,...changed}}),null);
+    assert.equal(eligible({...message,archived:true}),null);assert.equal(eligible({...message,epoch:1}),null);
+    assert.equal(eligible(message,{...w.session,available_context:{context_id:'other'}}),null);
+    assert.equal(eligible(message,w.session,w.conversation,{...w.wiringReview,status:'stale'}),null);
+    assert.equal(eligible(message,w.session,w.conversation,w.wiringReview,false),null);
+    f.setFlow({revision:2});await w.refresh();assert.equal(await w.analyseWiringChat(message),false);
+    assert.equal(f.calls.filter(call=>call.method==='POST').length,0);
+}));
+
+test('failed phone analysis stays retryable and refuses a response for another photo round',async()=>fixture(async f=>{
+    f.setFlow({kind:'error',actions:['analyse']});let w=f.render();await w.refresh();w=f.render();
+    f.onRequest((path,options)=>{if(path==='wiring-review'&&options.method==='POST')throw Error('analysis transport failed');});
+    assert.equal(await w.analyseWiringChat(w.conversation.messages[0]),false);w=f.render();
+    assert.match(w.wiringReviewError,/analysis transport failed/);assert.equal(w.wiringReviewBusy,false);
+    f.onRequest((path,options)=>path==='wiring-review'&&options.method==='POST'
+      ?{...f.snapshot(),review:{...f.getReview(),round:2}}:undefined);
+    assert.equal(await w.analyseWiringChat(w.conversation.messages[0]),false);w=f.render();
+    assert.match(w.wiringReviewError,/分析回覆/);assert.equal(w.wiringReview.round,1);assert.equal(w.draft,'保留普通聊天草稿');
 }));
 
 const activeAnalysis = started => ({ flow_id: 'analysis', session_id: 'debug', review_id: 'review', round: 1, revision: 4, started_at: started });
@@ -372,7 +545,8 @@ test('mobile analysis UI keeps one inline server clock, blocks form submission a
     const { ChatView } = load('../src/components/MobileWebApp.tsx', { react: hooks, '../lib/i18n': { useI18n: () => ({ locale: 'zh-TW' }) },
         '../lib/assistantHistory': load('../src/lib/assistantHistory.ts'), './AssistantAnalysisTime': { AssistantAnalysisTime: time }, './AssistantMarkdown': { AssistantMarkdown: () => null }, '../lib/mobile': {},
         '../lib/useMobileBrowser': {}, '../lib/mobileBrowserCapture': {}, '../lib/mobileWebView': {}, '../mobileWeb.css': {},
-        './WiringChatMessage': { WiringCaptureFraming: () => null }, './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
+        './WiringChatMessage': { WiringCaptureFraming: () => null, WiringReviewOverview: () => null, WiringPhotoDelivery: () => null }, '../lib/wiringChat': wiringChatDomain, '../lib/wiringReview': reviewDomain,
+        './PhoneCameraAutoTune': { PhoneCameraAutoTune: () => null },
         './MobileWiringAlbumPanel': {}, '../lib/useMobileWiringAlbum': {} });
     const w = { draft: '可以編輯', attachments: [], outbox: [], busy: false, chatSendBlocked: true, wiringAnalysis: { startedAt: 123 },
         conversation: { id: 'chat', context_epoch: 0, round: 1, before: null, jobs: [], messages: [

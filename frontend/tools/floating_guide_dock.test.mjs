@@ -13,7 +13,7 @@ function fixture(cid='hc-sr04',phase='awaiting_near') {
     reserved:true,invalidated:false,outcome:'running',phase,reason:null,detail:'',samples:{},logs:[],options:['1234','2468','4567','7890']};
   return {design,session,floating:true,embedded:true,tests:{status:{connected:true,active:run,results:[run]}},run};
 }
-const beforeDetails = html => html.split('<details class="test-diagnostics">')[0];
+const beforeDetails = html => html.split('class="compact-guide-details" hidden=""')[0];
 
 test('collapse control shares the existing module header in prepare, wiring and test phases', async()=>{
   const design=designFor(['hc-sr04','mrd-tf240-8p-cs']);
@@ -49,7 +49,7 @@ test('dock stale history is not a current pass and disconnected start is disable
   const html=await renderGuide(f),visible=beforeDetails(html);
   assert.match(visible,/待重測/);assert.doesNotMatch(visible,/功能通過/);
   assert.match(visible,/<button class="guide-primary-action" disabled=""[^>]*>連接 Pi 後測試/);
-  assert.match(html,/<details class="test-diagnostics">[\s\S]*非目前接線證據/);
+  assert.doesNotMatch(html,/test-diagnostics|test-safety-note/);
 });
 test('dock never collapses TFT code choices, abnormal options or stop into diagnostics',async()=>{
   const f=fixture('mrd-tf240-8p-cs','awaiting_visual');f.run.outcome='awaiting_confirmation';
@@ -66,13 +66,17 @@ test('lost or stale active tests keep Stop but disallow advancing samples',async
     assert.match(visible,/停止本次測試/);assert.doesNotMatch(visible,/準備好了，取樣/);
   }
 });
-test('active wiring keeps real endpoints and required TFT warning without starting a test',async()=>{
+test('active wiring keeps real endpoints without a repeated TFT warning or starting a test',async()=>{
   for(const cid of ['hc-sr04','mrd-tf240-8p-cs']) {
     const design=designFor([cid]),session=maker.startProjectGuide(maker.emptyGuide());
     const html=await renderGuide({design,session,floating:true,embedded:true});
     assert.match(html,/data-wiring-target=/);assert.match(html,/guide-primary-action/);
     assert.doesNotMatch(html,/data-view="dock"/);
-    if(cid==='mrd-tf240-8p-cs')assert.match(html,/BLK 留空/);
+    if(cid==='mrd-tf240-8p-cs') {
+      const card=html.match(/<section[^>]*class="guide-connection-card[\s\S]*?<\/section>/)?.[0];
+      assert.ok(card);assert.doesNotMatch(card,/BLK|guide-pin-caution/);
+      assert.match(html,/class="compact-guide-details" hidden=""[\s\S]*BLK/);
+    }
   }
 });
 test('bottom dock uses full width and content height, with a single column on narrow screens',()=>{

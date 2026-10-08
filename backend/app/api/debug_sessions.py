@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from app.api.debug import Context
@@ -37,7 +37,7 @@ class CreateSession(BaseModel):
 
 
 class SessionAction(BaseModel):
-    action: Literal["ready", "capture", "continue", "message", "stop", "start_trial", "analyse", "context_changed", "start_debug", "prepare_wiring", "wiring_review"]
+    action: Literal["ready", "capture", "continue", "message", "stop", "stop_idle_wiring_review", "start_trial", "analyse", "context_changed", "start_debug", "prepare_wiring", "wiring_review"]
     request_id: str = Field(min_length=1, max_length=100)
     context: SessionContext | None = None
     text: str | None = Field(default=None, max_length=2000)
@@ -54,8 +54,9 @@ def _guard(request, fn):
 
 
 @router.get("/sessions")
-def active(request: Request, project_id: str | None = None):
-    return _guard(request, lambda: request.app.state.debug_sessions.active(project_id))
+def active(request: Request, response: Response, project_id: str | None = None, history_version: str | None = Query(default=None, max_length=180)):
+    response.headers["Cache-Control"] = "no-store"
+    return _guard(request, lambda: request.app.state.debug_sessions.active(project_id, history_version))
 
 
 @router.post("/sessions")
@@ -67,8 +68,9 @@ def create(body: CreateSession, request: Request):
 
 
 @router.get("/sessions/{session_id}")
-def get(session_id: str, request: Request):
-    return _guard(request, lambda: request.app.state.debug_sessions.get(session_id))
+def get(session_id: str, request: Request, response: Response, history_version: str | None = Query(default=None, max_length=180)):
+    response.headers["Cache-Control"] = "no-store"
+    return _guard(request, lambda: request.app.state.debug_sessions.get(session_id, history_version))
 
 
 @router.post("/sessions/{session_id}/actions")
@@ -86,8 +88,9 @@ def evidence(session_id: str, capture_id: str, request: Request, view: str = "ov
 
 
 @router.get("/conversations")
-def conversation_for_project(request: Request, project_id: str):
-    return _guard(request, lambda: request.app.state.debug_sessions.conversation_for_project(project_id))
+def conversation_for_project(request: Request, response: Response, project_id: str, history_version: str | None = Query(default=None, max_length=180)):
+    response.headers["Cache-Control"] = "no-store"
+    return _guard(request, lambda: request.app.state.debug_sessions.conversation_for_project(project_id, history_version))
 
 
 class RestartConversation(BaseModel):

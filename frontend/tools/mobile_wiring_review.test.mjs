@@ -61,7 +61,8 @@ async function fixture(run) {
     const browser = { MobileBrowserApi: Api, loadBrowserPairing: () => ({ token: 'synthetic', session_id: 'phone', conversation_id: 'chat', context_id: 'context' }),
         emptyBrowserDraft: empty, idleBrowserRtc: () => ({ stats: {}, stream: null }), mobileBrowserDraftKey: () => 'draft-key', loadBrowserDraft: async () => empty(),
         saveBrowserDraft: async () => {}, saveBrowserPairing() {}, browserLease: () => ({ key: '', deadline: 0 }),
-        mergeBrowserSession: (_, next) => next, mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false,
+        mergeBrowserSession: (_, next) => next, sameBrowserWorkspace: load('../src/lib/mobileBrowser.ts').sameBrowserWorkspace,
+        mergeBrowserConversation: (_, next) => next, expiredBrowserSession: () => false,
         browserMediaReference: () => ({ asset_ids: [] }), browserAttachment: async selected => ({ id: 'attachment', upload_id: 'upload', file: selected, name: selected.name,
             filename: selected.name, type: 'image', mime: selected.type, size: 100, width: 1080, height: 1920 }) };
     const { useMobileBrowser } = load('../src/lib/useMobileBrowser.ts', { react: hooks, './mobileBrowser': browser, './usePhoneCameraTune': { usePhoneCameraTune: () => ({ busy: false }) },

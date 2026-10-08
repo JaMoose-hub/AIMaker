@@ -50,6 +50,7 @@ async function blueprint(locale) {
     './MakerSplitLayout':url(`import {createElement} from ${JSON.stringify(import.meta.resolve('react'))};export const MakerSplitLayout=({left,children})=>createElement('main',{},left,children);`),
     './DesignViewSwitch':url('export const DesignViewSwitch=()=>null;'),
     './HardwarePartsCheck':url('export const HardwarePartsCheck=()=>null;'),
+    './MaterialPartArt':url('export const MaterialPartArt=()=>null;'),
     './AssemblyGuide':url(`import {createElement} from ${JSON.stringify(import.meta.resolve('react'))};export const AssemblyGuide=({instructions})=>createElement('div',{},instructions);`),
   };
   for(const [from,to] of Object.entries(replacements)) js=js.replaceAll(JSON.stringify(from),JSON.stringify(to));

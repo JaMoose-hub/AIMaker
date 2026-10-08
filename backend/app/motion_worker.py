@@ -224,7 +224,7 @@ class MotionOverlayWorker:
         if not parallel:
             self._close_executor()
         runtime = self.runtime_manager.snapshot()
-        context = (runtime.board_id, runtime.runtime_revision, slot.frame.shape)
+        context = (runtime.board_id, runtime.runtime_revision, slot.frame.shape, slot.geometry_epoch)
         if self.context != context or slot.seq <= self.previous_seq or slot.frame_id <= self.previous_frame_id:
             self.tracks.clear()
             self.body_tracks.clear()
@@ -251,7 +251,8 @@ class MotionOverlayWorker:
         seeds = []
         if board_pair is not None:
             source, result = board_pair
-            if result.board_id == runtime.board_id and source.frame.shape == slot.frame.shape:
+            if (result.board_id == runtime.board_id and source.frame.shape == slot.frame.shape
+                    and source.geometry_epoch == slot.geometry_epoch):
                 detection = detection_message(result, (width, height), runtime.runtime_revision)
                 detection['motion_outline'] = result.motion_outline_px
                 seeds.append(('board', source, detection))
@@ -265,7 +266,7 @@ class MotionOverlayWorker:
             if component_pair is None:
                 continue
             source, result = component_pair
-            if source.frame.shape == slot.frame.shape:
+            if source.frame.shape == slot.frame.shape and source.geometry_epoch == slot.geometry_epoch:
                 message = component_pose_message(result)
                 message['motion_outline'] = (
                     result.motion_outline_px.tolist() if result.motion_outline_px is not None else None
@@ -279,6 +280,7 @@ class MotionOverlayWorker:
             if pair is not None:
                 body_source, body_message = pair
                 if (body_source.frame.shape == slot.frame.shape
+                        and body_source.geometry_epoch == slot.geometry_epoch
                         and body_message['board_id'] == runtime.board_id
                         and body_message['runtime_revision'] == runtime.runtime_revision):
                     body_seed_map['board'] = pair
@@ -546,7 +548,9 @@ class MotionOverlayWorker:
                         self.phone_parallel()
                         and (current.board_id, current.runtime_revision)
                         == (packet['board_id'], packet['runtime_revision']))
-                    if not self._stop.is_set() and phone_current:
+                    latest = self.bus.get_latest(timeout=0)
+                    geometry_current = latest is not None and latest.geometry_epoch == slot.geometry_epoch
+                    if not self._stop.is_set() and phone_current and geometry_current:
                         self.state.set(packet, slot)
             except Exception:
                 self.tracks.clear()

@@ -9,6 +9,12 @@ const headers = new Map([
   [screen.id, { nameKey: "componentGuide.screen", pins: [...screen.pins].sort((a, b) => a.x_norm - b.x_norm) }],
 ]);
 
+/** Semantic header edge; screen rotation/mirroring must not change this choice. */
+export function componentHeaderAtTop(componentId: string): boolean | null {
+  const header = headers.get(componentId);
+  return header ? header.pins.reduce((sum, pin) => sum + pin.y_norm, 0) / header.pins.length < .5 : null;
+}
+
 export function componentHeaderLocation(componentId: string, pinId: string | null) {
   const header = headers.get(componentId);
   if (!header || !pinId) return null;

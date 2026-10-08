@@ -2,10 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {flowModule, reviewHelpers} from './wiring_photo_flow_fixture.mjs';
+import {flowModule, reviewHelpers, expectedLocationHelpers, expectedLocationComponent} from './wiring_photo_flow_fixture.mjs';
 
 // Synthetic receipts only: no server, photograph capture, model or hardware.
 const helpers = flowModule('../src/lib/wiringChat.ts', {'./wiringReview': reviewHelpers});
+const photoStatusHelpers = flowModule('../src/lib/wiringPhotoStatus.ts', {'./wiringReview': reviewHelpers});
+const framingComponent = flowModule('../src/components/WiringFramingGuide.tsx', {
+  '../lib/useMaker': {useMakerText: () => (_zh, en) => en}, '../lib/wiringReview': reviewHelpers});
+const entryComponent = flowModule('../src/components/WiringAnalysisEntry.tsx', {react: React,
+  '../lib/useMaker': {useMakerText: () => (_zh, en) => en}, '../lib/wiringChat': helpers});
 const analysisHelpers = flowModule('../src/lib/assistantAnalysis.ts', {});
 const progressHelpers = flowModule('../src/lib/assistantProgress.ts', {});
 const progressComponent = flowModule('../src/components/AssistantJobProgress.tsx', {react:React,
@@ -28,12 +33,99 @@ function harness() {
       if(!(i in values))values[i]=typeof initial==='function'?initial():initial;
       return[values[i],next=>values[i]=typeof next==='function'?next(values[i]):next];}};
   const mod=flowModule('../src/components/WiringChatMessage.tsx',{react:hooks,'../lib/useMaker':{useMakerText:()=> (_zh,en)=>en},
-    '../lib/wiringChat':helpers,'../lib/wiringReview':reviewHelpers,'./AssistantAnalysisTime':analysisComponent,'./wiringChat.css':{}});
+    '../lib/wiringChat':helpers,'../lib/wiringReview':reviewHelpers,'../lib/wiringPhotoStatus':photoStatusHelpers,
+    '../lib/wiringExpectedLocation':expectedLocationHelpers,'./WiringExpectedLocation':expectedLocationComponent(),
+    './AssistantAnalysisTime':analysisComponent,'./WiringFramingGuide':framingComponent,'./wiringChat.css':{}});
   return{mod,hooks,values,render(props){index=0;ref=0;return mod.WiringChatMessage(props);}};
 }
 function elements(tree,type) { const out=[]; const visit=node=>{if(!node||typeof node!=='object')return;
   if(Array.isArray(node)){node.forEach(visit);return;}if(node.type===type)out.push(node);visit(node.props?.children);};visit(tree);return out; }
 const deferred=()=>{let resolve;const promise=new Promise(y=>resolve=y);return{promise,resolve};};
+
+function deliveredReview() {
+  const roles=['pi_side_a','pi_side_b','component_header'];
+  const slots=Object.fromEntries(roles.map(role=>[role,{...slot,role,capture_id:`photo-${role}`,sha256:`sha-${role}`,size:[4000,3000],
+    crop:role==='pi_side_b'?[.2381,.2198,.8137,.8164]:null,
+    photo_acceptance:{source:'human',capture_id:`photo-${role}`,sha256:`sha-${role}`,round:1}}]));
+  const input=(view,crop,size)=>({role:'pi_side_b',view,crop,size,capture_id:slots.pi_side_b.capture_id,
+    source_sha256:slots.pi_side_b.sha256,source_size:[4000,3000],supplied_sha256:`sent-${view}`});
+  return review({status:'ready',analysis_revision:3,slots,model_receipt:{review_id:'review',wiring_round:1,
+    capture_ids:roles.map(role=>slots[role].capture_id),capture_hashes:roles.map(role=>slots[role].sha256),
+    reused_roles:['pi_side_a','component_header'],image_inputs:[input('overview',null,[2048,1536]),input('detail',[952,659,3255,2450],[2048,1593])]}});
+}
+
+test('row-plan capture requests show the right row and framing immediately without taking a photo', async () => {
+  const h=harness(),calls=[];
+  for (const [role,row,direction] of [['pi_side_a','inner','board centre'],['pi_side_b','outer','board edge']]) {
+    const m=message({wiring_flow:flow({role,capture_plan:'pi_rows_v1',target_row:row})});
+    const props={message:m,review:review({capture_plan:'pi_rows_v1'}),onAction:async(_m,action)=>{calls.push(action);return true;}};
+    const tree=h.render(props),html=renderToStaticMarkup(tree);
+    assert.match(html,new RegExp(`Capture Pi ${row} row`));
+    assert.match(html,new RegExp(direction));
+    assert.match(html,/class="wiring-chat-row-framing"/);
+    assert.match(html,new RegExp(`highlight the ${row} row`));
+    assert.ok(html.indexOf('<svg') < html.indexOf('<details'), 'The row diagram must be visible before optional tips');
+    assert.equal(calls.length,role==='pi_side_a'?0:1);
+    await elements(tree,'button').find(button=>button.props.children===`Capture Pi ${row} row`).props.onClick();
+    assert.equal(calls.at(-1).role,role); assert.equal(calls.at(-1).op,'capture');
+  }
+  assert.equal(calls.length,2);
+});
+
+test('legacy side photos keep original labels and mismatched capture plans never borrow a review',()=>{
+  const h=harness(),m=message(),r=review({capture_plan:'pi_rows_v1'});
+  assert.equal(helpers.wiringFlowReview(m.wiring_flow,r),null);
+  const html=renderToStaticMarkup(h.render({message:m,review:r,onAction:async()=>true}));
+  assert.match(html,/Capture Pi first side/);
+  assert.doesNotMatch(html,/Capture Pi inner row|wiring-chat-row-framing/);
+  const historical=renderToStaticMarkup(h.render({message:message({wiring_flow:flow({capture_plan:'pi_rows_v1',current:false})}),review:r}));
+  assert.match(historical,/wiring-chat-history/);
+  assert.doesNotMatch(historical,/wiring-chat-row-framing|<button/);
+});
+
+test('row-plan receipts label selected Pi photos while preserving the exact submitted crop and reused views',()=>{
+  const h=harness(),r=deliveredReview();r.capture_plan='pi_rows_v1';r.model_receipt.capture_plan='pi_rows_v1';
+  r.slots.pi_side_a.target_row='inner';r.slots.pi_side_b.target_row='outer';
+  r.model_receipt.image_inputs.forEach(image=>{image.requested_row='outer';});
+  const html=renderToStaticMarkup(React.createElement(h.mod.WiringPhotoDelivery,{review:r}));
+  assert.match(html,/Pi inner row/);assert.match(html,/Pi outer row/);assert.match(html,/Module header/);
+  assert.match(html,/AI analysed this crop · 2048 × 1593/);
+  assert.equal((html.match(/Previous analysis reused/g)||[]).length,2);
+  assert.doesNotMatch(html,/Pi first side|Pi other side/);
+});
+
+test('photo delivery UI shows verified cloud overview and crop sizes while reused views stay distinct',()=>{
+  const h=harness(),r=deliveredReview(),before=structuredClone(r);
+  const html=renderToStaticMarkup(React.createElement(h.mod.WiringPhotoDelivery,{review:r}));
+  assert.match(html,/All 3 photos ready · AI analysis completed/);
+  assert.match(html,/AI analysed this crop · 2048 × 1593/);
+  assert.match(html,/Overview.*2048.*1536/);assert.match(html,/Selected crop.*2048.*1593/);
+  assert.equal((html.match(/Previous analysis reused \(not resent this time\)/g)||[]).length,2);
+  assert.match(html,/Ordinary text chat does not automatically resend images/);
+  assert.doesNotMatch(html,/<button/);assert.deepEqual(r,before);
+});
+
+test('photo delivery UI says saved crop awaits analysis even when an older completed receipt remains',()=>{
+  const h=harness(),r=deliveredReview();r.status='collecting';r.analysis_revision=null;r.slots.pi_side_b.crop=[.2,.2,.7,.7];
+  const html=renderToStaticMarkup(React.createElement(h.mod.WiringPhotoDelivery,{review:r}));
+  assert.match(html,/All 3 photos ready · awaiting analysis/);
+  assert.match(html,/Crop saved; waiting to start analysis/);
+  assert.doesNotMatch(html,/AI analysed this crop|AI analysis completed|Photo missing/);
+});
+
+test('historical and mismatched message receipts never borrow current photo delivery status',()=>{
+  const h=harness(),r=deliveredReview();
+  const row={wire_id:'gnd',expected:{component_pin:'GND',physical_pin:6},comparison:'unknown',next_step:'Trace both ends.',
+    pi_candidates:[],component_candidates:[],diagnosis:{status:'uncertain',retake_roles:[]}};
+  const m=message({wiring_flow:flow({kind:'wire_review',result:row,wire_id:'gnd',actions:[],can_act:false})});
+  const current=renderToStaticMarkup(h.render({message:m,review:r}));
+  assert.match(current,/AI analysed this crop/);
+  for(const [message,review,inactive] of [[{...m,wiring_flow:{...m.wiring_flow,current:false}},r,false],
+    [m,r,true],[m,{...r,revision:5},false]]) {
+    const html=renderToStaticMarkup(h.render({message,review,inactive}));
+    assert.doesNotMatch(html,/AI analysed this crop|Which images reached AI|AI analysis completed/);
+  }
+});
 
 test('short pin finding keeps detailed BCM collapsed and photo positions never submit decisions',()=>{
   const h=harness(),calls=[];
@@ -56,6 +148,25 @@ test('short pin finding keeps detailed BCM collapsed and photo positions never s
   assert.equal(elements(tree,'rect').length,0);
   assert.match(renderToStaticMarkup(tree),/Photo unavailable/);
   assert.deepEqual(calls,[]);
+});
+
+test('module label identity remains visible in chat when contact is hidden and never identifies a Pi pin',()=>{
+  const h=harness();
+  const candidate={id:'component_header:echo',role:'component_header',capture_id:'module-photo',pin_id:null,
+    physical_pin:null,pin_label:null,module_pin_id:'ECHO',module_pin_evidence:'ECHO label aligns with the third housing.',
+    color:'blue',color_visibility:'clear',contact:'uncertain',evidence:'Insertion point hidden behind the board.'};
+  const result={wire_id:'echo',expected:{component_pin:'ECHO',physical_pin:12},comparison:'unknown',next_step:'Check plug contact.',
+    pi_candidates:[],component_candidates:[candidate],diagnosis:{status:'uncertain',retake_roles:[]}};
+  const renderResult=row=>renderToStaticMarkup(h.render({message:message({wiring_flow:flow({kind:'wire_review',result:row,
+    wire_id:'echo',actions:[],can_act:false})}),review:review({status:'ready'})}));
+  const before=structuredClone(candidate),html=renderResult(result);
+  assert.match(html,/ECHO.*blue/);assert.match(html,/Label position identified; plug contact unconfirmed/);
+  assert.match(html,/ECHO label aligns with the third housing/);
+  assert.doesNotMatch(html,/pin unconfirmed|connected correctly|aria-pressed="true"/);
+  const withPi=renderResult({...result,pi_candidates:[{...candidate,id:'pi-side',role:'pi_side_a',
+    module_pin_id:'MUST_NOT_IDENTIFY_PI',module_pin_evidence:'MUST_NOT_EXPLAIN_PI'}]});
+  assert.doesNotMatch(withPi,/MUST_NOT_IDENTIFY_PI|MUST_NOT_EXPLAIN_PI/);
+  assert.match(withPi,/pin unconfirmed/);assert.deepEqual(candidate,before);
 });
 
 test('unlocated expected pin and stale photo revision cannot fabricate a position marker',()=>{
@@ -81,18 +192,74 @@ test('analysis feedback messages retain completed duration without restarting hi
   assert.doesNotMatch(unknown,/Analysing|Elapsed|Analysis time/);
 });
 
-test('current photo questions show the framing image immediately while historical guidance stays collapsed',()=>{
+test('photo questions keep optional framing collapsed and retire old instructions without losing them',()=>{
   const h=harness();
   for(const role of ['pi_side_a','pi_side_b','component_header']) {
     const current=renderToStaticMarkup(h.render({message:message({wiring_flow:flow({role})})}));
-    assert.match(current,/<details class="wiring-chat-framing" open="">/);
+    assert.match(current,/<details class="wiring-chat-framing">/);
+    assert.match(current,/Photo <!-- -->[123]<!-- --> \/ 3|Photo [123] \/ 3/);
     assert.match(current,/<svg class="wiring-chat-framing-image"[^>]*role="img"/);
     assert.match(current,/This is not a GPIO pin map/);
     const history=renderToStaticMarkup(h.render({message:message({wiring_flow:flow({role,current:false,can_act:false})})}));
+    assert.match(history,/<details class="wiring-chat-history">/);
+    assert.match(history,/Please photograph the first Pi side/);
     assert.doesNotMatch(history,/<details class="wiring-chat-framing" open=/);
     const inactive=renderToStaticMarkup(h.render({message:message({wiring_flow:flow({role})}),inactive:true}));
     assert.doesNotMatch(inactive,/<details class="wiring-chat-framing" open=/);
   }
+});
+
+test('shared missing view gives one primary retake while wire confirmation remains optional and exact',async()=>{
+  const h=harness(),calls=[];
+  const row=pin=>({wire_id:pin,expected:{component_pin:pin,physical_pin:6},comparison:'unknown',evidence:'Long pin evidence.',
+    next_step:'Trace both ends.',pi_candidates:[],component_candidates:[],diagnosis:{status:'uncertain',retake_roles:['component_header']}});
+  const rows=[row('GND'),row('TRIG')];
+  const props={message:message({wiring_flow:flow({kind:'wire_review',wire_id:'GND',result:rows[0],actions:['capture','review']})}),
+    review:review({results:rows}),onAction:async(_m,a)=>{calls.push(a);return true;}};
+  const tree=h.render(props),overview=elements(tree,h.mod.WiringReviewOverview)[0];
+  assert.equal(overview.props.summary.headline,'The module connection positions are not yet confirmed.');
+  assert.equal(overview.props.summary.results.length,2);
+  const manual=elements(tree,'details').find(e=>e.props.className==='wiring-chat-manual');
+  assert.equal(manual.props.open,undefined);assert.equal(elements(manual,'button').length,3);
+  const retake=elements(overview,'button');assert.equal(retake.length,1);assert.deepEqual(calls,[]);
+  retake[0].props.onClick();await Promise.resolve();
+  assert.equal(calls.length,1);assert.equal(calls[0].op,'capture');assert.equal(calls[0].role,'component_header');
+  assert.equal(calls[0].revision,4);
+});
+
+test('summary history stays frozen and legacy fallback cannot borrow another revision',()=>{
+  const h=harness(),row={wire_id:'gnd',expected:{component_pin:'GND',physical_pin:6},comparison:'unknown',evidence:'old',
+    pi_candidates:[],component_candidates:[],diagnosis:{status:'uncertain',retake_roles:['pi_side_a']}};
+  const old=flow({kind:'wire_review',result:row,current:false,can_act:false,actions:[]});
+  const live=review({revision:5,results:[{...row,diagnosis:{status:'no_issue_seen'}}]});
+  assert.equal(helpers.wiringChatSummary(old,live,(_zh,en)=>en).results[0],row);
+  const single=helpers.wiringChatSummary({...old,result:{...row,diagnosis:{status:'no_issue_seen'}}},live,(_zh,en)=>en);
+  assert.equal(single.headline,'No obvious mismatch seen for GND; check it yourself.');
+  const frozen={schema_version:2,headline:'Saved finding',next_step:'Saved step',results:[row],evidence:'Saved evidence',retake_role:'pi_side_a',counts:{uncertain:1,suspected:0,no_issue_seen:0}};
+  assert.equal(helpers.wiringChatSummary({...old,summary:frozen},live,(_zh,en)=>en),frozen);
+  const tree=h.render({message:message({wiring_flow:{...old,summary:frozen}}),review:live,onAction:async()=>{throw Error('No historical actions');}});
+  assert.equal(elements(tree,'button').length,0);
+  assert.equal(h.mod.wiringMessageHasBody(message({wiring_flow:old})),true);
+  assert.equal(h.mod.wiringMessageHasBody(message({role:'user',wiring_flow:old})),false);
+});
+
+test('visible uncovered pins remain an observation and do not become a blurry-photo retake or a confirmation',()=>{
+  const h=harness(),row={wire_id:'gnd',expected:{component_pin:'GND',physical_pin:6},comparison:'unknown',
+    pi_candidates:[],component_candidates:[],diagnosis:{status:'uncertain',retake_roles:[]}};
+  const original={schema_version:2,headline:'模組四支針腳完整裸露，未見接頭套接。',
+    next_step:'先斷電，對照接線圖核對接頭是否插妥。',retake_role:null,counts:{uncertain:4,suspected:0,no_issue_seen:0},
+    results:[row],evidence:'模組四支針腳完整裸露，未見接頭套接。',observation:'模組四支針腳完整裸露，未見接頭套接。',observation_role:'component_header'};
+  const m=message({wiring_flow:flow({kind:'wire_review',wire_id:'gnd',result:row,summary:original,actions:['review','capture']})});
+  const tree=h.render({message:m,onAction:async()=>{throw Error('Rendering must not act');}});
+  const overview=elements(tree,h.mod.WiringReviewOverview)[0];
+  assert.equal(overview.props.summary,original);
+  assert.equal(elements(overview,'button').length,0);
+  assert.match(renderToStaticMarkup(overview),/模組四支針腳完整裸露，未見接頭套接/);
+  assert.doesNotMatch(renderToStaticMarkup(overview),/看不清楚|Retake|Correct<\/button>/);
+  const legacy={...original,schema_version:undefined,retake_role:'component_header',headline:'零件接頭的腳位還看不清楚。'};
+  const corrected=helpers.wiringChatSummary({...m.wiring_flow,summary:legacy},null,zh=>zh);
+  assert.equal(corrected.headline,'零件端的接線位置尚未確認。');
+  assert.equal(legacy.headline,'零件接頭的腳位還看不清楚。','Old receipts are not rewritten');
 });
 
 test('colored human decisions retain explicit labels and only one user action confirms the matching wire',async()=>{
@@ -140,7 +307,7 @@ test('photo evidence and crop controls require the same review, revision, compon
   const h=harness(),m=message({wiring_flow:flow({kind:'analysis_request',actions:['crop','analyse']})});
   const markup=renderToStaticMarkup(h.render({message:m,review:review({revision:3}),onAction:async()=>true}));
   assert.doesNotMatch(markup,/fake-photo|Original photo for cropping/);
-  assert.match(markup,/Start review/);
+  assert.match(markup,/Start analysis/);
 });
 
 test('unknown pins and multiple color candidates remain advisory and require explicit manual decisions',()=>{
@@ -196,7 +363,8 @@ test('the unified assistant keeps photo guidance in ordinary messages, one compo
     './AssistantMarkdown':{AssistantMarkdown:({text})=>React.createElement('div',null,text)},
     './ConversationGuideDock':{ConversationGuideHost:()=>null},
     './MobileCompanion':{MobileCompanion:()=>null,MobileAttachmentCards:()=>null},'./WiringChatMessage':h.mod,
-    './AssistantAnalysisTime':analysisComponent,'../lib/assistantProgress':progressHelpers,'./AssistantJobProgress':progressComponent});
+    './AssistantAnalysisTime':analysisComponent,'../lib/assistantProgress':progressHelpers,'./AssistantJobProgress':progressComponent,
+    './WiringAnalysisEntry':entryComponent});
   const calls=[];const controller={record:{id:'chat',context_epoch:0,before:null,messages:[ordinary,invite,m],jobs:[]},
     mobileContext:{round:1},draft:'',busy:false,demoOpen:false};
   const markup=renderToStaticMarkup(React.createElement(compiled.UnifiedAssistant,{state:{stage:'guide',guide:{run:1},selected:['hc-sr04']},

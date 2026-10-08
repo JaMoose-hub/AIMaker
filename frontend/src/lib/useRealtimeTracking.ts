@@ -17,6 +17,8 @@ export function useRealtimeTracking(enabled: boolean, boardId: string | null, re
     let count = 0;
     let windowStart = performance.now();
     let lastFrameAt = Date.now();
+    let failures = 0;
+    const phone = sourceKey.startsWith("phone:");
     let timer = 0;
     let abort: AbortController | null = null;
     const freshTimer = window.setInterval(() => {
@@ -38,7 +40,7 @@ export function useRealtimeTracking(enabled: boolean, boardId: string | null, re
         if (!acceptTrackingFrame(next, boardId, revision, after)) return;
         // Decoding before setting state prevents a previous JPEG from being
         // displayed underneath the next pose during a network/decode delay.
-        if (sourceKey.startsWith("phone:")) {
+        if (phone) {
           await decodePhoneTrackingImage(next.image, abort.signal);
         } else {
           const image = new Image();
@@ -48,6 +50,7 @@ export function useRealtimeTracking(enabled: boolean, boardId: string | null, re
         if (disposed || abort.signal.aborted) return;
         after = next.seq;
         lastFrameAt = Date.now();
+        failures = 0;
         const decodedFrame = { ...next, receivedAt: Date.now(), sourceKey };
         setFrame(decodedFrame);
         display.update(decodedFrame);
@@ -58,8 +61,15 @@ export function useRealtimeTracking(enabled: boolean, boardId: string | null, re
           windowStart = performance.now();
         }
       } catch {
-        if (!disposed) { setFrame(null); setFps(0); display.update(null); }
-        retryMs = 500;
+        // One dropped request/decode is not a disconnected phone. Keep only
+        // the already synchronized, still-fresh pair; the existing freshness
+        // timer continues to expire its pixels AND poses without renewing it.
+        if (!disposed && (!phone || Date.now() - lastFrameAt > 600)) {
+          setFrame(null); setFps(0); display.update(null);
+        }
+        // Recover a brief LAN hiccup before the good frame expires, while
+        // backing off sustained failures. Never run parallel polls/decoders.
+        retryMs = phone ? Math.min(500, 125 * 2 ** Math.min(failures++, 2)) : 500;
         // A restarted backend resets its frame sequence.
         after = -1;
       } finally {

@@ -327,7 +327,7 @@ const trialOutput = <>      {trial?<section className="debug-trial-result"><h3>{
     <div className="debug-manual-check">
       <button className="workflow-secondary" disabled={working} onClick={()=>void diagnose()}>{working?tr("正在檢查紀錄…","Checking records…"):tr("檢查 Pi 與程式紀錄","Check Pi and code records")}</button>
       <p className={`workflow-subtitle${checkFeedbackText?" debug-check-feedback":""}${checkFeedback?.phase==="failure"?" is-error":""}`} role={checkFeedbackText?checkFeedback?.phase==="failure"?"alert":"status":undefined}>
-        {checkFeedbackText??tr("本機檢查連線、程式語法與既有紀錄；鏡頭 AI 分析請使用上方「幫我檢查」。", "Local checks cover connection, syntax, and saved records. Use Check for me above for AI camera analysis.")}
+        {checkFeedbackText??tr("本機檢查連線、程式語法與既有紀錄；照片 AI 分析請使用 02 對話上方的「拍照檢查接線」。", "Local checks cover connection, syntax, and saved records. Use Check wiring with photos above the conversation in 02 for AI photo analysis.")}
         {checkFeedback?.phase==="success"?<button type="button" className="workflow-secondary" onClick={showCheckResult}>{tr("查看結果","View results")}</button>:null}
       </p>
     </div>

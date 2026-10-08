@@ -1,6 +1,9 @@
 """Paired conversational photo collection, fake cloud/Pi and synthetic pixels."""
 from copy import deepcopy
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+import threading
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -119,9 +122,11 @@ def test_pairing_resolves_linked_review_without_context_or_session_id_changes(re
     assert debug.sessions[debug_id]['context'] == context
 
 
-def test_phone_upload_select_next_and_analysis_are_separate_shared_actions(review_setup):
+def test_phone_upload_select_next_and_analysis_are_separate_shared_actions(review_setup, monkeypatch):
     app, mobile, phone, debug, debug_id, context, published = review_setup
     original_context_id = mobile.latest['context_id']
+    sid = phone['session_id']
+    generation = asyncio.run(mobile.start_stream(sid))['generation']
     with TestClient(app, client=('192.168.1.8', 5000)) as client:
         first = _capture(client, phone, 'pi_side_a')
         assert first['source'] == 'phone_upload' and 'camera_id' not in first and 'photo_acceptance' not in first
@@ -145,12 +150,44 @@ def test_phone_upload_select_next_and_analysis_are_separate_shared_actions(revie
         assert _action(client, phone, 'analyse').status_code == 200
         assert not _get(client, phone)['can_act']
         assert _action(client, phone, 'analyse').status_code == 409
-        debug.tick(debug_id)
+        # Slow cloud work must not take the native receipt lock in either POC
+        # stage. This uses synthetic photos and a fake model, never hardware.
+        bridge = mobile.state.design_service.bridge
+        generate = bridge.generate
+        stages = [(threading.Event(), threading.Event()) for _ in range(2)]
+        call_index = 0
+
+        def slow_generate(*args, **kwargs):
+            nonlocal call_index
+            entered, release = stages[call_index]
+            call_index += 1
+            entered.set()
+            assert release.wait(3)
+            return generate(*args, **kwargs)
+
+        monkeypatch.setattr(bridge, 'generate', slow_generate)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            analysis = pool.submit(debug.tick, debug_id)
+            try:
+                for seq, (entered, release) in enumerate(stages, 1):
+                    assert entered.wait(2)
+                    pool.submit(mobile.on_receive, sid, generation, seq, mobile.clock(), mobile.wall(), (960, 540)).result(timeout=.5)
+                    release.set()
+            finally:
+                for _, release in stages:
+                    release.set()
+            analysis.result(timeout=2)
         assert _get(client, phone)['review']['status'] == 'ready'
-    assert len(mobile.state.design_service.bridge.calls) == 1
+    assert len(mobile.state.design_service.bridge.calls) == 2
+    receipt = debug.get(debug_id)['wiring_review']['model_receipt']
+    assert [stage['stage'] for stage in receipt['stages']] == ['exit_inventory', 'pin_review']
     assert not mobile.state.pi_execution.jobs
     assert debug.sessions[debug_id]['context']['guide_confirmations'] == context['guide_confirmations']
     assert mobile.latest['context_id'] == original_context_id
+    debug.action(debug_id, 'stop', 'explicit-stop', context=context)
+    stream = mobile.snapshot(sid)['stream']
+    assert stream['active'] and stream['generation'] == generation and stream['received_frames'] == 2
+    assert not mobile.rtc.closed
 
 
 def test_phone_cannot_confirm_wires_change_round_or_import_another_pairings_asset(review_setup):

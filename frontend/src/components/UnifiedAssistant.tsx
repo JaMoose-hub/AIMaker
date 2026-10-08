@@ -9,7 +9,7 @@ import type { useMakerAI } from "../lib/useMakerAI";
 import { ProjectConcept } from "./ProjectConcept";
 import { MakerModelMenu } from "./MakerModelMenu";
 import { MobileCompanion, MobileAttachmentCards, type MobileWorkspaceTargets } from "./MobileCompanion";
-import { WiringChatMessage, WiringReceiptStatus } from './WiringChatMessage';
+import { WiringChatMessage, WiringReceiptStatus, wiringMessageHasBody } from './WiringChatMessage';
 import { AssistantMarkdown } from './AssistantMarkdown';
 import { AssistantAnalysisTime } from './AssistantAnalysisTime';
 import { assistantProgress } from '../lib/assistantProgress';
@@ -152,7 +152,7 @@ export function UnifiedAssistant({ state, setState, controller, legacy, debugToo
           const note = conversationMessageNote(message, record!);
           return <article key={message.id} data-message-id={message.id} className={`ai-debug-message is-${message.role}${note ? " is-archived" : ""}`}>
           <header><strong>{message.role === "user" ? tr("你", "You") : "Tinkro AI"}</strong><small>{message.source === "demo" ? tr("示範對話", "Sample dialogue") : message.source === "legacy-design" ? tr("舊設計對話", "Legacy design conversation") : message.created_at ? new Date(message.created_at * 1000).toLocaleTimeString(locale) : tr("匯入紀錄", "Imported record")}</small></header>
-          {message.role === 'assistant' ? <AssistantMarkdown text={message.text} />
+          {message.role === 'assistant' ? wiringMessageHasBody(message) ? null : <AssistantMarkdown text={message.text} />
             : <div className="assistant-message-text">{message.text}</div>}
           {message.id === testHelpMessage?.id && onTestHelpActionTargetChange ? <div className="assistant-message-actions" ref={testHelpActionRef} /> : null}
           {message.wiring_flow ? <WiringChatMessage message={message} review={wiringReview} busy={controller.busy || legacy.busy || Boolean(receiptController.wiringReceiptPending)} inactive={Boolean(note)}

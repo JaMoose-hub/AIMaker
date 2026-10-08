@@ -28,6 +28,9 @@ export interface AssistantWiringFlowResult {
   conversation: AssistantConversation; debug_session_id: string; debug_session: DebugSession;
   request_id?: string; guide_receipt?: WiringGuideReceipt | null; outbox?: WiringActionOutbox;
 }
+export interface AssistantWiringStartResult extends AssistantWiringFlowResult {
+  request_id: string; resumed: boolean;
+}
 
 export interface AssistantMessage {
   id: string; role: "user" | "assistant"; text: string; source: string; created_at: number | null;
@@ -160,6 +163,7 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
   })());
   const importKey = useRef("");
   const debugImportKey = useRef("");
+  const wiringStartRetry = useRef<{ key: string; id: string } | null>(null);
   const record = demoOpen ? demo : project;
   const id = demoOpen ? demoId : projectId;
   const wiringAnalysis = assistantWiringAnalysis(record);
@@ -429,6 +433,59 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
     } catch (cause) { if (valid()) setError(String(cause)); return false; }
     finally { flight.current = false; setPending(false); }
   }
+  /** Explicit entry to photo collection; no model or hardware work is submitted. */
+  async function startWiringReview(componentId: string): Promise<AssistantWiringStartResult | false> {
+    const snapshot = latest.current;
+    const epoch = helpScope.current.epoch;
+    const outbox = wiringOutboxRef.current;
+    const receiptPending = outbox && outbox.conversation_id === projectId && outbox.context_epoch === epoch
+      && outbox.before_signature === wiringReceiptSignature(snapshot);
+    if (flight.current || helpScope.current.busy || helpScope.current.demoOpen || snapshot.aiJobId || !project
+      || snapshot.stage !== 'guide' || !snapshot.design?.component_ids.some(id => id === componentId)
+      || receiptPending || activeId.current !== projectId) return false;
+    const valid = () => activeId.current === projectId && !helpScope.current.demoOpen && helpScope.current.epoch === epoch
+      && latest.current.design === snapshot.design && latest.current.code === snapshot.code && latest.current.guide === snapshot.guide;
+    const targetWire = snapshot.design.wiring.find(wire => wire.componentId === componentId);
+    const context: DebugContext = { project: snapshot.design, code: snapshot.code, locale,
+      guide_run: snapshot.guide.run ?? 0, guide_confirmations: snapshot.guide.confirmed,
+      test_keys: Object.fromEntries(snapshot.design.component_ids.map(cid => [cid, componentTestKey(snapshot.design!, snapshot.guide, cid)])),
+      entry: snapshot.debug ?? {}, wiring_target: targetWire ? { component_id: componentId, wire_id: targetWire.id } : null };
+    const body = { context_epoch: epoch, context, component_id: componentId, model: selectedModel || snapshot.aiModel || null,
+      effort: snapshot.aiEffort || null, response_mode: 'fast' };
+    const key = JSON.stringify([projectId, body]);
+    if (wiringStartRetry.current?.key !== key) wiringStartRetry.current = { key, id: newConversationId() };
+    const request_id = wiringStartRetry.current.id;
+    flight.current = true; setPending(true); setError('');
+    try {
+      const result = await makerRequest<AssistantWiringStartResult>(`assistant/conversations/${projectId}/wiring-review/start`, { ...body, request_id });
+      if (!valid()) return false;
+      if (result.conversation?.id !== projectId || result.conversation.context_epoch !== epoch
+        || result.debug_session?.id !== result.debug_session_id
+        || result.debug_session?.wiring_review?.component_id !== componentId || result.request_id !== request_id)
+        throw new Error(locale === 'en' ? 'The wiring review changed. Retry from the current project.' : '接線核對已更新，請從目前作品重試。');
+      accept(result.conversation, true);
+      wiringStartRetry.current = null;
+      return result;
+    } catch (cause) {
+      if (valid()) {
+        const status = (cause as { status?: number })?.status;
+        const errors: Record<string, [string, string]> = {
+          wiring_review_session_active: ['仍有其他接線檢查進行中，請先按「停止本次檢查」再開始。', 'Stop the current wiring check before starting another one.'],
+          wiring_review_context_changed: ['作品資料正在同步，請稍後再按「拍照檢查接線」。', 'The project context is syncing. Retry Check wiring with photos shortly.'],
+          wiring_review_start_expired: ['上一輪檢查已結束，請再按一次開始新檢查。', 'The previous check ended. Click again to start a new check.'],
+          wiring_review_chat_busy: ['AI 正在處理訊息，完成後即可開始拍照。', 'Wait for the current AI reply before starting photos.'],
+          pi_busy_for_wiring: ['Pi 仍有工作執行中，請先在「執行管理」停止工作，再拍攝接線。', 'Stop the active Pi work in Execution manager before photographing the wiring.'],
+        };
+        const raw = String(cause);
+        const translated = Object.entries(errors).find(([code]) => raw.includes(code));
+        if (raw.includes('wiring_review_start_expired')) wiringStartRetry.current = null;
+        setError(status === 404 || status === 405 ? (locale === 'en'
+          ? 'Restart Board Vision to load the photo review entry, then retry.' : '請重啟 Board Vision 載入接線照片入口後重試。')
+          : translated ? translated[1][locale === 'en' ? 1 : 0] : raw);
+      }
+      return false;
+    } finally { flight.current = false; setPending(false); }
+  }
   /** A message-bound action shares the existing chat and never consumes the draft. */
   async function wiringFlowAction(message: AssistantMessage, action: WiringReviewAction, context?: DebugContext): Promise<AssistantWiringFlowResult | false> {
     const snapshot = latest.current;
@@ -590,7 +647,7 @@ export function useAssistant(state: MakerState, setState: Dispatch<SetStateActio
     return true;
   }
   return { record, project, demo, demoOpen, setDemoOpen, busy, pending, wiringAnalysis, draft, setDraft, error: error || connectionError, storageError,
-    send, sendPartsCheck, sendTestHelp, offerTestHelp, testHelpAction, wiringFlowAction, recoverWiringFlow, acknowledgeWiringFlow, confirmDemo, adoptDemo, startConversation, prepareConversation, activateConversation, archiveWiring, mediaReference, removeMediaReference,
+    send, sendPartsCheck, sendTestHelp, offerTestHelp, testHelpAction, startWiringReview, wiringFlowAction, recoverWiringFlow, acknowledgeWiringFlow, confirmDemo, adoptDemo, startConversation, prepareConversation, activateConversation, archiveWiring, mediaReference, removeMediaReference,
     wiringReceiptPending: Boolean(wiringOutbox && wiringOutbox.conversation_id === projectId && wiringOutbox.context_epoch === (project?.context_epoch ?? 0)
       && wiringOutbox.before_signature === wiringReceiptSignature(state)),
     wiringReceiptMessageId: wiringOutbox?.message_id, wiringReceiptRequestId: wiringOutbox?.request_id, wiringReceiptError,

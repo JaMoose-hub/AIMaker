@@ -20,8 +20,29 @@ export type RecognitionLease = { key: string; deadline: number };
 const liveContext = (session: MobileSession) => session.available_context?.context_id ?? session.context_id;
 
 export function receivePhoneRecognition(previous: MobileSession | null, next: MobileSession | null, now: number): MobileSession | null {
+  const sameSession = previous && next && previous.session_id === next.session_id
+    && previous.conversation_id === next.conversation_id;
+  if (sameSession) {
+    // HTTP snapshots and socket events share this controller. None of these
+    // monotonic counters may move backwards when a slower response arrives.
+    if (Number.isInteger(previous.context_revision) && Number.isInteger(next.context_revision)
+      && next.context_revision! < previous.context_revision!) return previous;
+    if (next.view?.revision < previous.view?.revision
+      || next.stream.generation < previous.stream.generation) return previous;
+    if (next.stream.generation === previous.stream.generation
+      && ((next.stream.preview_seq ?? Infinity) < (previous.stream.preview_seq ?? -Infinity)
+        || (next.stream.video_receive_seq ?? Infinity) < (previous.stream.video_receive_seq ?? -Infinity)
+        || !previous.stream.active && next.stream.active)) return previous;
+  }
   const packet = next?.stream.recognition;
   if (!next || !packet) return next;
+  // Once expiry/disconnection cleared a sample, only a new observation can
+  // restore it. Remounting the preview must not grant a replay a fresh lease.
+  if (sameSession && previous.stream.generation === next.stream.generation
+    && liveContext(previous) === liveContext(next) && !previous.stream.recognition
+    && packet.frame_seq <= (previous.stream.preview_seq ?? 0)) {
+    return { ...next, stream: { ...next.stream, recognition: null } };
+  }
   const old = previous?.stream.recognition;
   const same = old && old.session_id === packet.session_id && old.generation === packet.generation
     && old.context_id === packet.context_id && old.frame_seq === packet.frame_seq;
